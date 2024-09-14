@@ -1,0 +1,42 @@
+[workspace]
+members = ["backends/*", "examples/wttr"]
+resolver = "2"
+
+[workspace.package]
+authors = ["bdbai <bdbaiapp@163.com>"]
+categories = ["web-programming::http-client"]
+edition = "2021"
+keywords = ["http", "client", "native", "winhttp", "nsurlsession"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/bdbai/nyquest"
+rust-version = "1.78"
+version = "0.0.0-alpha.1"
+
+[workspace.dependencies]
+futures = "0.3"
+thiserror = "1"
+cfg-if = "1"
+
+[package]
+name = "nyquest"
+description = "truly native HTTP client library"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[package.metadata.docs.rs]
+features = ["async", "blocking"]
+
+[features]
+async = []
+blocking = []
+
+[dependencies]
+once_cell = { version = "1", default-features = false, features = ["std"] }
+thiserror.workspace = true
+cfg-if.workspace = true

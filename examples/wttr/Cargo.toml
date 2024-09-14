@@ -1,0 +1,11 @@
+[package]
+name = "wttr"
+description = "Fetch and display weather information from wttr.in"
+edition.workspace = true
+
+[dependencies]
+futures.workspace = true
+nyquest = { path = "../..", features = ["async"] }
+
+[target.'cfg(windows)'.dependencies]
+nyquest-backend-winrt = { path = "../../backends/winrt", features = ["async"] }
