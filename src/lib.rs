@@ -1,11 +1,14 @@
-pub mod backend;
-mod cache;
-#[cfg(feature = "async")]
-mod client;
+pub mod client;
+mod error;
+mod request;
 
-pub use cache::CachingBehavior;
-#[cfg(feature = "blocking")]
-pub use client::BlockingClient;
 #[cfg(feature = "async")]
-pub use client::Client;
+pub mod r#async;
+#[cfg(feature = "blocking")]
+pub mod blocking;
+
+#[cfg(feature = "blocking")]
+pub use blocking::client::BlockingClient;
 pub use client::ClientBuilder;
+pub use error::{Error, Result};
+pub use request::Request;

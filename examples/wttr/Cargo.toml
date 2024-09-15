@@ -4,8 +4,10 @@ description = "Fetch and display weather information from wttr.in"
 edition.workspace = true
 
 [dependencies]
-futures.workspace = true
-nyquest = { path = "../..", features = ["async"] }
+nyquest = { path = "../..", features = ["async", "blocking"] }
 
 [target.'cfg(windows)'.dependencies]
-nyquest-backend-winrt = { path = "../../backends/winrt", features = ["async"] }
+nyquest-backend-winrt = { path = "../../backends/winrt", features = [
+    "async",
+    "blocking",
+] }
