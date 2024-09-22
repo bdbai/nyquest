@@ -38,5 +38,7 @@ blocking = []
 [dependencies]
 once_cell = { version = "1", default-features = false, features = ["std"] }
 thiserror.workspace = true
-futures-core = { version = "0.3", optional = true, default-features = false }
+futures-core = { version = "0.3", optional = true, features = [
+    "alloc",
+], default-features = false }
 bytes = { version = "1", optional = true }
