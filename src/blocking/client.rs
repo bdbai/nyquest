@@ -1,6 +1,10 @@
 use std::sync::OnceLock;
 
-use super::any::{AnyBlockingBackend, AnyBlockingClient};
+use super::{
+    any::{AnyBlockingBackend, AnyBlockingClient},
+    response::Response,
+    Body,
+};
 use crate::client::{BuildClientError, BuildClientResult, ClientBuilder};
 
 pub(super) static BLOCKING_BACKEND_INSTANCE: OnceLock<Box<dyn AnyBlockingBackend>> =
@@ -11,8 +15,8 @@ pub struct BlockingClient {
 }
 
 impl ClientBuilder {
-    pub fn build_blocking(self) -> BuildClientResult<crate::BlockingClient> {
-        Ok(crate::BlockingClient {
+    pub fn build_blocking(self) -> BuildClientResult<BlockingClient> {
+        Ok(BlockingClient {
             client: BLOCKING_BACKEND_INSTANCE
                 .get()
                 .ok_or(BuildClientError::NoBackend)?
@@ -22,11 +26,12 @@ impl ClientBuilder {
 }
 
 impl BlockingClient {
-    pub fn get_string(&self, uri: impl Into<String>) -> crate::Result<String> {
-        let req = crate::Request::new(uri.into(), "get".into());
-        let mut res = self.client.request(req)?;
-        res.text()
+    pub fn request(&self, req: crate::Request<Body>) -> crate::Result<Response> {
+        let res = self.client.request(req)?;
+        Ok(res.into())
     }
+
+    // TODO: request file
 }
 
 impl Clone for BlockingClient {

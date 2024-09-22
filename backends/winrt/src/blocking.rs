@@ -1,6 +1,7 @@
 use std::io;
 
 use nyquest::blocking::backend::{BlockingBackend, BlockingClient, BlockingResponse};
+use nyquest::blocking::Body;
 use nyquest::client::{BuildClientResult, ClientOptions};
 use nyquest::{Error as NyquestError, Request, Result as NyquestResult};
 use windows::core::{Interface, HSTRING};
@@ -8,8 +9,10 @@ use windows::Foundation::Uri;
 use windows::Web::Http::{HttpClient, HttpMethod, HttpRequestMessage};
 use windows::Win32::System::WinRT::IBufferByteAccess;
 
+use crate::client::WinrtClientExt;
 use crate::error::IntoNyquestResult;
 use crate::response::WinrtResponse;
+use crate::uri::build_uri;
 
 #[derive(Clone)]
 pub struct WinrtBlockingBackend;
@@ -21,28 +24,28 @@ pub struct WinrtBlockingClient {
 
 impl WinrtBlockingBackend {
     pub fn create_client(&self, options: ClientOptions) -> io::Result<WinrtBlockingClient> {
-        let client = HttpClient::new()?;
         let base_url = options.base_url.as_ref().map(|s| HSTRING::from(s));
+        let client = HttpClient::create(options)?;
         Ok(WinrtBlockingClient { base_url, client })
     }
 }
 
 impl WinrtBlockingClient {
-    fn build_uri(&self, relative: &str) -> io::Result<Uri> {
-        let uri = if let Some(base_url) = &self.base_url {
-            Uri::CreateWithRelativeUri(base_url, &HSTRING::from(relative))?
-        } else {
-            Uri::CreateUri(&HSTRING::from(relative))?
-        };
-        Ok(uri)
-    }
-    fn send_request(&self, uri: &Uri, req: Request) -> io::Result<WinrtResponse> {
-        let req_msg = HttpRequestMessage::new()?;
+    fn send_request(&self, uri: &Uri, req: Request<Body>) -> io::Result<WinrtResponse> {
+        let method = HttpMethod::Create(&HSTRING::from(&*req.method))?;
+        let req_msg = HttpRequestMessage::Create(&method, uri)?;
         // TODO: cache method
-        req_msg.SetMethod(&HttpMethod::Create(&HSTRING::from(req.method)).unwrap())?;
         req_msg.SetRequestUri(uri)?;
+        // TODO: content
         let res = self.client.SendRequestAsync(&req_msg)?.get()?;
+        let status = res.StatusCode()?.0 as u16;
+        let content_length = match res.Content() {
+            Ok(content) => content.Headers()?.ContentLength()?.Value().ok(),
+            Err(_) => Some(0),
+        };
         Ok(WinrtResponse {
+            status,
+            content_length,
             response: res,
             reader: None,
         })
@@ -51,10 +54,9 @@ impl WinrtBlockingClient {
 
 impl BlockingClient for WinrtBlockingClient {
     type Response = WinrtResponse;
-    fn request(&self, req: Request) -> NyquestResult<Self::Response> {
-        let uri = self
-            .build_uri(&req.relative_uri)
-            .map_err(|_| NyquestError::InvalidUrl)?;
+    fn request(&self, req: Request<Body>) -> NyquestResult<Self::Response> {
+        let uri =
+            build_uri(&self.base_url, &req.relative_uri).map_err(|_| NyquestError::InvalidUrl)?;
         self.send_request(&uri, req).into_nyquest_result()
     }
 }
@@ -72,36 +74,15 @@ impl BlockingBackend for WinrtBlockingBackend {
 
 impl BlockingResponse for WinrtResponse {
     fn status(&self) -> u16 {
-        self.response
-            .StatusCode()
-            .expect("failed to get Windows.Web.Http.HttpResponseMessage.StatusCode")
-            .0 as _
+        self.status
     }
 
-    fn get_header(&self, header: &str) -> NyquestResult<Vec<String>> {
-        let headers = self.response.Headers().into_nyquest_result()?;
-        let header_name = HSTRING::from(header);
-        let mut headers = headers.Lookup(&header_name).ok();
-        if headers.is_none() {
-            headers = self
-                .content()
-                .into_nyquest_result()?
-                .Headers()
-                .into_nyquest_result()?
-                .Lookup(&header_name)
-                .ok();
-        }
-        Ok(headers.into_iter().map(|h| h.to_string_lossy()).collect())
+    fn get_header(&self, header: &str) -> nyquest::Result<Vec<String>> {
+        self.get_header(header).into_nyquest_result()
     }
 
-    fn content_length(&self) -> NyquestResult<Option<u64>> {
-        let mut len = 0;
-        let res = self
-            .content()
-            .into_nyquest_result()?
-            .TryComputeLength(&mut len)
-            .into_nyquest_result()?;
-        Ok(res.then_some(len))
+    fn content_length(&self) -> Option<u64> {
+        self.content_length
     }
 
     fn text(&mut self) -> NyquestResult<String> {

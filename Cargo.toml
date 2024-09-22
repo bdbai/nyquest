@@ -1,5 +1,5 @@
 [workspace]
-members = ["backends/*", "examples/wttr"]
+members = ["backends/*", "examples/*", "presets/*"]
 resolver = "2"
 
 [workspace.package]
@@ -32,9 +32,11 @@ version.workspace = true
 features = ["async", "blocking"]
 
 [features]
-async = []
+async = ["dep:futures-core", "dep:bytes"]
 blocking = []
 
 [dependencies]
 once_cell = { version = "1", default-features = false, features = ["std"] }
 thiserror.workspace = true
+futures-core = { version = "0.3", optional = true, default-features = false }
+bytes = { version = "1", optional = true }

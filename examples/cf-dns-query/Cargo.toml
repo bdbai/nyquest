@@ -1,0 +1,13 @@
+[package]
+name = "cf-dns-query"
+description = "Fetch and display DNS response from Cloudflare Public DNS"
+edition.workspace = true
+
+[dependencies]
+nyquest = { path = "../..", features = ["async"] }
+futures = { version = "0.3", features = ["executor"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+nyquest-preset-rich = { path = "../../presets/rich", features = ["async"] }

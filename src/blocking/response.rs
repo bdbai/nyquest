@@ -7,6 +7,18 @@ pub struct Response {
 }
 
 impl Response {
+    pub fn status(&self) -> u16 {
+        self.inner.status()
+    }
+
+    pub fn content_length(&self) -> Option<u64> {
+        self.inner.content_length()
+    }
+
+    pub fn get_header(&self, header: &str) -> crate::Result<Vec<String>> {
+        self.inner.get_header(header)
+    }
+
     pub fn text(mut self) -> crate::Result<String> {
         self.inner.text()
     }

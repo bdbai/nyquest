@@ -49,18 +49,19 @@ The following items are planned in MVP:
     - [ ] Blocking (WIP)
     - [ ] Async
 - [ ] Backend: libcurl
-- [ ] Backend: NSURLSession (help wanted!)
 - [ ] Test framework for backends
 - [ ] Presets
 - [ ] Documentation
 
 Future work may include:
 
+- [ ] Backend: NSURLSession (help wanted!)
 - [ ] Backend: Mock
 - [ ] Backend: WASM fetch
 - [ ] Backend: WinHTTP
 - [ ] Backend: libsoup3
 - [ ] Backend: reqwest (yes, we can do that)
+- [ ] Backend: QNetworkAccessManager
 - [ ] Explore alternative options on Android other than libcurl
 
 ## License

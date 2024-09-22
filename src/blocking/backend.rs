@@ -1,5 +1,6 @@
 use std::io;
 
+use super::Body;
 use crate::client::{BuildClientResult, ClientOptions};
 
 pub fn register_blocking_backend(backend: impl BlockingBackend) {
@@ -11,7 +12,7 @@ pub fn register_blocking_backend(backend: impl BlockingBackend) {
 
 pub trait BlockingClient: Clone + Send + Sync + 'static {
     type Response: BlockingResponse;
-    fn request(&self, req: crate::Request) -> crate::Result<Self::Response>;
+    fn request(&self, req: crate::Request<Body>) -> crate::Result<Self::Response>;
 }
 
 pub trait BlockingBackend: Send + Sync + 'static {
@@ -24,8 +25,8 @@ pub trait BlockingBackend: Send + Sync + 'static {
 
 pub trait BlockingResponse: io::Read + Send + Sync + 'static {
     fn status(&self) -> u16;
+    fn content_length(&self) -> Option<u64>;
     fn get_header(&self, header: &str) -> crate::Result<Vec<String>>;
-    fn content_length(&self) -> crate::Result<Option<u64>>;
     fn text(&mut self) -> crate::Result<String>;
     fn bytes(&mut self) -> crate::Result<Vec<u8>>;
 }
