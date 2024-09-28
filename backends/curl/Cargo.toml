@@ -11,8 +11,12 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
+default = ["ssl"]
 async = ["nyquest/async"]
 blocking = ["nyquest/blocking"]
+ssl = ["curl/ssl"]
 
 [dependencies]
 nyquest = { path = "../..", default-features = false }
+curl = { version = "0.4", default-features = false }
+curl-sys = { version = "0.4", default-features = false }

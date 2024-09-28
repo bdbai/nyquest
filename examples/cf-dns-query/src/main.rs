@@ -13,6 +13,7 @@ fn main() {
 
 async fn async_main() -> nyquest::Result<()> {
     let client = nyquest::ClientBuilder::default()
+        .base_url("https://cloudflare-dns.com/")
         .user_agent("curl/7.68.0 nyquest/0")
         .with_header("accept", "application/dns-json")
         .build_async()
@@ -34,7 +35,7 @@ async fn query_address(client: &AsyncClient, domain_name: &str) -> nyquest::Resu
     eprintln!("Querying IP address of {}", domain_name);
     let res = client
         .request(Request::get(format!(
-            "https://cloudflare-dns.com/dns-query?name={}&type=A",
+            "dns-query?name={}&type=A",
             domain_name
         )))
         .await?

@@ -44,10 +44,11 @@ Nyquest is still at POC stage. We want to keep Nyquest itself as a greatest comm
 The following items are planned in MVP:
 
 - [ ] Nyquest blocking API (WIP)
-- [ ] Nyquest async API
+- [ ] Nyquest async API (WIP)
+- [ ] URL manipulation utilities
 - [ ] Backend: WinRT HttpClient (WIP)
     - [ ] Blocking (WIP)
-    - [ ] Async
+    - [ ] Async (WIP)
 - [ ] Backend: libcurl
 - [ ] Test framework for backends
 - [ ] Presets

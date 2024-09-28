@@ -6,7 +6,7 @@ use nyquest::client::{BuildClientResult, ClientOptions};
 use nyquest::{Error as NyquestError, Request, Result as NyquestResult};
 use windows::core::{Interface, HSTRING};
 use windows::Foundation::Uri;
-use windows::Web::Http::{HttpClient, HttpMethod, HttpRequestMessage};
+use windows::Web::Http::{HttpClient, HttpCompletionOption, HttpMethod, HttpRequestMessage};
 use windows::Win32::System::WinRT::IBufferByteAccess;
 
 use crate::client::WinrtClientExt;
@@ -37,7 +37,10 @@ impl WinrtBlockingClient {
         // TODO: cache method
         req_msg.SetRequestUri(uri)?;
         // TODO: content
-        let res = self.client.SendRequestAsync(&req_msg)?.get()?;
+        let res = self
+            .client
+            .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)?
+            .get()?;
         let status = res.StatusCode()?.0 as u16;
         let content_length = match res.Content() {
             Ok(content) => content.Headers()?.ContentLength()?.Value().ok(),

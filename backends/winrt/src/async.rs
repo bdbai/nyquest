@@ -5,7 +5,7 @@ use nyquest::r#async::Body;
 use nyquest::Request;
 use nyquest::{client::ClientOptions, r#async::backend::AsyncClient};
 use windows::Foundation::Uri;
-use windows::Web::Http::{HttpMethod, HttpRequestMessage};
+use windows::Web::Http::{HttpCompletionOption, HttpMethod, HttpRequestMessage};
 use windows::{core::HSTRING, Web::Http::HttpClient};
 
 mod iasync_ext;
@@ -40,7 +40,11 @@ impl WinrtAsyncClient {
         // TODO: cache method
         req_msg.SetRequestUri(uri)?;
         // TODO: content
-        let res = self.client.SendRequestAsync(&req_msg)?.wait()?.await?;
+        let res = self
+            .client
+            .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)?
+            .wait()?
+            .await?;
         let status = res.StatusCode()?.0 as u16;
         let content_length = match res.Content() {
             Ok(content) => content.Headers()?.ContentLength()?.Value().ok(),

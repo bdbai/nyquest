@@ -5,6 +5,4 @@ edition.workspace = true
 
 [dependencies]
 nyquest = { path = "../..", features = ["blocking"] }
-
-[target.'cfg(windows)'.dependencies]
 nyquest-preset-rich = { path = "../../presets/rich", features = ["blocking"] }

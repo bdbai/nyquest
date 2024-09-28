@@ -23,6 +23,8 @@ impl ClientBuilder {
         self
     }
 
+    // TODO: auth
+
     pub fn no_caching(mut self) -> Self {
         self.options.caching_behavior = CachingBehavior::Disabled;
         self
@@ -35,6 +37,11 @@ impl ClientBuilder {
 
     pub fn no_cookies(mut self) -> Self {
         self.options.use_cookies = false;
+        self
+    }
+
+    pub fn max_response_buffer_size(mut self, size: u64) -> Self {
+        self.options.max_response_buffer_size = Some(size);
         self
     }
 }

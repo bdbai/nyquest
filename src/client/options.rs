@@ -15,6 +15,8 @@ pub struct ClientOptions {
     pub use_default_proxy: bool,
     pub use_cookies: bool,
     pub follow_redirects: bool,
+    pub max_response_buffer_size: Option<u64>,
+    // TODO: timeouts
 }
 
 impl Default for ClientOptions {
@@ -27,6 +29,7 @@ impl Default for ClientOptions {
             use_default_proxy: true,
             use_cookies: true,
             follow_redirects: true,
+            max_response_buffer_size: None,
         }
     }
 }
