@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::multi_easy::MultiEasy;
+use crate::url::concat_url;
 
 pub struct CurlEasyBackend;
 
@@ -121,18 +122,7 @@ impl nyquest::blocking::backend::BlockingClient for CurlEasyClient {
     ) -> nyquest::Result<Self::Response> {
         let mut handle = self.get_or_create_handle();
         // FIXME: properly concat base_url and url
-        let url = if req.relative_uri.starts_with("http://")
-            || req.relative_uri.starts_with("https://")
-        {
-            req.relative_uri.clone()
-        } else {
-            format!(
-                "{}/{}",
-                self.options.base_url.as_deref().unwrap_or_default(),
-                req.relative_uri
-            )
-            .into()
-        };
+        let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);
         handle.with_handle(|handle| handle.populate_request(&url, req, &self.options))?;
         // TODO: proper timeouts
         handle.with_handle(|handle| handle.poll_until_response_headers(Duration::from_secs(30)))?;

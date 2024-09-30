@@ -6,8 +6,8 @@ use crate::client::{BuildClientResult, ClientOptions};
 use crate::{Request, Result};
 
 pub(crate) trait AnyAsyncBackend: Send + Sync + 'static {
-    fn create_async_client<'a>(
-        &'a self,
+    fn create_async_client(
+        &self,
         options: ClientOptions,
     ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>>;
 }
@@ -55,8 +55,8 @@ where
     A: super::backend::AsyncBackend,
     A::AsyncClient: super::backend::AsyncClient,
 {
-    fn create_async_client<'a>(
-        &'a self,
+    fn create_async_client(
+        &self,
         options: ClientOptions,
     ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>> {
         Box::pin(async {

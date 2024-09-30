@@ -4,6 +4,7 @@ pub mod r#async;
 pub mod blocking;
 mod error;
 mod multi_easy;
+mod url;
 
 pub fn register() {
     // #[cfg(feature = "async")]
