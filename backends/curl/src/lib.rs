@@ -1,6 +1,6 @@
-#[cfg(all(windows, feature = "async"))]
-pub mod r#async;
-#[cfg(all(windows, feature = "blocking"))]
+//#[cfg(all(feature = "async"))]
+//pub mod r#async;
+#[cfg(all(feature = "blocking"))]
 pub mod blocking;
 mod error;
 mod multi_easy;

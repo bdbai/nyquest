@@ -105,6 +105,19 @@ impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
         let buf = self
             .handle
             .with_handle(|handle| handle.take_response_buffer());
+        #[cfg(feature = "charset")]
+        if let Some((_, charset)) = self
+            .get_header("content-type")?
+            .pop()
+            .unwrap_or_default()
+            .split(';')
+            .filter_map(|s| s.split_once('='))
+            .find(|(k, _)| k.trim().eq_ignore_ascii_case("charset"))
+        {
+            if let Ok(decoded) = iconv_native::decode_lossy(&buf, charset.trim()) {
+                return Ok(decoded);
+            }
+        }
         Ok(String::from_utf8_lossy(&buf).into_owned())
     }
 
