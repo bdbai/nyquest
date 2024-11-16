@@ -1,0 +1,35 @@
+[package]
+name = "nyquest-backend-tests"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[features]
+async = [
+    "nyquest/async",
+    "nyquest-backend-winrt?/async",
+    "nyquest-backend-curl?/async",
+]
+blocking = [
+    "nyquest/blocking",
+    "nyquest-backend-winrt?/blocking",
+    "nyquest-backend-curl?/blocking",
+]
+winrt = ["dep:nyquest-backend-winrt"]
+curl = ["dep:nyquest-backend-curl"]
+
+[dependencies]
+nyquest = { path = "../" }
+hyper = { version = "1", features = ["http1", "client"] }
+tokio = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+hyper-util = { version = "0.1", features = ["full"] }
+
+nyquest-backend-winrt = { path = "../backends/winrt", optional = true }
+nyquest-backend-curl = { path = "../backends/curl", optional = true }

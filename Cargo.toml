@@ -1,5 +1,5 @@
 [workspace]
-members = ["backends/*", "examples/*", "presets/*"]
+members = ["nyquest-backend-tests", "backends/*", "examples/*", "presets/*"]
 resolver = "2"
 
 [workspace.package]

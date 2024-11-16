@@ -27,6 +27,7 @@ nyquest = { path = "../..", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 nyquest-backend-winrt = { path = "../../backends/winrt", default-features = false }
+nyquest-backend-curl = { path = "../../backends/curl", default-features = false }
 
 [target.'cfg(not(windows))'.dependencies]
 nyquest-backend-curl = { path = "../../backends/curl", default-features = false }
