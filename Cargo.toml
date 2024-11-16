@@ -11,6 +11,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/bdbai/nyquest"
 rust-version = "1.78"
 version = "0.0.0-alpha.1"
+exclude = [".vscode/*", ".github/*", "examples/README.md", "rustfmt.toml"]
 
 [workspace.dependencies]
 futures = "0.3"
@@ -27,6 +28,7 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
+exclude.workspace = true
 
 [package.metadata.docs.rs]
 features = ["async", "blocking"]
