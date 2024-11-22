@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use super::{
     any::{AnyAsyncBackend, AnyAsyncClient},
     response::Response,
-    Body,
+    BodyStream,
 };
 use crate::{
     client::{BuildClientError, BuildClientResult},
@@ -29,7 +29,7 @@ impl ClientBuilder {
 }
 
 impl AsyncClient {
-    pub async fn request(&self, req: crate::Request<Body>) -> crate::Result<Response> {
+    pub async fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Response> {
         let res = self.client.request(req).await?;
         Ok(res.into())
     }

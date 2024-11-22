@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use super::{
     any::{AnyBlockingBackend, AnyBlockingClient},
     response::Response,
-    Body,
+    BodyStream,
 };
 use crate::client::{BuildClientError, BuildClientResult, ClientBuilder};
 
@@ -26,7 +26,7 @@ impl ClientBuilder {
 }
 
 impl BlockingClient {
-    pub fn request(&self, req: crate::Request<Body>) -> crate::Result<Response> {
+    pub fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Response> {
         let res = self.client.request(req)?;
         Ok(res.into())
     }

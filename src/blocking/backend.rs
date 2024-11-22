@@ -1,6 +1,6 @@
 use std::io;
 
-use super::Body;
+use super::BodyStream;
 use crate::client::{BuildClientResult, ClientOptions};
 
 pub fn register_blocking_backend(backend: impl BlockingBackend) {
@@ -12,7 +12,7 @@ pub fn register_blocking_backend(backend: impl BlockingBackend) {
 
 pub trait BlockingClient: Clone + Send + Sync + 'static {
     type Response: BlockingResponse;
-    fn request(&self, req: crate::Request<Body>) -> crate::Result<Self::Response>;
+    fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Self::Response>;
 }
 
 pub trait BlockingBackend: Send + Sync + 'static {

@@ -1,16 +1,17 @@
 use std::io;
 
 use nyquest::blocking::backend::{BlockingBackend, BlockingClient, BlockingResponse};
-use nyquest::blocking::Body;
+use nyquest::blocking::Request;
 use nyquest::client::{BuildClientResult, ClientOptions};
-use nyquest::{Error as NyquestError, Request, Result as NyquestResult};
+use nyquest::{Error as NyquestError, Result as NyquestResult};
 use windows::core::{Interface, HSTRING};
 use windows::Foundation::Uri;
-use windows::Web::Http::{HttpClient, HttpCompletionOption, HttpMethod, HttpRequestMessage};
+use windows::Web::Http::{HttpClient, HttpCompletionOption};
 use windows::Win32::System::WinRT::IBufferByteAccess;
 
 use crate::client::WinrtClientExt;
 use crate::error::IntoNyquestResult;
+use crate::request::{create_body, create_request};
 use crate::response::WinrtResponse;
 use crate::uri::build_uri;
 
@@ -31,33 +32,24 @@ impl WinrtBlockingBackend {
 }
 
 impl WinrtBlockingClient {
-    fn send_request(&self, uri: &Uri, req: Request<Body>) -> io::Result<WinrtResponse> {
-        let method = HttpMethod::Create(&HSTRING::from(&*req.method))?;
-        let req_msg = HttpRequestMessage::Create(&method, uri)?;
-        // TODO: cache method
-        req_msg.SetRequestUri(uri)?;
-        // TODO: content
+    fn send_request(&self, uri: &Uri, req: Request) -> io::Result<WinrtResponse> {
+        let req_msg = create_request(uri, &req)?;
+        // TODO: stream
+        if let Some(body) = req.body {
+            let body = create_body(&req_msg, body, &mut |_| unimplemented!())?;
+            req_msg.SetContent(&body)?;
+        }
         let res = self
             .client
             .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)?
             .get()?;
-        let status = res.StatusCode()?.0 as u16;
-        let content_length = match res.Content() {
-            Ok(content) => content.Headers()?.ContentLength()?.Value().ok(),
-            Err(_) => Some(0),
-        };
-        Ok(WinrtResponse {
-            status,
-            content_length,
-            response: res,
-            reader: None,
-        })
+        WinrtResponse::new(res)
     }
 }
 
 impl BlockingClient for WinrtBlockingClient {
     type Response = WinrtResponse;
-    fn request(&self, req: Request<Body>) -> NyquestResult<Self::Response> {
+    fn request(&self, req: Request) -> NyquestResult<Self::Response> {
         let uri =
             build_uri(&self.base_url, &req.relative_uri).map_err(|_| NyquestError::InvalidUrl)?;
         self.send_request(&uri, req).into_nyquest_result()

@@ -12,6 +12,19 @@ pub struct WinrtResponse {
 }
 
 impl WinrtResponse {
+    pub(crate) fn new(res: HttpResponseMessage) -> io::Result<WinrtResponse> {
+        let content_length = match res.Content() {
+            Ok(content) => content.Headers()?.ContentLength()?.Value().ok(),
+            Err(_) => Some(0),
+        };
+        Ok(WinrtResponse {
+            status: res.StatusCode()?.0 as u16,
+            content_length,
+            response: res,
+            reader: None,
+        })
+    }
+
     pub(crate) fn get_header(&self, header: &str) -> io::Result<Vec<String>> {
         let headers = self.response.Headers()?;
         let header_name = HSTRING::from(header);

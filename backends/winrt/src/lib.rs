@@ -2,9 +2,12 @@
 pub mod r#async;
 #[cfg(all(windows, feature = "blocking"))]
 pub mod blocking;
+mod buffer;
 mod client;
 mod error;
+mod request;
 mod response;
+mod string_pair;
 mod uri;
 
 #[cfg(windows)]

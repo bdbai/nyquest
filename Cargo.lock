@@ -469,6 +469,7 @@ dependencies = [
  "futures",
  "nyquest",
  "windows",
+ "windows-core",
 ]
 
 [[package]]

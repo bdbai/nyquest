@@ -5,6 +5,7 @@ mod request;
 pub mod r#async;
 #[cfg(feature = "blocking")]
 pub mod blocking;
+pub mod body;
 pub mod client;
 
 #[cfg(feature = "blocking")]

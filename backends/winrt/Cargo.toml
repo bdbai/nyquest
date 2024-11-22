@@ -15,9 +15,13 @@ exclude.workspace = true
 async = ["nyquest/async", "dep:futures"]
 blocking = ["nyquest/blocking"]
 
+[target.'cfg(windows)'.dependencies]
+windows-core = { version = "0.58", default-features = false }
+
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.58"
 features = [
+    "implement",
     "Foundation_Collections",
     "Storage_Streams",
     "Web_Http_Headers",

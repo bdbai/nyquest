@@ -9,6 +9,7 @@ use curl::{
     MultiError,
 };
 use curl_sys::CURLM_OK;
+use nyquest::blocking::Request;
 
 use crate::error::IntoNyquestResult;
 
@@ -163,7 +164,7 @@ impl MultiEasy {
     pub fn populate_request(
         &mut self,
         url: &str,
-        req: nyquest::Request<nyquest::blocking::Body>,
+        req: Request,
         options: &nyquest::client::ClientOptions,
     ) -> nyquest::Result<()> {
         let easy = self.easy.detach(&mut self.multi).into_nyquest_result()?;

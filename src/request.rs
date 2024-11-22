@@ -1,13 +1,15 @@
 use std::borrow::Cow;
 
-pub struct Request<B> {
+use crate::body::Body;
+
+pub struct Request<S> {
     pub method: Cow<'static, str>,
     pub relative_uri: Cow<'static, str>,
     pub additional_headers: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    pub body: Option<B>,
+    pub body: Option<Body<S>>,
 }
 
-impl<B> Request<B> {
+impl<S> Request<S> {
     pub fn new(
         method: impl Into<Cow<'static, str>>,
         relative_uri: impl Into<Cow<'static, str>>,
@@ -45,7 +47,7 @@ impl<B> Request<B> {
         self
     }
 
-    pub fn with_body(mut self, body: B) -> Self {
+    pub fn with_body(mut self, body: Body<S>) -> Self {
         self.body = Some(body);
         self
     }

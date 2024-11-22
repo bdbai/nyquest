@@ -3,6 +3,8 @@ use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use nyquest::blocking::Request;
+
 use crate::multi_easy::MultiEasy;
 use crate::url::concat_url;
 
@@ -80,7 +82,7 @@ impl CurlEasyClient {
 }
 
 impl io::Read for CurlResponse {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
         todo!()
     }
 }
@@ -129,10 +131,7 @@ impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
 impl nyquest::blocking::backend::BlockingClient for CurlEasyClient {
     type Response = CurlResponse;
 
-    fn request(
-        &self,
-        req: nyquest::Request<nyquest::blocking::Body>,
-    ) -> nyquest::Result<Self::Response> {
+    fn request(&self, req: Request) -> nyquest::Result<Self::Response> {
         let mut handle = self.get_or_create_handle();
         // FIXME: properly concat base_url and url
         let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);

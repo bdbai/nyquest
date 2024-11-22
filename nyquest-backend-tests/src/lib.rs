@@ -60,7 +60,10 @@ fn add_hyper_fixture<Fut: Future<Output = FixtureAssertionResult> + Send + 'stat
     url: impl Into<String>,
     svc_fn: impl Fn(Request<body::Incoming>) -> Fut + Send + Sync + 'static,
 ) -> HyperFixtureHandle {
-    let url = url.into();
+    let mut url: String = url.into();
+    if !url.starts_with('/') {
+        url.insert(0, '/');
+    }
     let svc = Box::new(move |req| {
         let fut = svc_fn(req);
         Box::pin(async move { fut.await }) as _

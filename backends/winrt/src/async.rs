@@ -1,16 +1,18 @@
 use std::io;
 
 use nyquest::r#async::backend::{AsyncBackend, AsyncResponse};
-use nyquest::r#async::Body;
-use nyquest::Request;
+use nyquest::r#async::Request;
 use nyquest::{client::ClientOptions, r#async::backend::AsyncClient};
+use windows::core::Interface;
 use windows::Foundation::Uri;
-use windows::Web::Http::{HttpCompletionOption, HttpMethod, HttpRequestMessage};
+use windows::Web::Http::HttpCompletionOption;
+use windows::Win32::System::WinRT::IBufferByteAccess;
 use windows::{core::HSTRING, Web::Http::HttpClient};
 
 mod iasync_ext;
 mod iasync_like;
 
+use crate::request::{create_body, create_request};
 use crate::response::WinrtResponse;
 use crate::uri::build_uri;
 use crate::{client::WinrtClientExt, error::IntoNyquestResult};
@@ -33,29 +35,19 @@ impl WinrtAsyncBackend {
 }
 
 impl WinrtAsyncClient {
-    async fn send_request(&self, uri: &Uri, req: Request<Body>) -> io::Result<WinrtResponse> {
-        // TODO: share code with blocking
-        let method = HttpMethod::Create(&HSTRING::from(&*req.method))?;
-        let req_msg = HttpRequestMessage::Create(&method, uri)?;
-        // TODO: cache method
-        req_msg.SetRequestUri(uri)?;
-        // TODO: content
+    async fn send_request(&self, uri: &Uri, req: Request) -> io::Result<WinrtResponse> {
+        let req_msg = create_request(uri, &req)?;
+        // TODO: stream
+        if let Some(body) = req.body {
+            let body = create_body(&req_msg, body, &mut |_| unimplemented!())?;
+            req_msg.SetContent(&body)?;
+        }
         let res = self
             .client
             .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)?
             .wait()?
             .await?;
-        let status = res.StatusCode()?.0 as u16;
-        let content_length = match res.Content() {
-            Ok(content) => content.Headers()?.ContentLength()?.Value().ok(),
-            Err(_) => Some(0),
-        };
-        Ok(WinrtResponse {
-            status,
-            content_length,
-            response: res,
-            reader: None,
-        })
+        WinrtResponse::new(res)
     }
 }
 
@@ -88,17 +80,31 @@ impl AsyncResponse for WinrtResponse {
     }
 
     async fn bytes(&mut self) -> nyquest::Result<Vec<u8>> {
-        todo!()
+        let task = self
+            .response
+            .Content()
+            .into_nyquest_result()?
+            .ReadAsBufferAsync()
+            .into_nyquest_result()?;
+        let buf = task
+            .wait()
+            .into_nyquest_result()?
+            .await
+            .into_nyquest_result()?;
+        let len = buf.Length().into_nyquest_result()?;
+        let iba = buf.cast::<IBufferByteAccess>().into_nyquest_result()?;
+        unsafe {
+            let ptr = iba.Buffer().into_nyquest_result()?;
+            let bytes = std::slice::from_raw_parts(ptr, len as usize);
+            Ok(bytes.to_vec())
+        }
     }
 }
 
 impl AsyncClient for WinrtAsyncClient {
     type Response = WinrtResponse;
 
-    async fn request(
-        &self,
-        req: nyquest::Request<nyquest::r#async::Body>,
-    ) -> nyquest::Result<Self::Response> {
+    async fn request(&self, req: Request) -> nyquest::Result<Self::Response> {
         let uri =
             build_uri(&self.base_url, &req.relative_uri).map_err(|_| nyquest::Error::InvalidUrl)?;
         self.send_request(&uri, req).await.into_nyquest_result()
