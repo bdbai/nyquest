@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use nyquest::blocking::Request;
+use nyquest::Error as NyquestError;
 
 use crate::multi_easy::MultiEasy;
 use crate::url::concat_url;
@@ -23,6 +24,8 @@ type OwnedEasyHandleGuard = EasyHandleGuard<Arc<Mutex<Option<MultiEasy>>>>;
 
 pub struct CurlResponse {
     status: u16,
+    content_length: Option<u64>,
+    headers: Vec<(String, String)>,
     handle: OwnedEasyHandleGuard,
 }
 
@@ -91,20 +94,20 @@ impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
     }
 
     fn content_length(&self) -> Option<u64> {
-        todo!()
+        self.content_length
     }
 
-    fn get_header(&self, _header: &str) -> nyquest::Result<Vec<String>> {
-        todo!()
+    fn get_header(&self, header: &str) -> nyquest::Result<Vec<String>> {
+        Ok(self
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case(header))
+            .map(|(_, v)| v.clone())
+            .collect())
     }
 
     fn text(&mut self) -> nyquest::Result<String> {
-        // TODO: proper timeouts
-        self.handle
-            .with_handle(|handle| handle.poll_until_whole_response(Duration::from_secs(30)))?;
-        let buf = self
-            .handle
-            .with_handle(|handle| handle.take_response_buffer());
+        let buf = self.bytes()?;
         #[cfg(feature = "charset")]
         if let Some((_, charset)) = self
             .get_header("content-type")?
@@ -122,7 +125,13 @@ impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
     }
 
     fn bytes(&mut self) -> nyquest::Result<Vec<u8>> {
-        todo!()
+        // TODO: proper timeouts
+        self.handle
+            .with_handle(|handle| handle.poll_until_whole_response(Duration::from_secs(30)))?;
+        let buf = self
+            .handle
+            .with_handle(|handle| handle.take_response_buffer());
+        Ok(buf)
     }
 }
 
@@ -136,9 +145,20 @@ impl nyquest::blocking::backend::BlockingClient for CurlEasyClient {
         handle.with_handle(|handle| handle.populate_request(&url, req, &self.options))?;
         // TODO: proper timeouts
         handle.with_handle(|handle| handle.poll_until_response_headers(Duration::from_secs(30)))?;
-        let status = handle.with_handle(|handle| handle.status())?;
+        let (status, content_length) = handle.with_handle(|handle| {
+            Ok::<_, NyquestError>((handle.status()?, handle.content_length()?))
+        })?;
+        let mut headers_buf = handle.with_handle(|handle| handle.take_response_headers_buffer());
+        let headers = headers_buf
+            .iter_mut()
+            .filter_map(|line| std::str::from_utf8_mut(&mut *line).ok())
+            .filter_map(|line| line.split_once(':'))
+            .map(|(k, v)| (k.into(), v.trim_start().into()))
+            .collect();
         Ok(CurlResponse {
             status,
+            content_length,
+            headers,
             handle: handle.into_owned(),
         })
     }

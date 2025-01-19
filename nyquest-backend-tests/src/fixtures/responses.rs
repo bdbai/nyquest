@@ -2,10 +2,11 @@
 mod tests {
     use http_body_util::BodyExt;
     use hyper::{Method, StatusCode};
-    use nyquest::{
-        blocking::Body as NyquestBlockingBody, r#async::Body as NyquestAsyncBody,
-        Request as NyquestRequest,
-    };
+    #[cfg(feature = "blocking")]
+    use nyquest::blocking::Body as NyquestBlockingBody;
+    #[cfg(feature = "async")]
+    use nyquest::r#async::Body as NyquestAsyncBody;
+    use nyquest::Request as NyquestRequest;
 
     use crate::*;
 

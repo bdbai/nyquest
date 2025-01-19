@@ -32,7 +32,7 @@ use __priv::RegisterBackend;
 pub(crate) static BACKEND: OnceLock<Box<dyn RegisterBackend + Send + Sync>> = OnceLock::new();
 
 pub fn register_backend(backend: impl RegisterBackend + Send + Sync) {
-    if let Err(_) = BACKEND.set(Box::new(backend)) {
+    if BACKEND.set(Box::new(backend)).is_err() {
         panic!("Backend already registered");
     }
 }

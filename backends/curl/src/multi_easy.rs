@@ -1,15 +1,16 @@
+use std::io::{self, ErrorKind};
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use curl::easy::List;
 use curl::{
     easy::Easy,
     multi::{EasyHandle, Multi},
     MultiError,
 };
 use curl_sys::CURLM_OK;
-use nyquest::blocking::Request;
+use nyquest::blocking::{Body, Request};
 
 use crate::error::IntoNyquestResult;
 
@@ -22,14 +23,16 @@ enum MaybeAttachedEasy {
 }
 
 pub(crate) struct MultiEasy {
-    state: Arc<MultiEasyState>,
+    state: Arc<Mutex<MultiEasyState>>,
     easy: MaybeAttachedEasy,
     multi: Multi,
 }
 
+#[derive(Default)]
 struct MultiEasyState {
-    write_started: AtomicBool,
-    response_buffer: Mutex<Vec<u8>>,
+    header_finished: bool,
+    response_headers_buffer: Vec<Vec<u8>>,
+    response_buffer: Vec<u8>,
 }
 
 impl MaybeAttachedEasy {
@@ -89,17 +92,30 @@ impl MaybeAttachedEasy {
 
 impl MultiEasy {
     pub fn new() -> Self {
-        let state = Arc::new(MultiEasyState {
-            write_started: AtomicBool::new(false),
-            response_buffer: Mutex::new(Vec::new()),
-        });
+        let state = Arc::new(Mutex::new(MultiEasyState::default()));
         let mut easy = Easy::new();
+        easy.header_function({
+            let state = state.clone();
+            move |h| {
+                let mut state = state.lock().unwrap();
+                if h == b"\r\n" {
+                    state.header_finished = true;
+                } else if h.contains(&b':') {
+                    state
+                        .response_headers_buffer
+                        .push(h.strip_suffix(b"\r\n").unwrap_or(h).into());
+                }
+                true
+            }
+        })
+        .expect("set curl header function");
         easy.write_function({
             let state = state.clone();
             move |f| {
-                state.write_started.store(true, Ordering::Relaxed);
+                let mut state = state.lock().unwrap();
+                state.header_finished = true;
                 // TODO: handle max response buffer size
-                state.response_buffer.lock().unwrap().extend_from_slice(f);
+                state.response_buffer.extend_from_slice(f);
                 Ok(f.len())
             }
         })
@@ -116,7 +132,7 @@ impl MultiEasy {
     fn poll_until(
         &mut self,
         timeout: Duration,
-        mut cb: impl FnMut(&MultiEasyState) -> CurlResult<ControlFlow<()>>,
+        mut cb: impl FnMut(&Mutex<MultiEasyState>) -> CurlResult<ControlFlow<()>>,
     ) -> nyquest::Result<()> {
         let easy = self.easy.attach(&mut self.multi).into_nyquest_result()?;
         let deadline = Instant::now() + timeout;
@@ -150,9 +166,8 @@ impl MultiEasy {
     }
 
     pub fn poll_until_response_headers(&mut self, timeout: Duration) -> nyquest::Result<()> {
-        self.state.write_started.store(false, Ordering::Relaxed);
         self.poll_until(timeout, |state| {
-            Ok(if state.write_started.load(Ordering::Relaxed) {
+            Ok(if state.lock().unwrap().header_finished {
                 ControlFlow::Break(())
             } else {
                 ControlFlow::Continue(())
@@ -169,6 +184,7 @@ impl MultiEasy {
     ) -> nyquest::Result<()> {
         let easy = self.easy.detach(&mut self.multi).into_nyquest_result()?;
         easy.reset();
+        *self.state.lock().unwrap() = Default::default();
         if let Some(user_agent) = options.user_agent.as_deref() {
             easy.useragent(&user_agent).expect("set curl user agent");
         }
@@ -180,6 +196,39 @@ impl MultiEasy {
             method => easy.custom_request(method),
         }
         .into_nyquest_result()?;
+        let mut headers = List::new();
+        for (name, value) in req.additional_headers {
+            headers
+                .append(&format!("{}: {}", name, value))
+                .into_nyquest_result()?;
+        }
+        match req.body {
+            Some(Body::Bytes {
+                content,
+                content_type,
+            }) => {
+                headers
+                    .append(&format!("content-type: {}", content_type))
+                    .into_nyquest_result()?;
+                easy.post_fields_copy(&*content).into_nyquest_result()?;
+            }
+            Some(Body::Stream(_)) => unimplemented!(),
+            Some(Body::Form { fields }) => {
+                let mut form = curl::easy::Form::new();
+                for (name, value) in fields {
+                    form.part(&name)
+                        .contents(value.as_bytes())
+                        .add()
+                        .map_err(|e| {
+                            nyquest::Error::Io(io::Error::new(ErrorKind::Other, e.to_string()))
+                        })?;
+                }
+                easy.httppost(form).into_nyquest_result()?;
+            }
+            Some(Body::Multipart { parts: _ }) => unimplemented!("mime is not ready in curl crate"),
+            None => {}
+        }
+        easy.http_headers(headers).into_nyquest_result()?;
         Ok(())
     }
 
@@ -192,12 +241,25 @@ impl MultiEasy {
         Ok(status as u16)
     }
 
+    pub fn content_length(&mut self) -> nyquest::Result<Option<u64>> {
+        let content_length = match &mut self.easy {
+            MaybeAttachedEasy::Attached(handle) => handle.content_length_download().ok(),
+            MaybeAttachedEasy::Detached(handle) => handle.content_length_download().ok(),
+            MaybeAttachedEasy::Error(_) => None,
+        };
+        Ok(content_length.map(|len| len as u64))
+    }
+
     pub fn poll_until_whole_response(&mut self, timeout: Duration) -> nyquest::Result<()> {
         self.poll_until(timeout, |_| Ok(ControlFlow::Continue(())))
     }
 
     pub fn take_response_buffer(&mut self) -> Vec<u8> {
-        std::mem::take(&mut *self.state.response_buffer.lock().unwrap())
+        std::mem::take(&mut self.state.lock().unwrap().response_buffer)
+    }
+
+    pub fn take_response_headers_buffer(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.state.lock().unwrap().response_headers_buffer)
     }
 }
 
