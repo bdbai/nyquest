@@ -5,19 +5,19 @@ use super::BodyStream;
 use crate::client::{BuildClientResult, ClientOptions};
 use crate::{Request, Result};
 
-pub(crate) trait AnyAsyncBackend: Send + Sync + 'static {
+pub trait AnyAsyncBackend: Send + Sync + 'static {
     fn create_async_client(
         &self,
         options: ClientOptions,
     ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>>;
 }
 
-pub(crate) trait AnyAsyncClient: Send + Sync + 'static {
+pub trait AnyAsyncClient: Send + Sync + 'static {
     fn clone_boxed(&self) -> Box<dyn AnyAsyncClient>;
     fn request(&self, req: Request<BodyStream>) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>>;
 }
 
-pub(crate) trait AnyAsyncResponse: Send + Sync + 'static {
+pub trait AnyAsyncResponse: Send + Sync + 'static {
     fn status(&self) -> u16;
     fn content_length(&self) -> Option<u64>;
     fn get_header(&self, header: &str) -> Result<Vec<String>>;

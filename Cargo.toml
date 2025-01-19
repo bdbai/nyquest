@@ -38,6 +38,7 @@ async = ["dep:futures-core", "dep:bytes"]
 blocking = []
 
 [dependencies]
+cfg-if = "1"
 once_cell = { version = "1", default-features = false, features = ["std"] }
 thiserror.workspace = true
 futures-core = { version = "0.3", optional = true, features = [

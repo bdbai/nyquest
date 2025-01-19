@@ -173,8 +173,13 @@ impl MultiEasy {
             easy.useragent(&user_agent).expect("set curl user agent");
         }
         easy.url(url).into_nyquest_result()?;
-        // TODO: use proper request types
-        easy.custom_request(&req.method).into_nyquest_result()?;
+        match &*req.method {
+            "GET" | "get" => easy.get(true),
+            "POST" | "post" => easy.post(true),
+            "PUT" | "put" => easy.put(true),
+            method => easy.custom_request(method),
+        }
+        .into_nyquest_result()?;
         Ok(())
     }
 

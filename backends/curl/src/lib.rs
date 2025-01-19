@@ -1,14 +1,14 @@
-//#[cfg(all(feature = "async"))]
-//pub mod r#async;
-#[cfg(all(feature = "blocking"))]
+#[cfg(feature = "async")]
+pub mod r#async;
+#[cfg(feature = "blocking")]
 pub mod blocking;
 mod error;
+#[cfg(feature = "blocking")]
 mod multi_easy;
 mod url;
 
+pub struct CurlBackend;
+
 pub fn register() {
-    // #[cfg(feature = "async")]
-    // nyquest::r#async::backend::register_async_backend(crate::r#async::WinrtAsyncBackend);
-    #[cfg(feature = "blocking")]
-    nyquest::blocking::backend::register_blocking_backend(crate::blocking::CurlEasyBackend);
+    nyquest::register_backend(CurlBackend);
 }

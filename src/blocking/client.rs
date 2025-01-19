@@ -1,14 +1,5 @@
-use std::sync::OnceLock;
-
-use super::{
-    any::{AnyBlockingBackend, AnyBlockingClient},
-    response::Response,
-    BodyStream,
-};
+use super::{any::AnyBlockingClient, response::Response, BodyStream};
 use crate::client::{BuildClientError, BuildClientResult, ClientBuilder};
-
-pub(super) static BLOCKING_BACKEND_INSTANCE: OnceLock<Box<dyn AnyBlockingBackend>> =
-    OnceLock::new();
 
 pub struct BlockingClient {
     pub(super) client: Box<dyn AnyBlockingClient>,
@@ -17,7 +8,7 @@ pub struct BlockingClient {
 impl ClientBuilder {
     pub fn build_blocking(self) -> BuildClientResult<BlockingClient> {
         Ok(BlockingClient {
-            client: BLOCKING_BACKEND_INSTANCE
+            client: crate::register::BACKEND
                 .get()
                 .ok_or(BuildClientError::NoBackend)?
                 .create_blocking_client(self.options)?,

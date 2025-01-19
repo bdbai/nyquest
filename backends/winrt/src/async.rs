@@ -19,15 +19,13 @@ use crate::{client::WinrtClientExt, error::IntoNyquestResult};
 use iasync_ext::IAsyncExt;
 
 #[derive(Clone)]
-pub struct WinrtAsyncBackend;
-#[derive(Clone)]
 pub struct WinrtAsyncClient {
     base_url: Option<HSTRING>,
     client: HttpClient,
 }
 
-impl WinrtAsyncBackend {
-    pub fn create_client(&self, options: ClientOptions) -> io::Result<WinrtAsyncClient> {
+impl crate::WinrtBackend {
+    pub fn create_async_client(&self, options: ClientOptions) -> io::Result<WinrtAsyncClient> {
         let base_url = options.base_url.as_ref().map(|s| HSTRING::from(s));
         let client = HttpClient::create(options)?;
         Ok(WinrtAsyncClient { base_url, client })
@@ -111,13 +109,13 @@ impl AsyncClient for WinrtAsyncClient {
     }
 }
 
-impl AsyncBackend for WinrtAsyncBackend {
+impl AsyncBackend for crate::WinrtBackend {
     type AsyncClient = WinrtAsyncClient;
 
     async fn create_async_client(
         &self,
         options: ClientOptions,
     ) -> nyquest::client::BuildClientResult<Self::AsyncClient> {
-        Ok(self.create_client(options).into_nyquest_result()?)
+        Ok(self.create_async_client(options).into_nyquest_result()?)
     }
 }

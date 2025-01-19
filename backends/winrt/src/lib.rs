@@ -1,6 +1,6 @@
-#[cfg(all(windows, feature = "async"))]
+#[cfg(feature = "async")]
 pub mod r#async;
-#[cfg(all(windows, feature = "blocking"))]
+#[cfg(feature = "blocking")]
 pub mod blocking;
 mod buffer;
 mod client;
@@ -10,10 +10,10 @@ mod response;
 mod string_pair;
 mod uri;
 
+#[derive(Clone)]
+pub struct WinrtBackend;
+
 #[cfg(windows)]
 pub fn register() {
-    #[cfg(feature = "async")]
-    nyquest::r#async::backend::register_async_backend(crate::r#async::WinrtAsyncBackend);
-    #[cfg(feature = "blocking")]
-    nyquest::blocking::backend::register_blocking_backend(crate::blocking::WinrtBlockingBackend);
+    nyquest::register_backend(WinrtBackend);
 }

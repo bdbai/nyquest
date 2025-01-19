@@ -1,16 +1,8 @@
-use std::sync::OnceLock;
-
-use super::{
-    any::{AnyAsyncBackend, AnyAsyncClient},
-    response::Response,
-    BodyStream,
-};
+use super::{any::AnyAsyncClient, response::Response, BodyStream};
 use crate::{
     client::{BuildClientError, BuildClientResult},
     ClientBuilder,
 };
-
-pub(super) static ASYNC_BACKEND_INSTANCE: OnceLock<Box<dyn AnyAsyncBackend>> = OnceLock::new();
 
 pub struct AsyncClient {
     pub(super) client: Box<dyn AnyAsyncClient>,
@@ -19,7 +11,7 @@ pub struct AsyncClient {
 impl ClientBuilder {
     pub async fn build_async(self) -> BuildClientResult<AsyncClient> {
         Ok(AsyncClient {
-            client: ASYNC_BACKEND_INSTANCE
+            client: crate::register::BACKEND
                 .get()
                 .ok_or(BuildClientError::NoBackend)?
                 .create_async_client(self.options)

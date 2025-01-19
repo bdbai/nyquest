@@ -16,15 +16,16 @@ use crate::response::WinrtResponse;
 use crate::uri::build_uri;
 
 #[derive(Clone)]
-pub struct WinrtBlockingBackend;
-#[derive(Clone)]
 pub struct WinrtBlockingClient {
     base_url: Option<HSTRING>,
     client: HttpClient,
 }
 
-impl WinrtBlockingBackend {
-    pub fn create_client(&self, options: ClientOptions) -> io::Result<WinrtBlockingClient> {
+impl crate::WinrtBackend {
+    pub fn create_blocking_client(
+        &self,
+        options: ClientOptions,
+    ) -> io::Result<WinrtBlockingClient> {
         let base_url = options.base_url.as_ref().map(|s| HSTRING::from(s));
         let client = HttpClient::create(options)?;
         Ok(WinrtBlockingClient { base_url, client })
@@ -56,14 +57,14 @@ impl BlockingClient for WinrtBlockingClient {
     }
 }
 
-impl BlockingBackend for WinrtBlockingBackend {
+impl BlockingBackend for crate::WinrtBackend {
     type BlockingClient = WinrtBlockingClient;
 
     fn create_blocking_client(
         &self,
         options: ClientOptions,
     ) -> BuildClientResult<Self::BlockingClient> {
-        Ok(self.create_client(options).into_nyquest_result()?)
+        Ok(self.create_blocking_client(options).into_nyquest_result()?)
     }
 }
 

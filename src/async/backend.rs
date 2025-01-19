@@ -1,16 +1,8 @@
 use std::future::Future;
 
-use super::client::ASYNC_BACKEND_INSTANCE;
 use super::BodyStream;
 use crate::client::{BuildClientResult, ClientOptions};
 use crate::Result;
-
-pub fn register_async_backend(backend: impl AsyncBackend) {
-    ASYNC_BACKEND_INSTANCE
-        .set(Box::new(backend))
-        .map_err(|_| ())
-        .expect("nyquest async backend already registered");
-}
 
 pub trait AsyncClient: Clone + Send + Sync + 'static {
     type Response: AsyncResponse + Send;

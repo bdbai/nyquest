@@ -2,14 +2,14 @@ use crate::client::{BuildClientResult, ClientOptions};
 
 use super::{backend::BlockingResponse, BodyStream};
 
-pub(super) trait AnyBlockingBackend: Send + Sync + 'static {
+pub trait AnyBlockingBackend: Send + Sync + 'static {
     fn create_blocking_client(
         &self,
         options: ClientOptions,
     ) -> BuildClientResult<Box<dyn AnyBlockingClient>>;
 }
 
-pub(super) trait AnyBlockingClient: Send + Sync + 'static {
+pub trait AnyBlockingClient: Send + Sync + 'static {
     fn clone_boxed(&self) -> Box<dyn AnyBlockingClient>;
     fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Box<dyn BlockingResponse>>;
 }

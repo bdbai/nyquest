@@ -8,8 +8,6 @@ use nyquest::blocking::Request;
 use crate::multi_easy::MultiEasy;
 use crate::url::concat_url;
 
-pub struct CurlEasyBackend;
-
 #[derive(Clone)]
 pub struct CurlEasyClient {
     options: Arc<nyquest::client::ClientOptions>,
@@ -146,7 +144,7 @@ impl nyquest::blocking::backend::BlockingClient for CurlEasyClient {
     }
 }
 
-impl nyquest::blocking::backend::BlockingBackend for CurlEasyBackend {
+impl nyquest::blocking::backend::BlockingBackend for crate::CurlBackend {
     type BlockingClient = CurlEasyClient;
 
     fn create_blocking_client(

@@ -3,13 +3,6 @@ use std::io;
 use super::BodyStream;
 use crate::client::{BuildClientResult, ClientOptions};
 
-pub fn register_blocking_backend(backend: impl BlockingBackend) {
-    super::client::BLOCKING_BACKEND_INSTANCE
-        .set(Box::new(backend))
-        .map_err(|_| ())
-        .expect("nyquest blocking backend already registered");
-}
-
 pub trait BlockingClient: Clone + Send + Sync + 'static {
     type Response: BlockingResponse;
     fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Self::Response>;
