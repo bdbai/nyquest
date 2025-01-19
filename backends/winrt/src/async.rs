@@ -9,14 +9,11 @@ use windows::Web::Http::HttpCompletionOption;
 use windows::Win32::System::WinRT::IBufferByteAccess;
 use windows::{core::HSTRING, Web::Http::HttpClient};
 
-mod iasync_ext;
-mod iasync_like;
-
+use crate::async_utils::IAsyncExt;
 use crate::request::{create_body, create_request};
 use crate::response::WinrtResponse;
 use crate::uri::build_uri;
 use crate::{client::WinrtClientExt, error::IntoNyquestResult};
-use iasync_ext::IAsyncExt;
 
 #[derive(Clone)]
 pub struct WinrtAsyncClient {
@@ -26,7 +23,7 @@ pub struct WinrtAsyncClient {
 
 impl crate::WinrtBackend {
     pub fn create_async_client(&self, options: ClientOptions) -> io::Result<WinrtAsyncClient> {
-        let base_url = options.base_url.as_ref().map(|s| HSTRING::from(s));
+        let base_url = options.base_url.as_ref().map(HSTRING::from);
         let client = HttpClient::create(options)?;
         Ok(WinrtAsyncClient { base_url, client })
     }

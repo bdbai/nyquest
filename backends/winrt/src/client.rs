@@ -19,7 +19,7 @@ impl WinrtClientExt for HttpClient {
         for (name, value) in options.default_headers.iter() {
             client
                 .DefaultRequestHeaders()?
-                .Append(&HSTRING::from(&*name), &HSTRING::from(&*value))?;
+                .Append(&HSTRING::from(name), &HSTRING::from(value))?;
         }
         // TODO: options
         Ok(client)

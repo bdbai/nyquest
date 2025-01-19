@@ -31,7 +31,7 @@ pub struct CurlResponse {
 
 impl<S: AsRef<Mutex<Option<MultiEasy>>>> EasyHandleGuard<S> {
     fn with_handle<T>(&mut self, cb: impl FnOnce(&mut MultiEasy) -> T) -> T {
-        cb(&mut self.handle.get_mut().unwrap())
+        cb(self.handle.get_mut().unwrap())
     }
 }
 
@@ -51,9 +51,10 @@ impl<S: AsRef<Mutex<Option<MultiEasy>>>> Drop for EasyHandleGuard<S> {
     fn drop(&mut self) {
         // Safety: the handle is only taken out once which is here, except in `into_owned` where a `ManuallyDrop` is
         // used to suppress our Drop
-        let handle = unsafe { ManuallyDrop::take(&mut self.handle) };
+        let mut handle = unsafe { ManuallyDrop::take(&mut self.handle) };
         let mut slot = self.slot.as_ref().lock().unwrap();
         if slot.is_none() {
+            handle.get_mut().unwrap().reset_state();
             *slot = Some(handle.into_inner().unwrap());
         }
     }
@@ -68,10 +69,11 @@ impl CurlEasyClient {
     }
 
     fn get_or_create_handle(&self) -> EasyHandleGuard<&Arc<Mutex<Option<MultiEasy>>>> {
-        let handle = match {
+        let slot = {
             let mut slot = self.slot.lock().unwrap();
             slot.take()
-        } {
+        };
+        let handle = match slot {
             Some(handle) => handle,
             None => MultiEasy::new(),
         };

@@ -45,14 +45,12 @@ impl nyquest::r#async::backend::AsyncClient for CurlMultiClient {
 impl nyquest::r#async::backend::AsyncBackend for crate::CurlBackend {
     type AsyncClient = CurlMultiClient;
 
-    fn create_async_client(
+    async fn create_async_client(
         &self,
         options: nyquest::client::ClientOptions,
-    ) -> impl Future<Output = BuildClientResult<Self::AsyncClient>> + Send {
-        async {
-            Ok(CurlMultiClient {
-                options: Arc::new(options),
-            })
-        }
+    ) -> BuildClientResult<Self::AsyncClient> {
+        Ok(CurlMultiClient {
+            options: Arc::new(options),
+        })
     }
 }

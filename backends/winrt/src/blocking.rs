@@ -26,7 +26,7 @@ impl crate::WinrtBackend {
         &self,
         options: ClientOptions,
     ) -> io::Result<WinrtBlockingClient> {
-        let base_url = options.base_url.as_ref().map(|s| HSTRING::from(s));
+        let base_url = options.base_url.as_ref().map(HSTRING::from);
         let client = HttpClient::create(options)?;
         Ok(WinrtBlockingClient { base_url, client })
     }

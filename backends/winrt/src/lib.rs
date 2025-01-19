@@ -1,5 +1,7 @@
 #[cfg(feature = "async")]
 pub mod r#async;
+#[cfg(feature = "async")]
+pub(crate) mod async_utils;
 #[cfg(feature = "blocking")]
 pub mod blocking;
 mod buffer;

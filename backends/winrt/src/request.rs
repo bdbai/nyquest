@@ -63,6 +63,7 @@ pub(crate) fn create_body<S>(
             let content = HttpFormUrlEncodedContent::Create(&IIterable::try_from(pairs)?)?;
             content.cast()?
         }
+        Body::LocalFile { .. } => unimplemented!("winrt localfile"),
         Body::Stream(stream) => map_stream(stream)?.cast()?,
         Body::Multipart { parts } => {
             let content = HttpMultipartFormDataContent::new()?;

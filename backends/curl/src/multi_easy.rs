@@ -1,4 +1,5 @@
 use std::io::{self, ErrorKind};
+use std::mem;
 use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -10,9 +11,11 @@ use curl::{
     MultiError,
 };
 use curl_sys::CURLM_OK;
-use nyquest::blocking::{Body, Request};
+use nyquest::blocking::Request;
+use nyquest::body::Body;
 
 use crate::error::IntoNyquestResult;
+use crate::urlencoded::curl_escape;
 
 type CurlResult<T> = Result<T, curl::Error>;
 
@@ -129,6 +132,10 @@ impl MultiEasy {
         }
     }
 
+    pub fn reset_state(&mut self) {
+        *self.state.lock().unwrap() = Default::default();
+    }
+
     fn poll_until(
         &mut self,
         timeout: Duration,
@@ -182,11 +189,12 @@ impl MultiEasy {
         req: Request,
         options: &nyquest::client::ClientOptions,
     ) -> nyquest::Result<()> {
+        self.reset_state();
         let easy = self.easy.detach(&mut self.multi).into_nyquest_result()?;
         easy.reset();
         *self.state.lock().unwrap() = Default::default();
         if let Some(user_agent) = options.user_agent.as_deref() {
-            easy.useragent(&user_agent).expect("set curl user agent");
+            easy.useragent(user_agent).expect("set curl user agent");
         }
         easy.url(url).into_nyquest_result()?;
         match &*req.method {
@@ -210,22 +218,57 @@ impl MultiEasy {
                 headers
                     .append(&format!("content-type: {}", content_type))
                     .into_nyquest_result()?;
-                easy.post_fields_copy(&*content).into_nyquest_result()?;
+                easy.post_fields_copy(&content).into_nyquest_result()?;
             }
+            Some(Body::LocalFile { .. }) => unimplemented!("curl upload file"),
             Some(Body::Stream(_)) => unimplemented!(),
             Some(Body::Form { fields }) => {
-                let mut form = curl::easy::Form::new();
+                let mut buf =
+                    Vec::with_capacity(fields.iter().map(|(k, v)| k.len() + v.len() + 2).sum());
                 for (name, value) in fields {
-                    form.part(&name)
-                        .contents(value.as_bytes())
-                        .add()
-                        .map_err(|e| {
-                            nyquest::Error::Io(io::Error::new(ErrorKind::Other, e.to_string()))
-                        })?;
+                    buf.extend_from_slice(&curl_escape(easy, &*name));
+                    buf.push(b'=');
+                    buf.extend_from_slice(&curl_escape(easy, &*value));
+                    buf.push(b'&');
+                }
+                buf.pop();
+                easy.post_fields_copy(&buf).into_nyquest_result()?;
+            }
+            Some(Body::Multipart { parts }) => {
+                let mut form = curl::easy::Form::new();
+                for mut part in parts {
+                    let mut formpart = form.part(&part.name);
+                    if let Some(filename) = &part.filename {
+                        formpart.filename(&**filename);
+                    }
+                    match &mut part.body {
+                        Body::Bytes {
+                            content,
+                            content_type,
+                        } => {
+                            formpart.buffer(&*part.name, mem::take(content).into_owned());
+                            formpart.content_type(content_type);
+                        }
+                        Body::LocalFile { path, content_type } => {
+                            formpart.file(&*path);
+                            formpart.content_type(content_type);
+                        }
+                        Body::Form { .. } | Body::Multipart { .. } | Body::Stream(_) => {
+                            return Err(nyquest::Error::Io(io::Error::new(
+                                ErrorKind::InvalidInput,
+                                "unsupported body type",
+                            )))
+                        }
+                    }
+                    formpart.add().map_err(|e| {
+                        nyquest::Error::Io(io::Error::new(ErrorKind::Other, e.to_string()))
+                    })?;
                 }
                 easy.httppost(form).into_nyquest_result()?;
+                headers
+                    .append("content-type: application/x-www-form-urlencoded")
+                    .into_nyquest_result()?;
             }
-            Some(Body::Multipart { parts: _ }) => unimplemented!("mime is not ready in curl crate"),
             None => {}
         }
         easy.http_headers(headers).into_nyquest_result()?;

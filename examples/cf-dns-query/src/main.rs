@@ -59,10 +59,10 @@ async fn query_address(client: &AsyncClient, domain_name: &str) -> nyquest::Resu
             return Ok(res);
         }
     };
-    let res = Ok(answer
+    let first_answer = answer
         .into_iter()
         .next()
         .map(|a| a.data.into_owned())
-        .unwrap_or_default());
-    res
+        .unwrap_or_default();
+    Ok(first_answer)
 }

@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, path::PathBuf};
 
 pub enum Body<S> {
     Bytes {
@@ -10,6 +10,10 @@ pub enum Body<S> {
     },
     Multipart {
         parts: Vec<Part<S>>,
+    },
+    LocalFile {
+        path: PathBuf,
+        content_type: Cow<'static, str>,
     },
     Stream(S),
 }

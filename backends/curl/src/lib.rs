@@ -6,6 +6,7 @@ mod error;
 #[cfg(feature = "blocking")]
 mod multi_easy;
 mod url;
+pub(crate) mod urlencoded;
 
 pub struct CurlBackend;
 
