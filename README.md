@@ -45,13 +45,15 @@ The following items are planned in MVP:
 
 - [x] Nyquest blocking API (WIP)
 - [x] Nyquest async API (WIP)
+- [ ] Streaming support
+- [ ] Direct file upload/download support
 - [ ] URL manipulation utilities
 - [x] Backend: WinRT HttpClient (WIP)
     - [x] Blocking (WIP)
     - [x] Async (WIP)
 - [x] Backend: libcurl (WIP)
     - [x] Blocking (WIP)
-    - [ ] Async (WIP)
+    - [x] Async (WIP)
 - [x] Test framework for backends (WIP)
 - [x] Presets (WIP)
 - [ ] Documentation
@@ -61,6 +63,7 @@ Future work may include:
 - [ ] Middleware infrastructure
 - [ ] Telemetry
 - [ ] Backend: NSURLSession (help wanted!)
+- [ ] Backend: Plugin FFI via libloading
 - [ ] Backend: Mock
 - [ ] Backend: WASM fetch
 - [ ] Backend: WinHTTP
@@ -72,3 +75,5 @@ Future work may include:
 ## License
 
 Licensed under Apache License, Version 2.0 or MIT license, at your option.
+
+Backend implementations and their adapter crates may have different licenses. Please refer to their respective READMEs for details.

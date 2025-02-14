@@ -45,4 +45,6 @@ thiserror.workspace = true
 futures-core = { version = "0.3", optional = true, features = [
     "alloc",
 ], default-features = false }
-futures-io = { version = "0.3", optional = true, default-features = false }
+futures-io = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+] }
