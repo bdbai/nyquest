@@ -1,44 +1,98 @@
 use std::{future::Future, sync::Arc};
 
+use curl::easy::Easy;
 use nyquest::{client::BuildClientResult, r#async::backend::AsyncResponse};
 
+use crate::url::concat_url;
+
+mod r#loop;
+
+pub struct CurlMultiClientInner {
+    options: nyquest::client::ClientOptions,
+    loop_manager: r#loop::LoopManager,
+}
 #[derive(Clone)]
 pub struct CurlMultiClient {
-    options: Arc<nyquest::client::ClientOptions>,
+    inner: Arc<CurlMultiClientInner>,
 }
 
-pub struct CurlAsyncResponse {}
+pub struct CurlAsyncResponse {
+    status: u16,
+    content_length: Option<u64>,
+    headers: Vec<(String, String)>,
+    handle: r#loop::RequestHandle,
+}
 
 impl AsyncResponse for CurlAsyncResponse {
     fn status(&self) -> u16 {
-        todo!()
+        self.status
     }
 
     fn content_length(&self) -> Option<u64> {
-        todo!()
+        self.content_length
     }
 
     fn get_header(&self, header: &str) -> nyquest::Result<Vec<String>> {
-        todo!()
+        Ok(self
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case(header))
+            .map(|(_, v)| v.clone())
+            .collect())
     }
 
     async fn text(&mut self) -> nyquest::Result<String> {
-        todo!()
+        let buf = self.bytes().await?;
+        #[cfg(feature = "charset")]
+        if let Some((_, charset)) = self
+            .get_header("content-type")?
+            .pop()
+            .unwrap_or_default()
+            .split(';')
+            .filter_map(|s| s.split_once('='))
+            .find(|(k, _)| k.trim().eq_ignore_ascii_case("charset"))
+        {
+            if let Ok(decoded) = iconv_native::decode_lossy(&buf, charset.trim()) {
+                return Ok(decoded);
+            }
+        }
+        Ok(String::from_utf8_lossy(&buf).into_owned())
     }
 
     async fn bytes(&mut self) -> nyquest::Result<Vec<u8>> {
-        todo!()
+        let mut buf = vec![];
+        while let Some(()) = self
+            .handle
+            .poll_bytes(|data| {
+                buf.extend_from_slice(data);
+                Ok(())
+            })
+            .await?
+        {}
+        Ok(buf)
     }
 }
 
 impl nyquest::r#async::backend::AsyncClient for CurlMultiClient {
     type Response = CurlAsyncResponse;
 
-    async fn request(
-        &self,
-        _req: nyquest::Request<nyquest::r#async::BodyStream>,
-    ) -> nyquest::Result<Self::Response> {
-        todo!()
+    async fn request(&self, req: nyquest::r#async::Request) -> nyquest::Result<Self::Response> {
+        let req = loop {
+            // TODO: CURLOPT_SHARE
+            let mut easy = Easy::new();
+            easy.ssl_verify_peer(false);
+            easy.proxy_ssl_verify_peer(false);
+            // FIXME: properly concat base_url and url
+            let url = concat_url(self.inner.options.base_url.as_deref(), &req.relative_uri);
+            crate::request::populate_request(&url, &req, &self.inner.options, &mut easy)?;
+            let req = self.inner.loop_manager.start_request(easy).await?;
+            match req {
+                r#loop::MaybeStartedRequest::Gone => {}
+                r#loop::MaybeStartedRequest::Started(req) => break req,
+            }
+        };
+        let res = req.wait_for_response().await?;
+        Ok(res)
     }
 }
 
@@ -50,7 +104,10 @@ impl nyquest::r#async::backend::AsyncBackend for crate::CurlBackend {
         options: nyquest::client::ClientOptions,
     ) -> BuildClientResult<Self::AsyncClient> {
         Ok(CurlMultiClient {
-            options: Arc::new(options),
+            inner: Arc::new(CurlMultiClientInner {
+                options,
+                loop_manager: r#loop::LoopManager::new().await,
+            }),
         })
     }
 }

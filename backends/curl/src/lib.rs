@@ -3,13 +3,13 @@ pub mod r#async;
 #[cfg(feature = "blocking")]
 pub mod blocking;
 mod error;
-#[cfg(feature = "blocking")]
-mod multi_easy;
+mod request;
 mod url;
-pub(crate) mod urlencoded;
+mod urlencoded;
 
 pub struct CurlBackend;
 
 pub fn register() {
+    curl::init();
     nyquest::register_backend(CurlBackend);
 }

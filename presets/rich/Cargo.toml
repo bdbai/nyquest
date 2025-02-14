@@ -22,6 +22,11 @@ blocking = [
     "nyquest-backend-curl/blocking",
     "nyquest-backend-winrt/blocking",
 ]
+multipart = [
+    "nyquest/multipart",
+    "nyquest-backend-curl/multipart",
+    "nyquest-backend-winrt/multipart",
+]
 
 [dependencies]
 nyquest = { path = "../..", default-features = false }

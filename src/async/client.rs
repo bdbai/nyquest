@@ -1,4 +1,4 @@
-use super::{any::AnyAsyncClient, response::Response, BodyStream};
+use super::{any::AnyAsyncClient, response::Response};
 use crate::{
     client::{BuildClientError, BuildClientResult},
     ClientBuilder,
@@ -21,7 +21,7 @@ impl ClientBuilder {
 }
 
 impl AsyncClient {
-    pub async fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Response> {
+    pub async fn request(&self, req: super::Request) -> crate::Result<Response> {
         let res = self.client.request(req).await?;
         Ok(res.into())
     }

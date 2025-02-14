@@ -1,14 +1,13 @@
+use std::borrow::Cow;
 use std::io;
 
-use nyquest::body::Body;
-use nyquest::Request;
+use nyquest::{Body, Request};
 use windows::Foundation::Collections::{IIterable, IKeyValuePair};
 use windows::Foundation::{IReference, PropertyValue, Uri};
 use windows::Storage::Streams::IBuffer;
 use windows::Web::Http::Headers::HttpMediaTypeHeaderValue;
 use windows::Web::Http::{
-    HttpBufferContent, HttpFormUrlEncodedContent, HttpMethod, HttpMultipartFormDataContent,
-    HttpRequestMessage, IHttpContent,
+    HttpBufferContent, HttpFormUrlEncodedContent, HttpMethod, HttpRequestMessage, IHttpContent,
 };
 use windows_core::{Interface, HSTRING};
 
@@ -29,8 +28,22 @@ pub(crate) fn create_request<B>(uri: &Uri, req: &Request<B>) -> io::Result<HttpR
     Ok(req_msg)
 }
 
+fn create_content_from_bytes(
+    content: Cow<'static, [u8]>,
+    content_type: Cow<'static, str>,
+) -> io::Result<IHttpContent> {
+    let content_len = content.len();
+    let content =
+        HttpBufferContent::CreateFromBuffer(&IBuffer::from(VecBuffer::new(content.into_owned())))?;
+    let content_type = HttpMediaTypeHeaderValue::Create(&HSTRING::from(&*content_type))?;
+    let headers = content.Headers()?;
+    headers.SetContentType(&content_type)?;
+    let len = PropertyValue::CreateUInt64(content_len as u64)?;
+    headers.SetContentLength(&len.cast::<IReference<u64>>()?)?;
+    Ok(content.cast()?)
+}
+
 pub(crate) fn create_body<S>(
-    req_msg: &HttpRequestMessage,
     body: Body<S>,
     map_stream: &mut impl FnMut(S) -> io::Result<IHttpContent>,
 ) -> io::Result<IHttpContent> {
@@ -38,18 +51,7 @@ pub(crate) fn create_body<S>(
         Body::Bytes {
             content,
             content_type,
-        } => {
-            let content_len = content.len();
-            let content = HttpBufferContent::CreateFromBuffer(&IBuffer::from(VecBuffer::new(
-                content.into_owned(),
-            )))?;
-            let content_type = HttpMediaTypeHeaderValue::Create(&HSTRING::from(&*content_type))?;
-            let headers = content.Headers()?;
-            headers.SetContentType(&content_type)?;
-            let len = PropertyValue::CreateUInt64(content_len as u64)?;
-            headers.SetContentLength(&len.cast::<IReference<u64>>()?)?;
-            content.cast()?
-        }
+        } => create_content_from_bytes(content, content_type)?,
         Body::Form { fields } => {
             let pairs: Vec<_> = fields
                 .into_iter()
@@ -63,12 +65,18 @@ pub(crate) fn create_body<S>(
             let content = HttpFormUrlEncodedContent::Create(&IIterable::try_from(pairs)?)?;
             content.cast()?
         }
-        Body::LocalFile { .. } => unimplemented!("winrt localfile"),
-        Body::Stream(stream) => map_stream(stream)?.cast()?,
+        #[cfg(feature = "multipart")]
         Body::Multipart { parts } => {
-            let content = HttpMultipartFormDataContent::new()?;
+            use nyquest::PartBody;
+
+            let content = windows::Web::Http::HttpMultipartFormDataContent::new()?;
             for part in parts {
-                let part_content = create_body(req_msg, part.body, &mut *map_stream)?;
+                let part_content = match part.body {
+                    PartBody::Bytes { content } => {
+                        create_content_from_bytes(content, part.content_type)?
+                    }
+                    PartBody::Stream(stream) => map_stream(stream.stream)?,
+                };
                 let headers = part_content.Headers()?;
                 for (name, value) in part.headers {
                     headers.Append(&HSTRING::from(&*name), &HSTRING::from(&*value))?;
@@ -87,5 +95,6 @@ pub(crate) fn create_body<S>(
             }
             content.cast()?
         }
+        Body::Stream(stream) => map_stream(stream.stream)?,
     })
 }

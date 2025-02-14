@@ -1,4 +1,4 @@
-use super::{any::AnyBlockingClient, response::Response, BodyStream};
+use super::{any::AnyBlockingClient, response::Response, Request};
 use crate::client::{BuildClientError, BuildClientResult, ClientBuilder};
 
 pub struct BlockingClient {
@@ -17,7 +17,7 @@ impl ClientBuilder {
 }
 
 impl BlockingClient {
-    pub fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Response> {
+    pub fn request(&self, req: Request) -> crate::Result<Response> {
         let res = self.client.request(req)?;
         Ok(res.into())
     }

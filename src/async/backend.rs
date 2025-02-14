@@ -1,15 +1,12 @@
 use std::future::Future;
 
-use super::BodyStream;
+use super::Request as AsyncRequest;
 use crate::client::{BuildClientResult, ClientOptions};
 use crate::Result;
 
 pub trait AsyncClient: Clone + Send + Sync + 'static {
     type Response: AsyncResponse + Send;
-    fn request(
-        &self,
-        req: crate::Request<BodyStream>,
-    ) -> impl Future<Output = Result<Self::Response>> + Send;
+    fn request(&self, req: AsyncRequest) -> impl Future<Output = Result<Self::Response>> + Send;
     // TODO: fn request_with_progress
     // TODO: fn request_file
 }

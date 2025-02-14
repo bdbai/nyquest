@@ -1,6 +1,6 @@
+use super::backend::BlockingResponse;
+use super::Request;
 use crate::client::{BuildClientResult, ClientOptions};
-
-use super::{backend::BlockingResponse, BodyStream};
 
 pub trait AnyBlockingBackend: Send + Sync + 'static {
     fn create_blocking_client(
@@ -11,7 +11,7 @@ pub trait AnyBlockingBackend: Send + Sync + 'static {
 
 pub trait AnyBlockingClient: Send + Sync + 'static {
     fn clone_boxed(&self) -> Box<dyn AnyBlockingClient>;
-    fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Box<dyn BlockingResponse>>;
+    fn request(&self, req: Request) -> crate::Result<Box<dyn BlockingResponse>>;
 }
 
 impl<B> AnyBlockingBackend for B
@@ -33,7 +33,7 @@ where
     fn clone_boxed(&self) -> Box<dyn AnyBlockingClient> {
         Box::new(self.clone())
     }
-    fn request(&self, req: crate::Request<BodyStream>) -> crate::Result<Box<dyn BlockingResponse>> {
+    fn request(&self, req: Request) -> crate::Result<Box<dyn BlockingResponse>> {
         Ok(Box::new(self.request(req)?))
     }
 }

@@ -1,10 +1,21 @@
-use std::borrow::Cow;
+use futures_io::{AsyncRead, AsyncSeek};
 
-use bytes::Bytes;
-use futures_core::stream::BoxStream;
+pub trait BodyStream: AsyncRead + AsyncSeek + Send {}
 
-pub struct BodyStream {
-    pub reader: BoxStream<'static, crate::Result<Bytes>>,
-    pub size: Option<u64>,
-    pub content_type: Cow<'static, str>,
+pub(super) type BoxedStream = Box<dyn BodyStream>;
+pub type Body = crate::body::Body<BoxedStream>;
+
+impl Body {
+    #[doc(hidden)]
+    pub fn stream<S: AsyncRead + AsyncSeek + Send + 'static>(
+        stream: S,
+        content_length: Option<u64>,
+    ) -> Self {
+        crate::body::Body::Stream(crate::body::StreamReader {
+            stream: Box::new(stream),
+            content_length,
+        })
+    }
 }
+
+impl<S: AsyncRead + AsyncSeek + Send + ?Sized> BodyStream for S {}

@@ -433,9 +433,9 @@ dependencies = [
 name = "nyquest"
 version = "0.0.0-alpha.1"
 dependencies = [
- "bytes",
  "cfg-if",
  "futures-core",
+ "futures-io",
  "once_cell",
  "thiserror",
 ]
@@ -446,8 +446,12 @@ version = "0.0.0-alpha.1"
 dependencies = [
  "curl",
  "curl-sys",
+ "futures-channel",
+ "futures-util",
  "iconv-native",
+ "mio",
  "nyquest",
+ "slab",
 ]
 
 [[package]]

@@ -37,7 +37,7 @@ impl WinrtBlockingClient {
         let req_msg = create_request(uri, &req)?;
         // TODO: stream
         if let Some(body) = req.body {
-            let body = create_body(&req_msg, body, &mut |_| unimplemented!())?;
+            let body = create_body(body, &mut |_| unimplemented!())?;
             req_msg.SetContent(&body)?;
         }
         let res = self

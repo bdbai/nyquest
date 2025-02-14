@@ -1,5 +1,4 @@
-use std::io::{self, ErrorKind};
-use std::mem;
+use std::io::ErrorKind;
 use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -12,7 +11,7 @@ use curl::{
 };
 use curl_sys::CURLM_OK;
 use nyquest::blocking::Request;
-use nyquest::body::Body;
+use nyquest::Body;
 
 use crate::error::IntoNyquestResult;
 use crate::urlencoded::curl_escape;
@@ -33,6 +32,7 @@ pub(crate) struct MultiEasy {
 
 #[derive(Default)]
 struct MultiEasyState {
+    status_code: u16,
     header_finished: bool,
     response_headers_buffer: Vec<Vec<u8>>,
     response_buffer: Vec<u8>,
@@ -97,16 +97,30 @@ impl MultiEasy {
     pub fn new() -> Self {
         let state = Arc::new(Mutex::new(MultiEasyState::default()));
         let mut easy = Easy::new();
+        easy.ssl_verify_peer(false);
+        easy.proxy_ssl_verify_peer(false);
         easy.header_function({
             let state = state.clone();
             move |h| {
                 let mut state = state.lock().unwrap();
                 if h == b"\r\n" {
-                    state.header_finished = true;
+                    let is_redirect = [301, 302, 303, 307, 308].contains(&state.status_code);
+                    if !is_redirect {
+                        state.header_finished = true;
+                    }
                 } else if h.contains(&b':') {
                     state
                         .response_headers_buffer
                         .push(h.strip_suffix(b"\r\n").unwrap_or(h).into());
+                } else {
+                    if let Some(status) = h
+                        .split(u8::is_ascii_whitespace)
+                        .nth(1)
+                        .and_then(|s| std::str::from_utf8(s).ok())
+                        .and_then(|s| s.parse().ok())
+                    {
+                        state.status_code = status;
+                    }
                 }
                 true
             }
@@ -193,95 +207,11 @@ impl MultiEasy {
         let easy = self.easy.detach(&mut self.multi).into_nyquest_result()?;
         easy.reset();
         *self.state.lock().unwrap() = Default::default();
-        if let Some(user_agent) = options.user_agent.as_deref() {
-            easy.useragent(user_agent).expect("set curl user agent");
-        }
-        easy.url(url).into_nyquest_result()?;
-        match &*req.method {
-            "GET" | "get" => easy.get(true),
-            "POST" | "post" => easy.post(true),
-            "PUT" | "put" => easy.put(true),
-            method => easy.custom_request(method),
-        }
-        .into_nyquest_result()?;
-        let mut headers = List::new();
-        for (name, value) in req.additional_headers {
-            headers
-                .append(&format!("{}: {}", name, value))
-                .into_nyquest_result()?;
-        }
-        match req.body {
-            Some(Body::Bytes {
-                content,
-                content_type,
-            }) => {
-                headers
-                    .append(&format!("content-type: {}", content_type))
-                    .into_nyquest_result()?;
-                easy.post_fields_copy(&content).into_nyquest_result()?;
-            }
-            Some(Body::LocalFile { .. }) => unimplemented!("curl upload file"),
-            Some(Body::Stream(_)) => unimplemented!(),
-            Some(Body::Form { fields }) => {
-                let mut buf =
-                    Vec::with_capacity(fields.iter().map(|(k, v)| k.len() + v.len() + 2).sum());
-                for (name, value) in fields {
-                    buf.extend_from_slice(&curl_escape(easy, &*name));
-                    buf.push(b'=');
-                    buf.extend_from_slice(&curl_escape(easy, &*value));
-                    buf.push(b'&');
-                }
-                buf.pop();
-                easy.post_fields_copy(&buf).into_nyquest_result()?;
-            }
-            Some(Body::Multipart { parts }) => {
-                let mut form = curl::easy::Form::new();
-                for mut part in parts {
-                    let mut formpart = form.part(&part.name);
-                    if let Some(filename) = &part.filename {
-                        formpart.filename(&**filename);
-                    }
-                    match &mut part.body {
-                        Body::Bytes {
-                            content,
-                            content_type,
-                        } => {
-                            formpart.buffer(&*part.name, mem::take(content).into_owned());
-                            formpart.content_type(content_type);
-                        }
-                        Body::LocalFile { path, content_type } => {
-                            formpart.file(&*path);
-                            formpart.content_type(content_type);
-                        }
-                        Body::Form { .. } | Body::Multipart { .. } | Body::Stream(_) => {
-                            return Err(nyquest::Error::Io(io::Error::new(
-                                ErrorKind::InvalidInput,
-                                "unsupported body type",
-                            )))
-                        }
-                    }
-                    formpart.add().map_err(|e| {
-                        nyquest::Error::Io(io::Error::new(ErrorKind::Other, e.to_string()))
-                    })?;
-                }
-                easy.httppost(form).into_nyquest_result()?;
-                headers
-                    .append("content-type: application/x-www-form-urlencoded")
-                    .into_nyquest_result()?;
-            }
-            None => {}
-        }
-        easy.http_headers(headers).into_nyquest_result()?;
-        Ok(())
+        crate::request::populate_request(url, &req, options, easy)
     }
 
     pub fn status(&mut self) -> nyquest::Result<u16> {
-        let status = match &mut self.easy {
-            MaybeAttachedEasy::Attached(handle) => handle.response_code().into_nyquest_result(),
-            MaybeAttachedEasy::Detached(handle) => handle.response_code().into_nyquest_result(),
-            MaybeAttachedEasy::Error(err) => Err(err.clone()).into_nyquest_result(),
-        }?;
-        Ok(status as u16)
+        Ok(self.state.lock().unwrap().status_code)
     }
 
     pub fn content_length(&mut self) -> nyquest::Result<Option<u64>> {

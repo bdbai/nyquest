@@ -34,8 +34,9 @@ exclude.workspace = true
 features = ["async", "blocking"]
 
 [features]
-async = ["dep:futures-core", "dep:bytes"]
+async = ["dep:futures-core", "dep:futures-io"]
 blocking = []
+multipart = []
 
 [dependencies]
 cfg-if = "1"
@@ -44,4 +45,4 @@ thiserror.workspace = true
 futures-core = { version = "0.3", optional = true, features = [
     "alloc",
 ], default-features = false }
-bytes = { version = "1", optional = true }
+futures-io = { version = "0.3", optional = true, default-features = false }

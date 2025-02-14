@@ -1,4 +1,4 @@
-use nyquest::Request;
+use nyquest::blocking::Request;
 
 fn main() {
     nyquest_preset_rich::register();

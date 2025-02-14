@@ -6,8 +6,10 @@ use std::time::Duration;
 use nyquest::blocking::Request;
 use nyquest::Error as NyquestError;
 
-use crate::multi_easy::MultiEasy;
+mod multi_easy;
+
 use crate::url::concat_url;
+use multi_easy::MultiEasy;
 
 #[derive(Clone)]
 pub struct CurlEasyClient {

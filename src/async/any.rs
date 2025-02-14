@@ -1,9 +1,9 @@
 use futures_core::future::BoxFuture;
 
 use super::backend::AsyncResponse;
-use super::BodyStream;
+use super::Request;
 use crate::client::{BuildClientResult, ClientOptions};
-use crate::{Request, Result};
+use crate::Result;
 
 pub trait AnyAsyncBackend: Send + Sync + 'static {
     fn create_async_client(
@@ -14,7 +14,7 @@ pub trait AnyAsyncBackend: Send + Sync + 'static {
 
 pub trait AnyAsyncClient: Send + Sync + 'static {
     fn clone_boxed(&self) -> Box<dyn AnyAsyncClient>;
-    fn request(&self, req: Request<BodyStream>) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>>;
+    fn request(&self, req: Request) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>>;
 }
 
 pub trait AnyAsyncResponse: Send + Sync + 'static {
@@ -75,7 +75,7 @@ where
         Box::new(self.clone())
     }
 
-    fn request(&self, req: Request<BodyStream>) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>> {
+    fn request(&self, req: Request) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>> {
         Box::pin(async {
             self.request(req)
                 .await
