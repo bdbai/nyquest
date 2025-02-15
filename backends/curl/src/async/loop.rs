@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 use std::future::poll_fn;
-use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
-use std::task::{Poll, Waker};
+use std::task::Poll;
 use std::time::Duration;
 use std::{io, thread};
 
@@ -24,7 +23,7 @@ pub(super) struct RequestHandle {
 #[derive(Debug, Default)]
 struct SharedRequestContextState {
     result: Option<Result<(), curl::Error>>,
-    status_code: u16,
+    temp_status_code: u16,
     is_established: bool,
     header_finished: bool,
     response_headers_buffer: Vec<Vec<u8>>,
@@ -140,7 +139,7 @@ struct LoopManagerShared {
 }
 
 pub(super) struct LoopManager {
-    inner: FuturesMutex<LoopManagerShared>,
+    inner: FuturesMutex<Option<LoopManagerShared>>,
 }
 
 impl LoopManagerShared {
@@ -162,12 +161,13 @@ impl LoopManagerShared {
     async fn start_request(
         self,
         easy: Easy,
-    ) -> Result<Result<RequestHandle, Option<Easy>>, MultiError> {
+    ) -> Result<Result<RequestHandle, (Option<Easy>, Self)>, MultiError> {
         let (tx, rx) = oneshot::channel();
         {
             let mut inner = self.inner.lock().unwrap();
             if let Err(_) = inner.multi_waker.wakeup() {
-                return Ok(Err(Some(easy)));
+                drop(inner);
+                return Ok(Err((Some(easy), self)));
             }
             let request = LoopTask::ConstructHandle(easy, tx);
             inner.tasks.push_back(request);
@@ -175,7 +175,7 @@ impl LoopManagerShared {
         let shared_context = match rx.await {
             Ok(Ok(ctx)) => ctx,
             Ok(Err(e)) => return Err(e),
-            Err(_) => return Ok(Err(None)),
+            Err(_) => return Ok(Err((None, self))),
         };
         Ok(Ok(RequestHandle {
             shared_context,
@@ -184,15 +184,23 @@ impl LoopManagerShared {
     }
 }
 
+impl PartialEq for LoopManagerShared {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Eq for LoopManagerShared {}
+
 pub(super) enum MaybeStartedRequest {
     Started(RequestHandle),
     Gone,
 }
 
 impl LoopManager {
-    pub(super) async fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            inner: FuturesMutex::new(LoopManagerShared::start_loop().await),
+            inner: FuturesMutex::new(None),
         }
     }
     pub(super) async fn start_request(
@@ -200,14 +208,22 @@ impl LoopManager {
         mut easy: Easy,
     ) -> nyquest::Result<MaybeStartedRequest> {
         loop {
-            let inner = self.inner.lock().await.clone();
-            let backup_easy = match inner.start_request(easy).await.into_nyquest_result()? {
-                Ok(res) => return Ok(MaybeStartedRequest::Started(res)),
-                Err(backup_easy) => backup_easy,
+            let inner = match &mut *self.inner.lock().await {
+                Some(inner) => inner.clone(),
+                manager @ None => manager
+                    .insert(LoopManagerShared::start_loop().await)
+                    .clone(),
             };
+            let (backup_easy, inner) =
+                match inner.start_request(easy).await.into_nyquest_result()? {
+                    Ok(res) => return Ok(MaybeStartedRequest::Started(res)),
+                    Err(res) => res,
+                };
             {
-                let mut inner = self.inner.lock().await;
-                *inner = LoopManagerShared::start_loop().await;
+                let mut new_manager = self.inner.lock().await;
+                if *new_manager == Some(inner) {
+                    *new_manager = Some(LoopManagerShared::start_loop().await);
+                }
             }
             match backup_easy {
                 Some(e) => easy = e,
@@ -221,7 +237,9 @@ impl LoopManager {
 
 impl Drop for LoopManager {
     fn drop(&mut self) {
-        self.inner.get_mut().dispatch_task(LoopTask::Shutdown);
+        if let Some(inner) = self.inner.get_mut() {
+            inner.dispatch_task(LoopTask::Shutdown);
+        }
     }
 }
 
@@ -261,144 +279,142 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) -> () {
     }
     // TODO: store ctx in Easy2Handle
     let mut slab = Slab::<(EasyHandle, Arc<SharedRequestContext>)>::new();
+    let mut tasks = Default::default();
+    let mut last_call = false;
     loop {
         let poll_res = multi.poll(&mut [], Duration::from_secs(120));
-        if let Ok(mut manager) = request_manager.inner.lock() {
-            for mut request in manager.tasks.drain(..) {
-                loop {
-                    match request {
-                        LoopTask::ConstructHandle(mut easy, tx) => {
-                            let slab_entry = slab.vacant_entry();
-                            let id = slab_entry.key();
-                            let ctx = Arc::new(SharedRequestContext::new(id));
-                            let pause = EasyPause::new(easy.raw());
-                            easy.header_function({
-                                let ctx = ctx.clone();
-                                move |h| {
-                                    let mut state = ctx.state.lock().unwrap();
-                                    if h == b"\r\n" {
-                                        let is_redirect =
-                                            [301, 302, 303, 307, 308].contains(&state.status_code);
-                                        // TODO: handle direct
-                                        if !is_redirect && !state.is_established {
-                                            state.header_finished = true;
-                                            unsafe {
-                                                pause.pause();
-                                            }
+        std::mem::swap(&mut request_manager.inner.lock().unwrap().tasks, &mut tasks);
+        for mut task in tasks.drain(..) {
+            loop {
+                match task {
+                    LoopTask::ConstructHandle(mut easy, tx) => {
+                        let slab_entry = slab.vacant_entry();
+                        let id = slab_entry.key();
+                        let ctx = Arc::new(SharedRequestContext::new(id));
+                        let pause = EasyPause::new(easy.raw());
+                        easy.header_function({
+                            let ctx = ctx.clone();
+                            move |h| {
+                                let mut state = ctx.state.lock().unwrap();
+                                if h == b"\r\n" {
+                                    let is_redirect =
+                                        [301, 302, 303, 307, 308].contains(&state.temp_status_code);
+                                    // TODO: handle direct
+                                    if !is_redirect && !state.is_established {
+                                        state.header_finished = true;
+                                        unsafe {
+                                            pause.pause();
                                         }
-                                    } else if h.contains(&b':') {
-                                        state
-                                            .response_headers_buffer
-                                            .push(h.strip_suffix(b"\r\n").unwrap_or(h).into());
-                                    } else {
-                                        let mut status_components =
-                                            h.splitn(3, u8::is_ascii_whitespace).skip(1);
-
-                                        if let Some(status) = status_components
-                                            .next()
-                                            .and_then(|s| std::str::from_utf8(s).ok())
-                                            .and_then(|s| s.parse().ok())
-                                        {
-                                            state.status_code = status;
-                                        }
-                                        state.is_established = status_components
-                                            .next()
-                                            .map(|s| {
-                                                s.eq_ignore_ascii_case(
-                                                    b"connection established\r\n",
-                                                )
-                                            })
-                                            .unwrap_or(false);
                                     }
-                                    drop(state);
-                                    ctx.waker.wake();
-                                    true
-                                }
-                            })
-                            .expect("set curl header function");
-                            easy.write_function({
-                                let ctx = ctx.clone();
-                                move |f| {
-                                    let mut state = ctx.state.lock().unwrap();
-                                    state.header_finished = true;
-                                    // TODO: handle max response buffer size
-                                    state.response_buffer.extend_from_slice(f);
-                                    drop(state);
-                                    ctx.waker.wake();
-                                    Ok(f.len())
-                                }
-                            })
-                            .expect("set curl write function");
-                            let handle = multi.add(easy);
-                            let send_res = match handle {
-                                Ok(mut handle) => {
-                                    handle
-                                        .set_token(id)
-                                        .expect("failed to set token on easy handle");
-                                    slab_entry.insert((handle, ctx.clone()));
-                                    tx.send(Ok(ctx))
-                                }
-                                Err(e) => {
-                                    tx.send(Err(e)).ok();
-                                    break;
-                                }
-                            };
-                            if let Err(Ok(ctx)) = send_res {
-                                request = LoopTask::DropHandle(ctx.id);
-                                continue;
-                            }
-                            break;
-                        }
-                        LoopTask::QueryHandleResponse(id, req_handle, tx) => {
-                            let Some((handle, ctx)) = slab.get_mut(id) else {
-                                break;
-                            };
-                            let mut state = ctx.state.lock().unwrap();
-                            let res = handle.response_code().and_then(|status| {
-                                Ok(super::CurlAsyncResponse {
-                                    status: status as _,
-                                    content_length: handle
-                                        .content_length_download()
-                                        .ok()
-                                        .map(|l| l as _),
-                                    headers: state
+                                } else if h.contains(&b':') {
+                                    state
                                         .response_headers_buffer
-                                        .iter_mut()
-                                        .filter_map(|line| std::str::from_utf8_mut(&mut *line).ok())
-                                        .filter_map(|line| line.split_once(':'))
-                                        .map(|(k, v)| (k.into(), v.trim_start().into()))
-                                        .collect(),
-                                    handle: req_handle,
-                                })
-                            });
-                            tx.send(res.into_nyquest_result()).ok();
-                            break;
-                        }
-                        LoopTask::UnpauseHandle(id) => {
-                            if let Some((handle, ctx)) = slab.get(id) {
-                                unsafe {
-                                    let res = curl_sys::curl_easy_pause(handle.raw(), 0);
-                                    if res != 0 {
-                                        let mut state = ctx.state.lock().unwrap();
-                                        state.result = Some(Err(curl::Error::new(res)));
+                                        .push(h.strip_suffix(b"\r\n").unwrap_or(h).into());
+                                } else {
+                                    let mut status_components =
+                                        h.splitn(3, u8::is_ascii_whitespace).skip(1);
+
+                                    if let Some(status) = status_components
+                                        .next()
+                                        .and_then(|s| std::str::from_utf8(s).ok())
+                                        .and_then(|s| s.parse().ok())
+                                    {
+                                        state.temp_status_code = status;
                                     }
+                                    state.is_established = status_components
+                                        .next()
+                                        .map(|s| {
+                                            s.eq_ignore_ascii_case(b"connection established\r\n")
+                                        })
+                                        .unwrap_or(false);
+                                }
+                                drop(state);
+                                ctx.waker.wake();
+                                true
+                            }
+                        })
+                        .expect("set curl header function");
+                        easy.write_function({
+                            let ctx = ctx.clone();
+                            move |f| {
+                                let mut state = ctx.state.lock().unwrap();
+                                state.header_finished = true;
+                                // TODO: handle max response buffer size
+                                state.response_buffer.extend_from_slice(f);
+                                drop(state);
+                                ctx.waker.wake();
+                                Ok(f.len())
+                            }
+                        })
+                        .expect("set curl write function");
+                        let handle = multi.add(easy);
+                        let send_res = match handle {
+                            Ok(mut handle) => {
+                                handle
+                                    .set_token(id)
+                                    .expect("failed to set token on easy handle");
+                                slab_entry.insert((handle, ctx.clone()));
+                                tx.send(Ok(ctx))
+                            }
+                            Err(e) => {
+                                tx.send(Err(e)).ok();
+                                break;
+                            }
+                        };
+                        if let Err(Ok(ctx)) = send_res {
+                            task = LoopTask::DropHandle(ctx.id);
+                            continue;
+                        }
+                        last_call = false;
+                        break;
+                    }
+                    LoopTask::QueryHandleResponse(id, req_handle, tx) => {
+                        let Some((handle, ctx)) = slab.get_mut(id) else {
+                            break;
+                        };
+                        let mut state = ctx.state.lock().unwrap();
+                        let res = handle.response_code().and_then(|status| {
+                            Ok(super::CurlAsyncResponse {
+                                status: status as _,
+                                content_length: handle
+                                    .content_length_download()
+                                    .ok()
+                                    .map(|l| l as _),
+                                headers: state
+                                    .response_headers_buffer
+                                    .iter_mut()
+                                    .filter_map(|line| std::str::from_utf8_mut(&mut *line).ok())
+                                    .filter_map(|line| line.split_once(':'))
+                                    .map(|(k, v)| (k.into(), v.trim_start().into()))
+                                    .collect(),
+                                handle: req_handle,
+                            })
+                        });
+                        tx.send(res.into_nyquest_result()).ok();
+                        break;
+                    }
+                    LoopTask::UnpauseHandle(id) => {
+                        if let Some((handle, ctx)) = slab.get(id) {
+                            unsafe {
+                                let res = curl_sys::curl_easy_pause(handle.raw(), 0);
+                                if res != 0 {
+                                    let mut state = ctx.state.lock().unwrap();
+                                    state.result = Some(Err(curl::Error::new(res)));
                                 }
                             }
-                        }
-                        LoopTask::DropHandle(id) => {
-                            let (handle, _) = slab.remove(id);
-                            let _ = multi.remove(handle);
-                        }
-                        LoopTask::Shutdown => {
-                            // TODO: handle shutdown
                         }
                     }
-                    break;
+                    LoopTask::DropHandle(id) => {
+                        let (handle, _) = slab.remove(id);
+                        let _ = multi.remove(handle);
+                    }
+                    LoopTask::Shutdown => {
+                        // TODO: handle shutdown
+                        last_call = true;
+                    }
                 }
+                break;
             }
-        } else {
-            // TODO: handle poison error
-            break;
         }
         let perform_res = multi.perform();
         let (poll_res, perform_res) = match (poll_res, perform_res) {
@@ -421,6 +437,12 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) -> () {
             drop(shared_state);
             ctx.waker.wake();
         });
+        if slab.is_empty() {
+            if last_call {
+                break;
+            }
+            last_call = true;
+        }
 
         slab.shrink_to_fit();
     }

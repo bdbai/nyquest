@@ -1,9 +1,7 @@
-use std::io::ErrorKind;
 use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use curl::easy::List;
 use curl::{
     easy::Easy,
     multi::{EasyHandle, Multi},
@@ -11,10 +9,8 @@ use curl::{
 };
 use curl_sys::CURLM_OK;
 use nyquest::blocking::Request;
-use nyquest::Body;
 
 use crate::error::IntoNyquestResult;
-use crate::urlencoded::curl_escape;
 
 type CurlResult<T> = Result<T, curl::Error>;
 
@@ -32,7 +28,7 @@ pub(crate) struct MultiEasy {
 
 #[derive(Default)]
 struct MultiEasyState {
-    status_code: u16,
+    temp_status_code: u16,
     header_finished: bool,
     response_headers_buffer: Vec<Vec<u8>>,
     response_buffer: Vec<u8>,
@@ -97,14 +93,12 @@ impl MultiEasy {
     pub fn new() -> Self {
         let state = Arc::new(Mutex::new(MultiEasyState::default()));
         let mut easy = Easy::new();
-        easy.ssl_verify_peer(false);
-        easy.proxy_ssl_verify_peer(false);
         easy.header_function({
             let state = state.clone();
             move |h| {
                 let mut state = state.lock().unwrap();
                 if h == b"\r\n" {
-                    let is_redirect = [301, 302, 303, 307, 308].contains(&state.status_code);
+                    let is_redirect = [301, 302, 303, 307, 308].contains(&state.temp_status_code);
                     if !is_redirect {
                         state.header_finished = true;
                     }
@@ -119,7 +113,7 @@ impl MultiEasy {
                         .and_then(|s| std::str::from_utf8(s).ok())
                         .and_then(|s| s.parse().ok())
                     {
-                        state.status_code = status;
+                        state.temp_status_code = status;
                     }
                 }
                 true
@@ -211,7 +205,7 @@ impl MultiEasy {
     }
 
     pub fn status(&mut self) -> nyquest::Result<u16> {
-        Ok(self.state.lock().unwrap().status_code)
+        Ok(self.state.lock().unwrap().temp_status_code)
     }
 
     pub fn content_length(&mut self) -> nyquest::Result<Option<u64>> {

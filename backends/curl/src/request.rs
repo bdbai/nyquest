@@ -58,7 +58,7 @@ pub fn populate_request<S>(
         }
         #[cfg(feature = "multipart")]
         Some(Body::Multipart { parts }) => {
-            use std::{io, mem};
+            use std::io;
 
             use nyquest::PartBody;
 

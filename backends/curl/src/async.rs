@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 
 use curl::easy::Easy;
 use nyquest::{client::BuildClientResult, r#async::backend::AsyncResponse};
@@ -80,8 +80,6 @@ impl nyquest::r#async::backend::AsyncClient for CurlMultiClient {
         let req = loop {
             // TODO: CURLOPT_SHARE
             let mut easy = Easy::new();
-            easy.ssl_verify_peer(false);
-            easy.proxy_ssl_verify_peer(false);
             // FIXME: properly concat base_url and url
             let url = concat_url(self.inner.options.base_url.as_deref(), &req.relative_uri);
             crate::request::populate_request(&url, &req, &self.inner.options, &mut easy)?;
@@ -106,7 +104,7 @@ impl nyquest::r#async::backend::AsyncBackend for crate::CurlBackend {
         Ok(CurlMultiClient {
             inner: Arc::new(CurlMultiClientInner {
                 options,
-                loop_manager: r#loop::LoopManager::new().await,
+                loop_manager: r#loop::LoopManager::new(),
             }),
         })
     }

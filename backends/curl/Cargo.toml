@@ -34,5 +34,7 @@ mio = { version = "1", optional = true, default-features = false }
 futures-channel = { version = "0.3", optional = true, default-features = false, features = [
     "alloc",
 ] }
-futures-util = { version = "0.3", optional = true, default-features = false }
+futures-util = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+] }
 slab = { version = "0.4", optional = true, default-features = false }
