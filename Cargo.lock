@@ -77,7 +77,7 @@ version = "0.0.0"
 dependencies = [
  "futures",
  "nyquest",
- "nyquest-preset-rich",
+ "nyquest-preset",
  "serde",
  "serde_json",
 ]
@@ -478,7 +478,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nyquest-preset-rich"
+name = "nyquest-preset"
 version = "0.0.0-alpha.1"
 dependencies = [
  "nyquest",
@@ -1039,5 +1039,5 @@ name = "wttr"
 version = "0.0.0"
 dependencies = [
  "nyquest",
- "nyquest-preset-rich",
+ "nyquest-preset",
 ]

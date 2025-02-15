@@ -1,6 +1,6 @@
 [package]
-name = "nyquest-preset-rich"
-description = "Nyquest preset configuration with rich-featured backends"
+name = "nyquest-preset"
+description = "Nyquest preset configuration with up-to-date rich-featured backends"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true

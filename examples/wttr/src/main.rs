@@ -1,7 +1,7 @@
 use nyquest::blocking::Request;
 
 fn main() {
-    nyquest_preset_rich::register();
+    nyquest_preset::register();
 
     let client = nyquest::ClientBuilder::default()
         .user_agent("curl/7.68.0 nyquest/0")

@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 nyquest = { path = "../..", features = ["async"] }
-nyquest-preset-rich = { path = "../../presets/rich", features = ["async"] }
+nyquest-preset = { path = "../../presets/default", features = ["async"] }
 futures = { version = "0.3", features = ["executor"], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

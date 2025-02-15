@@ -45,30 +45,30 @@ The following items are planned in MVP:
 
 - [x] Nyquest blocking API (WIP)
 - [x] Nyquest async API (WIP)
-- [ ] Streaming support
-- [ ] Direct file upload/download support
-- [ ] URL manipulation utilities
 - [x] Backend: WinRT HttpClient (WIP)
     - [x] Blocking (WIP)
     - [x] Async (WIP)
 - [x] Backend: libcurl (WIP)
     - [x] Blocking (WIP)
     - [x] Async (WIP)
+- [ ] Backend: reqwest
+- [ ] Backend: NSURLSession
 - [x] Test framework for backends (WIP)
 - [x] Presets (WIP)
 - [ ] Documentation
 
 Future work may include:
 
+- [ ] Streaming support
+- [ ] Direct file upload/download support
+- [ ] URL manipulation utilities
 - [ ] Middleware infrastructure
 - [ ] Telemetry
-- [ ] Backend: NSURLSession (help wanted!)
 - [ ] Backend: Plugin FFI via libloading
 - [ ] Backend: Mock
 - [ ] Backend: WASM fetch
 - [ ] Backend: WinHTTP
 - [ ] Backend: libsoup3
-- [ ] Backend: reqwest (yes, we can do that)
 - [ ] Backend: QNetworkAccessManager
 - [ ] Explore alternative options on Android other than libcurl
 

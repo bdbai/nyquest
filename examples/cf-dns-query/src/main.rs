@@ -4,7 +4,7 @@ use futures::future::join;
 use nyquest::{AsyncClient, Request};
 
 fn main() {
-    nyquest_preset_rich::register();
+    nyquest_preset::register();
 
     futures::executor::block_on(async {
         async_main().await.unwrap();
