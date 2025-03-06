@@ -1,4 +1,4 @@
-name: Test backends (async)
+name: Test backends (blocking)
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test curl
-        run: cargo test -p nyquest-backend-tests --verbose --features async,curl
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking,curl
 
   test-windows:
     runs-on: windows-latest
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test winrt
-        run: cargo test -p nyquest-backend-tests --verbose --features async,winrt
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking,winrt
 
   test-macos:
     runs-on: macos-latest
@@ -32,4 +32,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test nsurlsession
-        run: cargo test -p nyquest-backend-tests --verbose --features async,nsurlsession
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking,nsurlsession
