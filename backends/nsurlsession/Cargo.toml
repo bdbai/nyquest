@@ -17,12 +17,16 @@ blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart"]
 
 [dependencies]
-
 nyquest-interface = { path = "../../nyquest-interface", default-features = false }
+cfg-if.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
+objc2 = { version = "0.6", default-features = false }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "alloc",
+    "NSObject",
+    "NSString",
+    "NSURL",
     "NSDictionary",
     "NSURLRequest",
     "NSURLSession",

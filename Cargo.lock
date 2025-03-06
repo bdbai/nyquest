@@ -456,7 +456,9 @@ dependencies = [
 name = "nyquest-backend-nsurlsession"
 version = "0.0.0-alpha.1"
 dependencies = [
+ "cfg-if",
  "nyquest-interface",
+ "objc2",
  "objc2-foundation",
 ]
 
@@ -526,6 +528,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a21c6c9014b82c39515db5b396f91645182611c97d24637cf56ac01e5f8d998"
 dependencies = [
+ "bitflags",
  "objc2",
 ]
 
