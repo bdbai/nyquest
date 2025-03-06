@@ -1,0 +1,27 @@
+[package]
+name = "nyquest-interface"
+description = "Interface definitions for Nyquest backends"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+exclude.workspace = true
+
+[features]
+async = ["dep:futures-core", "dep:futures-io"]
+blocking = []
+multipart = []
+
+[dependencies]
+thiserror.workspace = true
+cfg-if.workspace = true
+futures-core = { version = "0.3", optional = true, features = [
+    "alloc",
+], default-features = false }
+futures-io = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+] }

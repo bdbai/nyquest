@@ -2,7 +2,7 @@ use futures_io::{AsyncRead, AsyncSeek};
 
 pub trait BodyStream: AsyncRead + AsyncSeek + Send {}
 
-pub(super) type BoxedStream = Box<dyn BodyStream>;
+pub type BoxedStream = Box<dyn BodyStream>;
 pub type Body = crate::body::Body<BoxedStream>;
 
 impl Body {

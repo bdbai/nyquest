@@ -15,14 +15,17 @@ async = [
     "nyquest/async",
     "nyquest-backend-winrt?/async",
     "nyquest-backend-curl?/async",
+    "nyquest-backend-nsurlsession?/async",
 ]
 blocking = [
     "nyquest/blocking",
     "nyquest-backend-winrt?/blocking",
     "nyquest-backend-curl?/blocking",
+    "nyquest-backend-nsurlsession?/blocking",
 ]
 winrt = ["dep:nyquest-backend-winrt"]
 curl = ["dep:nyquest-backend-curl"]
+nsurlsession = ["dep:nyquest-backend-nsurlsession"]
 
 [dependencies]
 nyquest = { path = "../" }
@@ -33,3 +36,4 @@ hyper-util = { version = "0.1", features = ["full"] }
 
 nyquest-backend-winrt = { path = "../backends/winrt", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }
+nyquest-backend-nsurlsession = { path = "../backends/nsurlsession", optional = true }

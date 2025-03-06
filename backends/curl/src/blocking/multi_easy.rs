@@ -8,7 +8,7 @@ use curl::{
     MultiError,
 };
 use curl_sys::CURLM_OK;
-use nyquest::blocking::Request;
+use nyquest_interface::blocking::Request;
 
 use crate::error::IntoNyquestResult;
 
@@ -148,7 +148,7 @@ impl MultiEasy {
         &mut self,
         timeout: Duration,
         mut cb: impl FnMut(&Mutex<MultiEasyState>) -> CurlResult<ControlFlow<()>>,
-    ) -> nyquest::Result<()> {
+    ) -> nyquest_interface::Result<()> {
         let easy = self.easy.attach(&mut self.multi).into_nyquest_result()?;
         let deadline = Instant::now() + timeout;
         // TODO: sigpipe
@@ -180,7 +180,10 @@ impl MultiEasy {
         Err(curl::Error::new(curl_sys::CURLE_OPERATION_TIMEDOUT)).into_nyquest_result()
     }
 
-    pub fn poll_until_response_headers(&mut self, timeout: Duration) -> nyquest::Result<()> {
+    pub fn poll_until_response_headers(
+        &mut self,
+        timeout: Duration,
+    ) -> nyquest_interface::Result<()> {
         self.poll_until(timeout, |state| {
             Ok(if state.lock().unwrap().header_finished {
                 ControlFlow::Break(())
@@ -195,8 +198,8 @@ impl MultiEasy {
         &mut self,
         url: &str,
         req: Request,
-        options: &nyquest::client::ClientOptions,
-    ) -> nyquest::Result<()> {
+        options: &nyquest_interface::client::ClientOptions,
+    ) -> nyquest_interface::Result<()> {
         self.reset_state();
         let easy = self.easy.detach(&mut self.multi).into_nyquest_result()?;
         easy.reset();
@@ -204,11 +207,11 @@ impl MultiEasy {
         crate::request::populate_request(url, &req, options, easy)
     }
 
-    pub fn status(&mut self) -> nyquest::Result<u16> {
+    pub fn status(&mut self) -> nyquest_interface::Result<u16> {
         Ok(self.state.lock().unwrap().temp_status_code)
     }
 
-    pub fn content_length(&mut self) -> nyquest::Result<Option<u64>> {
+    pub fn content_length(&mut self) -> nyquest_interface::Result<Option<u64>> {
         let content_length = match &mut self.easy {
             MaybeAttachedEasy::Attached(handle) => handle.content_length_download().ok(),
             MaybeAttachedEasy::Detached(handle) => handle.content_length_download().ok(),
@@ -217,7 +220,10 @@ impl MultiEasy {
         Ok(content_length.map(|len| len as u64))
     }
 
-    pub fn poll_until_whole_response(&mut self, timeout: Duration) -> nyquest::Result<()> {
+    pub fn poll_until_whole_response(
+        &mut self,
+        timeout: Duration,
+    ) -> nyquest_interface::Result<()> {
         self.poll_until(timeout, |_| Ok(ControlFlow::Continue(())))
     }
 

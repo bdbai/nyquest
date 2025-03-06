@@ -1,0 +1,29 @@
+[package]
+name = "nyquest-backend-nsurlsession"
+description = "NSURLSession backend for nyquest"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+exclude.workspace = true
+
+[features]
+async = ["nyquest-interface/async"]
+blocking = ["nyquest-interface/blocking"]
+multipart = ["nyquest-interface/multipart"]
+
+[dependencies]
+
+nyquest-interface = { path = "../../nyquest-interface", default-features = false }
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "NSDictionary",
+    "NSURLRequest",
+    "NSURLSession",
+] }

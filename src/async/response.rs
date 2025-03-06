@@ -1,4 +1,4 @@
-use super::any::AnyAsyncResponse;
+use nyquest_interface::r#async::AnyAsyncResponse;
 
 pub struct Response {
     inner: Box<dyn AnyAsyncResponse>,
@@ -14,15 +14,15 @@ impl Response {
     }
 
     pub fn get_header(&self, header: &str) -> crate::Result<Vec<String>> {
-        self.inner.get_header(header)
+        Ok(self.inner.get_header(header)?)
     }
 
     pub async fn text(mut self) -> crate::Result<String> {
-        self.inner.text().await
+        Ok(self.inner.text().await?)
     }
 
     pub async fn bytes(mut self) -> crate::Result<Vec<u8>> {
-        self.inner.bytes().await
+        Ok(self.inner.bytes().await?)
     }
 
     // TODO: stream

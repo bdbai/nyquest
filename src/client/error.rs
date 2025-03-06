@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use nyquest_interface::client::BuildClientError as BuildClientErrorImpl;
+
 use crate::Error as BackendError;
 
 #[derive(Debug, Error)]
@@ -12,3 +14,12 @@ pub enum BuildClientError {
 }
 
 pub type BuildClientResult<T> = Result<T, BuildClientError>;
+
+impl From<BuildClientErrorImpl> for BuildClientError {
+    fn from(e: BuildClientErrorImpl) -> Self {
+        match e {
+            BuildClientErrorImpl::BackendError(e) => Self::BackendError(e.into()),
+            BuildClientErrorImpl::NoBackend => Self::NoBackend,
+        }
+    }
+}

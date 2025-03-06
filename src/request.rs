@@ -1,12 +1,11 @@
 use std::borrow::Cow;
 
+use nyquest_interface::Request as RequestImpl;
+
 use crate::body::Body;
 
 pub struct Request<S> {
-    pub method: Cow<'static, str>,
-    pub relative_uri: Cow<'static, str>,
-    pub additional_headers: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    pub body: Option<Body<S>>,
+    pub(crate) inner: RequestImpl<S>,
 }
 
 impl<S> Request<S> {
@@ -15,10 +14,12 @@ impl<S> Request<S> {
         relative_uri: impl Into<Cow<'static, str>>,
     ) -> Self {
         Self {
-            method: method.into(),
-            relative_uri: relative_uri.into(),
-            additional_headers: vec![],
-            body: None,
+            inner: RequestImpl {
+                method: method.into(),
+                relative_uri: relative_uri.into(),
+                additional_headers: vec![],
+                body: None,
+            },
         }
     }
 
@@ -43,12 +44,14 @@ impl<S> Request<S> {
         name: impl Into<Cow<'static, str>>,
         value: impl Into<Cow<'static, str>>,
     ) -> Self {
-        self.additional_headers.push((name.into(), value.into()));
+        self.inner
+            .additional_headers
+            .push((name.into(), value.into()));
         self
     }
 
     pub fn with_body(mut self, body: Body<S>) -> Self {
-        self.body = Some(body);
+        self.inner.body = Some(body.inner);
         self
     }
 }

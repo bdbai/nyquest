@@ -2,28 +2,34 @@ name: Test backends (async)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   test-linux:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Test curl
-      run: cargo test -p nyquest-backend-tests --verbose --features async,curl
+      - uses: actions/checkout@v4
+      - name: Test curl
+        run: cargo test -p nyquest-backend-tests --verbose --features async,curl
 
   test-windows:
-
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Test winrt
-      run: cargo test -p nyquest-backend-tests --verbose --features async,winrt
+      - uses: actions/checkout@v4
+      - name: Test winrt
+        run: cargo test -p nyquest-backend-tests --verbose --features async,winrt
+
+  test-nsurlsession:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test nsurlsession
+        run: cargo test -p nyquest-backend-tests --verbose --features async,nsurlsession

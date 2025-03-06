@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::io;
 
-use nyquest::{Body, Request};
+use nyquest_interface::{Body, Request};
 use windows::Foundation::Collections::{IIterable, IKeyValuePair};
 use windows::Foundation::{IReference, PropertyValue, Uri};
 use windows::Storage::Streams::IBuffer;
@@ -67,7 +67,7 @@ pub(crate) fn create_body<S>(
         }
         #[cfg(feature = "multipart")]
         Body::Multipart { parts } => {
-            use nyquest::PartBody;
+            use nyquest_interface::PartBody;
 
             let content = windows::Web::Http::HttpMultipartFormDataContent::new()?;
             for part in parts {

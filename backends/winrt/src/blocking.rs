@@ -1,9 +1,9 @@
 use std::io;
 
-use nyquest::blocking::backend::{BlockingBackend, BlockingClient, BlockingResponse};
-use nyquest::blocking::Request;
-use nyquest::client::{BuildClientResult, ClientOptions};
-use nyquest::{Error as NyquestError, Result as NyquestResult};
+use nyquest_interface::blocking::Request;
+use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse};
+use nyquest_interface::client::{BuildClientResult, ClientOptions};
+use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use windows::core::{Interface, HSTRING};
 use windows::Foundation::Uri;
 use windows::Web::Http::{HttpClient, HttpCompletionOption};
@@ -73,7 +73,7 @@ impl BlockingResponse for WinrtResponse {
         self.status
     }
 
-    fn get_header(&self, header: &str) -> nyquest::Result<Vec<String>> {
+    fn get_header(&self, header: &str) -> nyquest_interface::Result<Vec<String>> {
         self.get_header(header).into_nyquest_result()
     }
 

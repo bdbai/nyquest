@@ -1,4 +1,6 @@
-use super::{any::AnyBlockingClient, response::Response, Request};
+use nyquest_interface::{blocking::AnyBlockingClient, register::BACKEND};
+
+use super::{response::Response, Request};
 use crate::client::{BuildClientError, BuildClientResult, ClientBuilder};
 
 pub struct BlockingClient {
@@ -8,7 +10,7 @@ pub struct BlockingClient {
 impl ClientBuilder {
     pub fn build_blocking(self) -> BuildClientResult<BlockingClient> {
         Ok(BlockingClient {
-            client: crate::register::BACKEND
+            client: BACKEND
                 .get()
                 .ok_or(BuildClientError::NoBackend)?
                 .create_blocking_client(self.options)?,
@@ -18,7 +20,7 @@ impl ClientBuilder {
 
 impl BlockingClient {
     pub fn request(&self, req: Request) -> crate::Result<Response> {
-        let res = self.client.request(req)?;
+        let res = self.client.request(req.inner)?;
         Ok(res.into())
     }
 

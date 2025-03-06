@@ -1,6 +1,6 @@
 use std::io;
 
-use super::backend::BlockingResponse;
+use nyquest_interface::blocking::BlockingResponse;
 
 pub struct Response {
     inner: Box<dyn BlockingResponse>,
@@ -16,15 +16,15 @@ impl Response {
     }
 
     pub fn get_header(&self, header: &str) -> crate::Result<Vec<String>> {
-        self.inner.get_header(header)
+        Ok(self.inner.get_header(header)?)
     }
 
     pub fn text(mut self) -> crate::Result<String> {
-        self.inner.text()
+        Ok(self.inner.text()?)
     }
 
     pub fn bytes(mut self) -> crate::Result<Vec<u8>> {
-        BlockingResponse::bytes(&mut *self.inner)
+        Ok(BlockingResponse::bytes(&mut *self.inner)?)
     }
 
     pub fn into_read(self) -> impl io::Read {

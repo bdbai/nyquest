@@ -2,7 +2,7 @@ use std::io::{Read, Seek};
 
 pub trait BodyStream: Read + Seek + Send {}
 
-pub(super) type BoxedStream = Box<dyn BodyStream>;
+pub type BoxedStream = Box<dyn BodyStream>;
 pub type Body = crate::body::Body<BoxedStream>;
 
 impl Body {

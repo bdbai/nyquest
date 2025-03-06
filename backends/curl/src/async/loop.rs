@@ -53,7 +53,7 @@ enum LoopTask {
     QueryHandleResponse(
         usize,
         RequestHandle,
-        oneshot::Sender<nyquest::Result<super::CurlAsyncResponse>>,
+        oneshot::Sender<nyquest_interface::Result<super::CurlAsyncResponse>>,
     ),
     UnpauseHandle(usize),
     DropHandle(usize),
@@ -61,7 +61,9 @@ enum LoopTask {
 }
 
 impl RequestHandle {
-    pub(super) async fn wait_for_response(self) -> nyquest::Result<super::CurlAsyncResponse> {
+    pub(super) async fn wait_for_response(
+        self,
+    ) -> nyquest_interface::Result<super::CurlAsyncResponse> {
         poll_fn(|cx| {
             let mut state = self.shared_context.state.lock().unwrap();
             if let Some(err_res) = state.result.take_if(|r| r.is_err()) {
@@ -96,8 +98,8 @@ impl RequestHandle {
 
     pub(super) async fn poll_bytes<T>(
         &mut self,
-        cb: impl FnOnce(&mut Vec<u8>) -> nyquest::Result<T>,
-    ) -> nyquest::Result<Option<T>> {
+        cb: impl FnOnce(&mut Vec<u8>) -> nyquest_interface::Result<T>,
+    ) -> nyquest_interface::Result<Option<T>> {
         self.manager
             .dispatch_task(LoopTask::UnpauseHandle(self.shared_context.id));
         let mut cb = Some(cb);
@@ -206,7 +208,7 @@ impl LoopManager {
     pub(super) async fn start_request(
         &self,
         mut easy: Easy,
-    ) -> nyquest::Result<MaybeStartedRequest> {
+    ) -> nyquest_interface::Result<MaybeStartedRequest> {
         loop {
             let inner = match &mut *self.inner.lock().await {
                 Some(inner) => inner.clone(),

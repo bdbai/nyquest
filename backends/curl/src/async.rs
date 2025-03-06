@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use curl::easy::Easy;
-use nyquest::{client::BuildClientResult, r#async::backend::AsyncResponse};
+use nyquest_interface::{client::BuildClientResult, r#async::AsyncResponse};
 
 use crate::url::concat_url;
 
 mod r#loop;
 
 pub struct CurlMultiClientInner {
-    options: nyquest::client::ClientOptions,
+    options: nyquest_interface::client::ClientOptions,
     loop_manager: r#loop::LoopManager,
 }
 #[derive(Clone)]
@@ -32,7 +32,7 @@ impl AsyncResponse for CurlAsyncResponse {
         self.content_length
     }
 
-    fn get_header(&self, header: &str) -> nyquest::Result<Vec<String>> {
+    fn get_header(&self, header: &str) -> nyquest_interface::Result<Vec<String>> {
         Ok(self
             .headers
             .iter()
@@ -41,7 +41,7 @@ impl AsyncResponse for CurlAsyncResponse {
             .collect())
     }
 
-    async fn text(&mut self) -> nyquest::Result<String> {
+    async fn text(&mut self) -> nyquest_interface::Result<String> {
         let buf = self.bytes().await?;
         #[cfg(feature = "charset")]
         if let Some((_, charset)) = self
@@ -59,7 +59,7 @@ impl AsyncResponse for CurlAsyncResponse {
         Ok(String::from_utf8_lossy(&buf).into_owned())
     }
 
-    async fn bytes(&mut self) -> nyquest::Result<Vec<u8>> {
+    async fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
         let mut buf = vec![];
         while let Some(()) = self
             .handle
@@ -73,10 +73,13 @@ impl AsyncResponse for CurlAsyncResponse {
     }
 }
 
-impl nyquest::r#async::backend::AsyncClient for CurlMultiClient {
+impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
     type Response = CurlAsyncResponse;
 
-    async fn request(&self, req: nyquest::r#async::Request) -> nyquest::Result<Self::Response> {
+    async fn request(
+        &self,
+        req: nyquest_interface::r#async::Request,
+    ) -> nyquest_interface::Result<Self::Response> {
         let req = loop {
             // TODO: CURLOPT_SHARE
             let mut easy = Easy::new();
@@ -94,12 +97,12 @@ impl nyquest::r#async::backend::AsyncClient for CurlMultiClient {
     }
 }
 
-impl nyquest::r#async::backend::AsyncBackend for crate::CurlBackend {
+impl nyquest_interface::r#async::AsyncBackend for crate::CurlBackend {
     type AsyncClient = CurlMultiClient;
 
     async fn create_async_client(
         &self,
-        options: nyquest::client::ClientOptions,
+        options: nyquest_interface::client::ClientOptions,
     ) -> BuildClientResult<Self::AsyncClient> {
         Ok(CurlMultiClient {
             inner: Arc::new(CurlMultiClientInner {

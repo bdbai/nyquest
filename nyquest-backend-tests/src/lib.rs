@@ -152,6 +152,8 @@ fn init_builder_blocking() -> io::Result<ClientBuilder> {
 fn init_backend() {
     #[cfg(feature = "curl")]
     use nyquest_backend_curl as backend;
+    #[cfg(feature = "nsurlsession")]
+    use nyquest_backend_nsurlsession as backend;
     #[cfg(feature = "winrt")]
     use nyquest_backend_winrt as backend;
 

@@ -11,5 +11,5 @@ pub struct CurlBackend;
 
 pub fn register() {
     curl::init();
-    nyquest::register_backend(CurlBackend);
+    nyquest_interface::register_backend(CurlBackend);
 }

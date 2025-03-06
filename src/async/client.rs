@@ -1,4 +1,6 @@
-use super::{any::AnyAsyncClient, response::Response};
+use nyquest_interface::{r#async::AnyAsyncClient, register::BACKEND};
+
+use super::response::Response;
 use crate::{
     client::{BuildClientError, BuildClientResult},
     ClientBuilder,
@@ -11,7 +13,7 @@ pub struct AsyncClient {
 impl ClientBuilder {
     pub async fn build_async(self) -> BuildClientResult<AsyncClient> {
         Ok(AsyncClient {
-            client: crate::register::BACKEND
+            client: BACKEND
                 .get()
                 .ok_or(BuildClientError::NoBackend)?
                 .create_async_client(self.options)
@@ -22,7 +24,7 @@ impl ClientBuilder {
 
 impl AsyncClient {
     pub async fn request(&self, req: super::Request) -> crate::Result<Response> {
-        let res = self.client.request(req).await?;
+        let res = self.client.request(req.inner).await?;
         Ok(res.into())
     }
 }

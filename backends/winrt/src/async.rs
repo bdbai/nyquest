@@ -1,8 +1,8 @@
 use std::io;
 
-use nyquest::r#async::backend::{AsyncBackend, AsyncResponse};
-use nyquest::r#async::Request;
-use nyquest::{client::ClientOptions, r#async::backend::AsyncClient};
+use nyquest_interface::r#async::Request;
+use nyquest_interface::r#async::{AsyncBackend, AsyncResponse};
+use nyquest_interface::{client::ClientOptions, r#async::AsyncClient};
 use windows::core::Interface;
 use windows::Foundation::Uri;
 use windows::Web::Http::HttpCompletionOption;
@@ -55,11 +55,11 @@ impl AsyncResponse for WinrtResponse {
         self.content_length
     }
 
-    fn get_header(&self, header: &str) -> nyquest::Result<Vec<String>> {
+    fn get_header(&self, header: &str) -> nyquest_interface::Result<Vec<String>> {
         self.get_header(header).into_nyquest_result()
     }
 
-    async fn text(&mut self) -> nyquest::Result<String> {
+    async fn text(&mut self) -> nyquest_interface::Result<String> {
         let task = self
             .response
             .Content()
@@ -74,7 +74,7 @@ impl AsyncResponse for WinrtResponse {
             .to_string_lossy())
     }
 
-    async fn bytes(&mut self) -> nyquest::Result<Vec<u8>> {
+    async fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
         let task = self
             .response
             .Content()
@@ -99,9 +99,9 @@ impl AsyncResponse for WinrtResponse {
 impl AsyncClient for WinrtAsyncClient {
     type Response = WinrtResponse;
 
-    async fn request(&self, req: Request) -> nyquest::Result<Self::Response> {
-        let uri =
-            build_uri(&self.base_url, &req.relative_uri).map_err(|_| nyquest::Error::InvalidUrl)?;
+    async fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
+        let uri = build_uri(&self.base_url, &req.relative_uri)
+            .map_err(|_| nyquest_interface::Error::InvalidUrl)?;
         self.send_request(&uri, req).await.into_nyquest_result()
     }
 }
@@ -112,7 +112,7 @@ impl AsyncBackend for crate::WinrtBackend {
     async fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> nyquest::client::BuildClientResult<Self::AsyncClient> {
+    ) -> nyquest_interface::client::BuildClientResult<Self::AsyncClient> {
         Ok(self.create_async_client(options).into_nyquest_result()?)
     }
 }

@@ -1,5 +1,11 @@
 [workspace]
-members = ["nyquest-backend-tests", "backends/*", "examples/*", "presets/*"]
+members = [
+    "nyquest-interface",
+    "nyquest-backend-tests",
+    "backends/*",
+    "examples/*",
+    "presets/*",
+]
 resolver = "2"
 
 [workspace.package]
@@ -16,6 +22,7 @@ exclude = [".vscode/*", ".github/*", "examples/README.md", "rustfmt.toml"]
 [workspace.dependencies]
 futures = "0.3"
 thiserror = "1"
+cfg-if = "1"
 
 [package]
 name = "nyquest"
@@ -34,17 +41,13 @@ exclude.workspace = true
 features = ["async", "blocking"]
 
 [features]
-async = ["dep:futures-core", "dep:futures-io"]
-blocking = []
-multipart = []
+async = ["dep:futures-io", "nyquest-interface/async"]
+blocking = ["nyquest-interface/blocking"]
+multipart = ["nyquest-interface/multipart"]
 
 [dependencies]
-cfg-if = "1"
-once_cell = { version = "1", default-features = false, features = ["std"] }
+nyquest-interface = { path = "nyquest-interface", default-features = false }
 thiserror.workspace = true
-futures-core = { version = "0.3", optional = true, features = [
-    "alloc",
-], default-features = false }
 futures-io = { version = "0.3", optional = true, default-features = false, features = [
     "std",
 ] }

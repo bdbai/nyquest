@@ -1,37 +1,21 @@
 use std::borrow::Cow;
 
-pub struct StreamReader<S> {
-    pub stream: S,
-    pub content_length: Option<u64>,
-}
+use nyquest_interface::Body as BodyImpl;
+#[cfg(feature = "multipart")]
+use nyquest_interface::{Part as PartImpl, PartBody as PartBodyImpl, StreamReader};
 
-pub enum Body<S> {
-    Bytes {
-        content: Cow<'static, [u8]>,
-        content_type: Cow<'static, str>,
-    },
-    Form {
-        fields: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    },
-    #[cfg(feature = "multipart")]
-    Multipart { parts: Vec<Part<S>> },
-    #[doc(hidden)] // TODO:
-    Stream(StreamReader<S>),
+pub struct Body<S> {
+    pub(crate) inner: BodyImpl<S>,
 }
 
 #[cfg(feature = "multipart")]
 pub struct Part<S> {
-    pub headers: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    pub name: Cow<'static, str>,
-    pub filename: Option<Cow<'static, str>>,
-    pub content_type: Cow<'static, str>,
-    pub body: PartBody<S>,
+    inner: PartImpl<S>,
 }
 
 #[cfg(feature = "multipart")]
-pub enum PartBody<S> {
-    Bytes { content: Cow<'static, [u8]> },
-    Stream(StreamReader<S>),
+pub struct PartBody<S> {
+    inner: PartBodyImpl<S>,
 }
 
 impl<S> Body<S> {
@@ -39,12 +23,14 @@ impl<S> Body<S> {
         text: impl Into<Cow<'static, str>>,
         content_type: impl Into<Cow<'static, str>>,
     ) -> Self {
-        Self::Bytes {
-            content: match text.into() {
-                Cow::Borrowed(s) => Cow::Borrowed(s.as_bytes()),
-                Cow::Owned(s) => Cow::Owned(s.into_bytes()),
+        Self {
+            inner: BodyImpl::Bytes {
+                content: match text.into() {
+                    Cow::Borrowed(s) => Cow::Borrowed(s.as_bytes()),
+                    Cow::Owned(s) => Cow::Owned(s.into_bytes()),
+                },
+                content_type: content_type.into(),
             },
-            content_type: content_type.into(),
         }
     }
 
@@ -52,27 +38,79 @@ impl<S> Body<S> {
         bytes: impl Into<Cow<'static, [u8]>>,
         content_type: impl Into<Cow<'static, str>>,
     ) -> Self {
-        Self::Bytes {
-            content: bytes.into(),
-            content_type: content_type.into(),
+        Self {
+            inner: BodyImpl::Bytes {
+                content: bytes.into(),
+                content_type: content_type.into(),
+            },
         }
+    }
+
+    pub fn json_bytes(bytes: impl Into<Cow<'static, [u8]>>) -> Self {
+        Self::bytes(bytes, "application/json")
+    }
+}
+
+#[cfg(feature = "multipart")]
+impl<S> Part<S> {
+    pub fn new(
+        name: impl Into<Cow<'static, str>>,
+        content_type: impl Into<Cow<'static, str>>,
+        body: PartBody<S>,
+    ) -> Self {
+        Self {
+            inner: PartImpl {
+                headers: vec![],
+                name: name.into(),
+                filename: None,
+                content_type: content_type.into(),
+                body: body.inner,
+            },
+        }
+    }
+
+    pub fn with_header(
+        mut self,
+        name: impl Into<Cow<'static, str>>,
+        value: impl Into<Cow<'static, str>>,
+    ) -> Self {
+        self.inner.headers.push((name.into(), value.into()));
+        self
+    }
+
+    pub fn with_filename(mut self, filename: impl Into<Cow<'static, str>>) -> Self {
+        self.inner.filename = Some(filename.into());
+        self
     }
 }
 
 #[cfg(feature = "multipart")]
 impl<S> PartBody<S> {
     pub fn text(text: impl Into<Cow<'static, str>>) -> Self {
-        Self::Bytes {
-            content: match text.into() {
-                Cow::Borrowed(s) => Cow::Borrowed(s.as_bytes()),
-                Cow::Owned(s) => Cow::Owned(s.into_bytes()),
+        Self {
+            inner: PartBodyImpl::Bytes {
+                content: match text.into() {
+                    Cow::Borrowed(s) => Cow::Borrowed(s.as_bytes()),
+                    Cow::Owned(s) => Cow::Owned(s.into_bytes()),
+                },
             },
         }
     }
 
     pub fn bytes(bytes: impl Into<Cow<'static, [u8]>>) -> Self {
-        Self::Bytes {
-            content: bytes.into(),
+        Self {
+            inner: PartBodyImpl::Bytes {
+                content: bytes.into(),
+            },
+        }
+    }
+
+    pub fn stream(stream: S, content_length: Option<u64>) -> Self {
+        Self {
+            inner: PartBodyImpl::Stream(StreamReader {
+                stream,
+                content_length,
+            }),
         }
     }
 }

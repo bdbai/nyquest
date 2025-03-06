@@ -1,6 +1,6 @@
 use std::io;
 
-use nyquest::client::ClientOptions;
+use nyquest_interface::client::ClientOptions;
 use windows::core::{h, HSTRING};
 use windows::Web::Http::HttpClient;
 

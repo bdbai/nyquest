@@ -16,16 +16,19 @@ async = [
     "nyquest/async",
     "nyquest-backend-curl/async",
     "nyquest-backend-winrt/async",
+    "nyquest-backend-nsurlsession/async",
 ]
 blocking = [
     "nyquest/blocking",
     "nyquest-backend-curl/blocking",
     "nyquest-backend-winrt/blocking",
+    "nyquest-backend-nsurlsession/blocking",
 ]
 multipart = [
     "nyquest/multipart",
     "nyquest-backend-curl/multipart",
     "nyquest-backend-winrt/multipart",
+    "nyquest-backend-nsurlsession/multipart",
 ]
 
 [dependencies]
@@ -34,5 +37,8 @@ nyquest = { path = "../..", default-features = false }
 [target.'cfg(windows)'.dependencies]
 nyquest-backend-winrt = { path = "../../backends/winrt", default-features = false }
 
-[target.'cfg(not(windows))'.dependencies]
+[target.'cfg(target_vendor = "apple")'.dependencies]
+nyquest-backend-nsurlsession = { path = "../../backends/nsurlsession", default-features = false }
+
+[target.'cfg(not(any(windows, target_vendor = "apple")))'.dependencies]
 nyquest-backend-curl = { path = "../../backends/curl", default-features = false }

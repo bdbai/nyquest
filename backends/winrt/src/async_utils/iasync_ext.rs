@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::{future::Future, pin::Pin};
 
-use futures::task::AtomicWaker;
+use futures_util::task::AtomicWaker;
 use windows::core::{Interface, RuntimeType};
 use windows::Foundation::{
     AsyncStatus, IAsyncAction, IAsyncActionWithProgress, IAsyncInfo, IAsyncOperation,

@@ -1,19 +1,17 @@
-mod body;
-mod error;
-mod request;
-
 #[cfg(feature = "async")]
 pub mod r#async;
 #[cfg(feature = "blocking")]
 pub mod blocking;
+pub mod body;
 pub mod client;
+mod error;
+#[doc(hidden)] // For nyquest facade only
+pub mod register;
+mod request;
 
-#[cfg(feature = "blocking")]
-pub use blocking::client::BlockingClient;
+pub use body::{Body, StreamReader};
 #[cfg(feature = "multipart")]
 pub use body::{Part, PartBody};
-pub use client::ClientBuilder;
 pub use error::{Error, Result};
-#[cfg(feature = "async")]
-pub use r#async::client::AsyncClient;
+pub use register::register_backend;
 pub use request::Request;

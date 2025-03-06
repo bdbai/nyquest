@@ -1,4 +1,4 @@
-use nyquest::Result as NyquestResult;
+use nyquest_interface::Result as NyquestResult;
 
 pub(crate) trait IntoNyquestResult<T> {
     fn into_nyquest_result(self) -> NyquestResult<T>;

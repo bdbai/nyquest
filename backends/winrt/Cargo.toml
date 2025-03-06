@@ -12,9 +12,9 @@ version.workspace = true
 exclude.workspace = true
 
 [features]
-async = ["nyquest/async", "dep:futures"]
-blocking = ["nyquest/blocking"]
-multipart = ["nyquest/multipart"]
+async = ["nyquest-interface/async", "dep:futures-util"]
+blocking = ["nyquest-interface/blocking"]
+multipart = ["nyquest-interface/multipart"]
 
 [target.'cfg(windows)'.dependencies]
 windows-core = { version = "0.58", default-features = false }
@@ -30,5 +30,8 @@ features = [
 ]
 
 [dependencies]
-nyquest = { path = "../..", default-features = false }
-futures = { version = "0.3", optional = true, default-features = false }
+nyquest-interface = { path = "../../nyquest-interface", default-features = false }
+cfg-if.workspace = true
+futures-util = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+] }

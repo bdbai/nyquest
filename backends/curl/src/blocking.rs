@@ -3,8 +3,8 @@ use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use nyquest::blocking::Request;
-use nyquest::Error as NyquestError;
+use nyquest_interface::blocking::Request;
+use nyquest_interface::Error as NyquestError;
 
 mod multi_easy;
 
@@ -13,7 +13,7 @@ use multi_easy::MultiEasy;
 
 #[derive(Clone)]
 pub struct CurlEasyClient {
-    options: Arc<nyquest::client::ClientOptions>,
+    options: Arc<nyquest_interface::client::ClientOptions>,
     slot: Arc<Mutex<Option<MultiEasy>>>,
 }
 
@@ -63,7 +63,7 @@ impl<S: AsRef<Mutex<Option<MultiEasy>>>> Drop for EasyHandleGuard<S> {
 }
 
 impl CurlEasyClient {
-    pub fn new(options: nyquest::client::ClientOptions) -> Self {
+    pub fn new(options: nyquest_interface::client::ClientOptions) -> Self {
         Self {
             options: Arc::new(options),
             slot: Arc::new(Mutex::new(None)),
@@ -92,7 +92,7 @@ impl io::Read for CurlResponse {
     }
 }
 
-impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
+impl nyquest_interface::blocking::BlockingResponse for CurlResponse {
     fn status(&self) -> u16 {
         self.status
     }
@@ -101,7 +101,7 @@ impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
         self.content_length
     }
 
-    fn get_header(&self, header: &str) -> nyquest::Result<Vec<String>> {
+    fn get_header(&self, header: &str) -> nyquest_interface::Result<Vec<String>> {
         Ok(self
             .headers
             .iter()
@@ -110,7 +110,7 @@ impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
             .collect())
     }
 
-    fn text(&mut self) -> nyquest::Result<String> {
+    fn text(&mut self) -> nyquest_interface::Result<String> {
         let buf = self.bytes()?;
         #[cfg(feature = "charset")]
         if let Some((_, charset)) = self
@@ -128,7 +128,7 @@ impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
         Ok(String::from_utf8_lossy(&buf).into_owned())
     }
 
-    fn bytes(&mut self) -> nyquest::Result<Vec<u8>> {
+    fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
         // TODO: proper timeouts
         self.handle
             .with_handle(|handle| handle.poll_until_whole_response(Duration::from_secs(30)))?;
@@ -139,10 +139,10 @@ impl nyquest::blocking::backend::BlockingResponse for CurlResponse {
     }
 }
 
-impl nyquest::blocking::backend::BlockingClient for CurlEasyClient {
+impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
     type Response = CurlResponse;
 
-    fn request(&self, req: Request) -> nyquest::Result<Self::Response> {
+    fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
         let mut handle = self.get_or_create_handle();
         // FIXME: properly concat base_url and url
         let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);
@@ -168,13 +168,13 @@ impl nyquest::blocking::backend::BlockingClient for CurlEasyClient {
     }
 }
 
-impl nyquest::blocking::backend::BlockingBackend for crate::CurlBackend {
+impl nyquest_interface::blocking::BlockingBackend for crate::CurlBackend {
     type BlockingClient = CurlEasyClient;
 
     fn create_blocking_client(
         &self,
-        options: nyquest::client::ClientOptions,
-    ) -> nyquest::client::BuildClientResult<Self::BlockingClient> {
+        options: nyquest_interface::client::ClientOptions,
+    ) -> nyquest_interface::client::BuildClientResult<Self::BlockingClient> {
         Ok(CurlEasyClient::new(options))
     }
 }

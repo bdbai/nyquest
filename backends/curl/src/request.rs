@@ -1,16 +1,16 @@
 use std::io::ErrorKind;
 
 use curl::easy::{Easy, List};
-use nyquest::{Body, Request};
+use nyquest_interface::{Body, Request};
 
 use crate::{error::IntoNyquestResult, urlencoded::curl_escape};
 
 pub fn populate_request<S>(
     url: &str,
     req: &Request<S>,
-    options: &nyquest::client::ClientOptions,
+    options: &nyquest_interface::client::ClientOptions,
     easy: &mut Easy,
-) -> nyquest::Result<()> {
+) -> nyquest_interface::Result<()> {
     if let Some(user_agent) = options.user_agent.as_deref() {
         easy.useragent(user_agent).expect("set curl user agent");
     }
@@ -60,7 +60,7 @@ pub fn populate_request<S>(
         Some(Body::Multipart { parts }) => {
             use std::io;
 
-            use nyquest::PartBody;
+            use nyquest_interface::PartBody;
 
             let mut form = curl::easy::Form::new();
             for part in parts {
@@ -74,14 +74,14 @@ pub fn populate_request<S>(
                         formpart.content_type(&part.content_type);
                     }
                     PartBody::Stream(_) => {
-                        return Err(nyquest::Error::Io(io::Error::new(
+                        return Err(nyquest_interface::Error::Io(io::Error::new(
                             ErrorKind::InvalidInput,
                             "unsupported body type",
                         )))
                     }
                 }
                 formpart.add().map_err(|e| {
-                    nyquest::Error::Io(io::Error::new(ErrorKind::Other, e.to_string()))
+                    nyquest_interface::Error::Io(io::Error::new(ErrorKind::Other, e.to_string()))
                 })?;
             }
             easy.httppost(form).into_nyquest_result()?;

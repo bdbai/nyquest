@@ -1,8 +1,8 @@
-use super::CachingBehavior;
+use nyquest_interface::client::{CachingBehavior, ClientOptions};
 
 #[derive(Debug, Clone, Default)]
 pub struct ClientBuilder {
-    pub(crate) options: super::ClientOptions,
+    pub(crate) options: ClientOptions,
 }
 
 impl ClientBuilder {

@@ -14,19 +14,19 @@ exclude.workspace = true
 [features]
 default = ["ssl"]
 async = [
-    "nyquest/async",
+    "nyquest-interface/async",
     "dep:futures-channel",
     "dep:futures-util",
     "dep:slab",
     "curl/poll_7_68_0",
 ]
-blocking = ["nyquest/blocking"]
-multipart = ["nyquest/multipart"]
+blocking = ["nyquest-interface/blocking"]
+multipart = ["nyquest-interface/multipart"]
 ssl = ["curl/ssl"]
 charset = ["dep:iconv-native"]
 
 [dependencies]
-nyquest = { path = "../..", default-features = false }
+nyquest-interface = { path = "../../nyquest-interface", default-features = false }
 curl = { version = "0.4", default-features = false }
 curl-sys = { version = "0.4", default-features = false }
 iconv-native = { version = "0.1.0-alpha.1", optional = true }
