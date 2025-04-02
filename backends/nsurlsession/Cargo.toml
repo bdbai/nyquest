@@ -24,8 +24,11 @@ cfg-if.workspace = true
 objc2 = { version = "0.6", default-features = false }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "alloc",
+    "block2",
+    "NSError",
     "NSObject",
     "NSString",
+    "NSData",
     "NSURL",
     "NSDictionary",
     "NSURLRequest",

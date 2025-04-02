@@ -1,10 +1,12 @@
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::{BuildClientError, BuildClientResult, ClientOptions};
-use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
+use nyquest_interface::{Body, Error as NyquestError, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::AllocAnyThread;
-use objc2_foundation::{NSMutableDictionary, NSString, NSURLRequest, NSURL};
+use objc2_foundation::{ns_string, NSData, NSDictionary, NSMutableURLRequest, NSString, NSURL};
+
+mod datatask_delegate;
 
 use crate::NSUrlSessionBackend;
 
@@ -13,7 +15,9 @@ pub struct NSUrlSessionBlockingClient {
     session: Retained<objc2_foundation::NSURLSession>,
     base_url: Option<Retained<NSURL>>,
 }
-pub struct NSUrlSessionBlockingResponse;
+pub struct NSUrlSessionBlockingResponse {
+    task: Retained<objc2_foundation::NSURLSessionDataTask>,
+}
 
 impl std::io::Read for NSUrlSessionBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -53,18 +57,23 @@ impl BlockingBackend for NSUrlSessionBackend {
         let session = unsafe {
             let config = objc2_foundation::NSURLSessionConfiguration::defaultSessionConfiguration();
             if !options.default_headers.is_empty() {
-                let headers = NSMutableDictionary::alloc();
-                let headers = NSMutableDictionary::initWithCapacity(
-                    headers,
-                    options.default_headers.len() as _,
+                let keys: Vec<_> = options
+                    .default_headers
+                    .iter()
+                    .map(|(k, _)| NSString::from_str(k))
+                    .collect();
+                let values: Vec<_> = options
+                    .default_headers
+                    .iter()
+                    .map(|(_, v)| NSString::from_str(v))
+                    .collect();
+                let dict = NSDictionary::from_retained_objects(
+                    &*keys.iter().map(|s| &**s).collect::<Vec<_>>(),
+                    &*values,
                 );
-                for (key, value) in options.default_headers {
-                    headers.setObject_forKey(
-                        NSString::from_str(&value).as_ref(),
-                        &*ProtocolObject::from_retained(NSString::from_str(&key)),
-                    );
-                }
-                config.setHTTPAdditionalHeaders(Some(headers.as_ref()));
+                config.setHTTPAdditionalHeaders(Some(
+                    Retained::cast_unchecked::<NSDictionary>(dict).as_ref(),
+                ));
             }
             // TODO: set options
             objc2_foundation::NSURLSession::sessionWithConfiguration(&config)
@@ -84,16 +93,37 @@ impl BlockingClient for NSUrlSessionBlockingClient {
     type Response = NSUrlSessionBlockingResponse;
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
-        unsafe {
-            let nsreq = NSURLRequest::alloc();
+        let nsreq = NSMutableURLRequest::alloc();
+        let task = unsafe {
             let url = NSURL::URLWithString_relativeToURL(
                 &*NSString::from_str(&req.relative_uri),
                 self.base_url.as_deref(),
             )
             .ok_or(NyquestError::InvalidUrl)?;
-            let nsreq = NSURLRequest::initWithURL(nsreq, &*url);
-            self.session.dataTaskWithRequest(&nsreq);
-        }
-        todo!()
+            let nsreq = NSMutableURLRequest::initWithURL(nsreq, &*url);
+            nsreq.setHTTPMethod(&*NSString::from_str(&req.method));
+            if let Some(body) = req.body {
+                match body {
+                    Body::Bytes {
+                        content,
+                        content_type,
+                    } => {
+                        nsreq.setValue_forHTTPHeaderField(
+                            Some(&NSString::from_str(&content_type)),
+                            ns_string!("content-type"),
+                        );
+                        nsreq.setHTTPBody(Some(&NSData::from_vec(content.into())));
+                    }
+                    _ => todo!("body types"),
+                }
+            }
+            // TODO: use delegate to receive response headers
+            let task = self.session.dataTaskWithRequest(&nsreq);
+            let delegate = datatask_delegate::BlockingDataTaskDelegate::new();
+            task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+            task.resume();
+            task
+        };
+        Ok(NSUrlSessionBlockingResponse { task })
     }
 }
