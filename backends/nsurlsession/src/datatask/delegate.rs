@@ -124,8 +124,8 @@ impl DataTaskDelegate {
                 .shared
                 .client_error
                 .store(Some(error.copy().into()));
-            self.ivars().shared.waker.wake();
         }
+        self.ivars().shared.waker.wake();
     }
     fn callback_URLSession_dataTask_didReceiveData(
         &self,

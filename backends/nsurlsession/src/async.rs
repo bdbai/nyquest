@@ -111,6 +111,7 @@ impl AsyncBackend for NSUrlSessionBackend {
     }
 }
 
+#[allow(irrefutable_let_patterns)]
 fn coerce_waker(waker: &GenericWaker) -> &AsyncWaker {
     if let GenericWaker::Async(waker) = waker {
         waker

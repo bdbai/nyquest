@@ -103,6 +103,7 @@ impl BlockingBackend for NSUrlSessionBackend {
     }
 }
 
+#[allow(irrefutable_let_patterns)]
 fn coerce_waker(waker: &GenericWaker) -> &BlockingWaker {
     if let GenericWaker::Blocking(waker) = waker {
         waker
