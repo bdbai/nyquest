@@ -24,12 +24,13 @@ blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart"]
 ssl = ["curl/ssl"]
 charset = ["dep:iconv-native"]
+charset-defaults = ["iconv-native/default"]
 
 [dependencies]
 nyquest-interface = { path = "../../nyquest-interface", default-features = false }
 curl = { version = "0.4", default-features = false }
 curl-sys = { version = "0.4", default-features = false }
-iconv-native = { version = "0.1.0-alpha.1", optional = true }
+iconv-native = { version = "0.1.0", optional = true, default-features = false }
 mio = { version = "1", optional = true, default-features = false }
 futures-channel = { version = "0.3", optional = true, default-features = false, features = [
     "alloc",

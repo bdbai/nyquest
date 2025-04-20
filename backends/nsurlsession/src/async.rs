@@ -1,4 +1,4 @@
-use std::future::{poll_fn, Future};
+use std::future::poll_fn;
 use std::task::Poll;
 
 use nyquest_interface::client::{BuildClientResult, ClientOptions};
@@ -37,8 +37,9 @@ impl AsyncResponse for NSUrlSessionAsyncResponse {
         self.inner.get_header(header)
     }
 
-    fn text(&mut self) -> impl Future<Output = NyquestResult<String>> + Send {
-        async { todo!() }
+    async fn text(&mut self) -> NyquestResult<String> {
+        let bytes = self.bytes().await?;
+        self.inner.convert_bytes_to_string(bytes)
     }
 
     async fn bytes(&mut self) -> NyquestResult<Vec<u8>> {

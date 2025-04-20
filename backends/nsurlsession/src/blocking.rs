@@ -39,7 +39,8 @@ impl BlockingResponse for NSUrlSessionBlockingResponse {
     }
 
     fn text(&mut self) -> nyquest_interface::Result<String> {
-        todo!()
+        let bytes = self.bytes()?;
+        self.inner.convert_bytes_to_string(bytes)
     }
 
     fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {

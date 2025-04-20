@@ -36,6 +36,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSURLResponse",
     "NSURLSession",
 ] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "CFString",
+] }
 futures-util = { version = "0.3", optional = true, default-features = false, features = [
     "std",
 ] }

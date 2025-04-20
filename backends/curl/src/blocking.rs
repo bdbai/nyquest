@@ -113,7 +113,7 @@ impl nyquest_interface::blocking::BlockingResponse for CurlResponse {
     fn text(&mut self) -> nyquest_interface::Result<String> {
         let buf = self.bytes()?;
         #[cfg(feature = "charset")]
-        if let Some((_, charset)) = self
+        if let Some((_, mut charset)) = self
             .get_header("content-type")?
             .pop()
             .unwrap_or_default()
@@ -121,6 +121,7 @@ impl nyquest_interface::blocking::BlockingResponse for CurlResponse {
             .filter_map(|s| s.split_once('='))
             .find(|(k, _)| k.trim().eq_ignore_ascii_case("charset"))
         {
+            charset = charset.trim_matches('"');
             if let Ok(decoded) = iconv_native::decode_lossy(&buf, charset.trim()) {
                 return Ok(decoded);
             }
