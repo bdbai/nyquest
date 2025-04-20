@@ -33,7 +33,7 @@ define_class!(
 
     // SAFETY: `NSApplicationDelegate` has no safety requirements.
     unsafe impl NSURLSessionTaskDelegate for DataTaskDelegate {
-        #[unsafe(method(didCompleteWithError:))]
+        #[unsafe(method(URLSession:task:didCompleteWithError:))]
         fn URLSession_task_didCompleteWithError(
             &self,
             session: &NSURLSession,
@@ -45,7 +45,7 @@ define_class!(
     }
 
     unsafe impl NSURLSessionDataDelegate for DataTaskDelegate {
-        #[unsafe(method(didReceiveResponse:completionHandler:))]
+        #[unsafe(method(URLSession:dataTask:didReceiveResponse:completionHandler:))]
         fn URLSession_dataTask_didReceiveResponse_completionHandler(
             &self,
             session: &NSURLSession,
@@ -61,7 +61,7 @@ define_class!(
             );
         }
 
-        #[unsafe(method(dataTask:didReceiveData:))]
+        #[unsafe(method(URLSession:dataTask:didReceiveData:))]
         fn URLSession_dataTask_didReceiveData(
             &self,
             session: &NSURLSession,
