@@ -7,6 +7,11 @@ cfg_if::cfg_if! {
     }
 }
 
+mod client;
+mod datatask;
+mod error;
+mod response;
+
 #[derive(Clone)]
 pub struct NSUrlSessionBackend;
 

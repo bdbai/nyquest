@@ -1,56 +1,120 @@
-use std::future::Future;
+use std::future::{poll_fn, Future};
+use std::task::Poll;
 
-use nyquest_interface::client::BuildClientResult;
+use nyquest_interface::client::{BuildClientResult, ClientOptions};
 use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse};
 use nyquest_interface::Result as NyquestResult;
+use objc2::runtime::ProtocolObject;
+use waker::AsyncWaker;
 
+pub(crate) mod waker;
+
+use crate::client::NSUrlSessionClient;
+use crate::datatask::{DataTaskDelegate, GenericWaker};
+use crate::error::IntoNyquestResult;
+use crate::response::NSUrlSessionResponse;
 use crate::NSUrlSessionBackend;
 
 #[derive(Clone)]
-pub struct NSUrlSessionAsyncClient {}
+pub struct NSUrlSessionAsyncClient {
+    inner: NSUrlSessionClient,
+}
 
-pub struct NSUrlSessionAsyncResponse {}
+pub struct NSUrlSessionAsyncResponse {
+    inner: NSUrlSessionResponse,
+}
 
 impl AsyncResponse for NSUrlSessionAsyncResponse {
     fn status(&self) -> u16 {
-        todo!()
+        self.inner.status()
     }
 
     fn content_length(&self) -> Option<u64> {
-        todo!()
+        self.inner.content_length()
     }
 
     fn get_header(&self, header: &str) -> NyquestResult<Vec<String>> {
-        todo!()
+        self.inner.get_header(header)
     }
 
     fn text(&mut self) -> impl Future<Output = NyquestResult<String>> + Send {
         async { todo!() }
     }
 
-    fn bytes(&mut self) -> impl Future<Output = NyquestResult<Vec<u8>>> + Send {
-        async { todo!() }
+    async fn bytes(&mut self) -> NyquestResult<Vec<u8>> {
+        let inner_waker = coerce_waker(&self.inner.shared.waker_ref());
+        unsafe {
+            self.inner.task.resume();
+        }
+        poll_fn(|cx| {
+            if self.inner.shared.is_completed() {
+                return Poll::Ready(());
+            }
+            inner_waker.register(cx);
+            Poll::Pending
+        })
+        .await;
+        unsafe {
+            self.inner.task.error().into_nyquest_result()?;
+        }
+        Ok(self.inner.shared.take_response_buffer())
     }
 }
 
 impl AsyncClient for NSUrlSessionAsyncClient {
     type Response = NSUrlSessionAsyncResponse;
 
-    fn request(
+    async fn request(
         &self,
         req: nyquest_interface::r#async::Request,
-    ) -> impl Future<Output = NyquestResult<Self::Response>> + Send {
-        async { todo!() }
+    ) -> NyquestResult<Self::Response> {
+        let task = self.inner.build_data_task(req)?;
+        let shared = unsafe {
+            let delegate = DataTaskDelegate::new(GenericWaker::Async(AsyncWaker::new()));
+            task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+            task.resume();
+            DataTaskDelegate::into_shared(delegate)
+        };
+        let inner_waker = coerce_waker(&shared.waker_ref());
+        // TODO: cancellation
+        let response = poll_fn(|cx| {
+            if let Some(response) = shared.try_take_response().into_nyquest_result().transpose() {
+                return Poll::Ready(response);
+            }
+            inner_waker.register(cx);
+            Poll::Pending
+        })
+        .await?;
+        unsafe {
+            task.error().into_nyquest_result()?;
+        }
+        Ok(NSUrlSessionAsyncResponse {
+            inner: NSUrlSessionResponse {
+                task,
+                response,
+                shared,
+            },
+        })
     }
 }
 
 impl AsyncBackend for NSUrlSessionBackend {
     type AsyncClient = NSUrlSessionAsyncClient;
 
-    fn create_async_client(
+    async fn create_async_client(
         &self,
-        options: nyquest_interface::client::ClientOptions,
-    ) -> impl Future<Output = BuildClientResult<Self::AsyncClient>> + Send {
-        async { todo!() }
+        options: ClientOptions,
+    ) -> BuildClientResult<Self::AsyncClient> {
+        Ok(NSUrlSessionAsyncClient {
+            inner: NSUrlSessionClient::create(options)?,
+        })
+    }
+}
+
+fn coerce_waker(waker: &GenericWaker) -> &AsyncWaker {
+    if let GenericWaker::Async(waker) = waker {
+        waker
+    } else {
+        unreachable!("should not be called in async context")
     }
 }

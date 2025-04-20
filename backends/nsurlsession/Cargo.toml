@@ -12,7 +12,7 @@ version.workspace = true
 exclude.workspace = true
 
 [features]
-async = ["nyquest-interface/async"]
+async = ["nyquest-interface/async", "dep:futures-util"]
 blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart"]
 
@@ -21,6 +21,7 @@ nyquest-interface = { path = "../../nyquest-interface", default-features = false
 cfg-if.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
+block2 = { version = "0.6", default-features = false }
 objc2 = { version = "0.6", default-features = false }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "alloc",
@@ -32,5 +33,10 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSURL",
     "NSDictionary",
     "NSURLRequest",
+    "NSURLResponse",
     "NSURLSession",
 ] }
+futures-util = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+] }
+arc-swap = "1"

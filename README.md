@@ -52,7 +52,7 @@ The following items are planned in MVP:
   - [x] Blocking (WIP)
   - [x] Async (WIP)
 - [ ] Backend: reqwest
-- [ ] Backend: NSURLSession
+- [x] Backend: NSURLSession (WIP)
 - [ ] Client Options
 - [x] Test framework for backends (WIP)
 - [x] Presets (WIP)
