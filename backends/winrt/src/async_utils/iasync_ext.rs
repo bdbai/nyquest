@@ -56,6 +56,14 @@ impl<A: IAsyncLike> Future for IAsyncFut<A> {
     }
 }
 
+impl<A> Drop for IAsyncFut<A> {
+    fn drop(&mut self) {
+        if self.is_running().unwrap_or_default() {
+            self.status.Cancel().ok();
+        }
+    }
+}
+
 unsafe impl Send for IAsyncFut<IAsyncAction> {}
 unsafe impl<P: RuntimeType> Send for IAsyncFut<IAsyncActionWithProgress<P>> {}
 unsafe impl<R: RuntimeType> Send for IAsyncFut<IAsyncOperation<R>> {}
