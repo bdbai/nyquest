@@ -13,6 +13,9 @@ pub fn curl_escape(easy: &Easy, str: impl AsRef<[u8]>) -> Vec<u8> {
         }
     }
     let str = str.as_ref();
+    if str.is_empty() {
+        return vec![];
+    }
     let res_raw = unsafe {
         CurlString(curl_sys::curl_easy_escape(
             easy.raw(),
