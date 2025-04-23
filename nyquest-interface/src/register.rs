@@ -31,7 +31,7 @@ use __priv::RegisterBackend;
 
 pub static BACKEND: OnceLock<Box<dyn RegisterBackend + Send + Sync>> = OnceLock::new();
 
-pub fn register_backend(backend: impl RegisterBackend + Send + Sync) {
+pub fn register_backend(backend: impl RegisterBackend + Send + Sync + 'static) {
     if BACKEND.set(Box::new(backend)).is_err() {
         panic!("Backend already registered");
     }

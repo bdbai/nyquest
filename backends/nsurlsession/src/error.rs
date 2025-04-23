@@ -10,14 +10,14 @@ pub(crate) trait IntoNyquestResult<T> {
 
 impl<T> IntoNyquestResult<T> for Result<T, Retained<NSError>> {
     fn into_nyquest_result(self) -> NyquestResult<T> {
-        Ok(self.map_err(|e| {
+        self.map_err(|e| {
             let msg =
                 autoreleasepool(|pool| unsafe { e.localizedDescription().to_str(pool).to_owned() });
             NyquestError::Io(io::Error::new(
                 ErrorKind::Other,
                 format!("NSURLSession error {}: {}", e.code(), msg),
             ))
-        })?)
+        })
     }
 }
 

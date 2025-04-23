@@ -17,3 +17,8 @@ pub use error::{Error, Result};
 #[cfg(feature = "async")]
 pub use r#async::client::AsyncClient;
 pub use request::Request;
+
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::body::Body;
+}

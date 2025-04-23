@@ -15,18 +15,18 @@ edition = "2021"
 keywords = ["http", "client", "native", "winhttp", "nsurlsession"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/bdbai/nyquest"
-rust-version = "1.78"
-version = "0.0.0-alpha.1"
+rust-version = "1.80"
 exclude = [".vscode/*", ".github/*", "examples/README.md", "rustfmt.toml"]
 
 [workspace.dependencies]
-futures = "0.3"
-thiserror = "1"
+futures = "0.3.31"
+thiserror = "2"
 cfg-if = "1"
 
 [package]
 name = "nyquest"
 description = "truly native HTTP client library"
+version = "0.0.1-alpha.2"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -34,7 +34,6 @@ keywords.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
@@ -44,6 +43,7 @@ features = ["async", "blocking"]
 async = ["dep:futures-io", "nyquest-interface/async"]
 blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart"]
+json = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 nyquest-interface = { path = "nyquest-interface", default-features = false }
@@ -51,3 +51,6 @@ thiserror.workspace = true
 futures-io = { version = "0.3", optional = true, default-features = false, features = [
     "std",
 ] }
+
+serde = { version = "1", optional = true }
+serde_json = { version = "1.0.140", optional = true }

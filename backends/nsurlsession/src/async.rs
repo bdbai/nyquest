@@ -43,7 +43,7 @@ impl AsyncResponse for NSUrlSessionAsyncResponse {
     }
 
     async fn bytes(&mut self) -> NyquestResult<Vec<u8>> {
-        let inner_waker = coerce_waker(&self.inner.shared.waker_ref());
+        let inner_waker = coerce_waker(self.inner.shared.waker_ref());
         unsafe {
             self.inner.task.resume();
         }
@@ -76,7 +76,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             task.resume();
             DataTaskDelegate::into_shared(delegate)
         };
-        let inner_waker = coerce_waker(&shared.waker_ref());
+        let inner_waker = coerce_waker(shared.waker_ref());
         // TODO: cancellation
         let response = poll_fn(|cx| {
             if let Some(response) = shared.try_take_response().into_nyquest_result().transpose() {

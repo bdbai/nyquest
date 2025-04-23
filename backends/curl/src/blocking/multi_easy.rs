@@ -106,16 +106,15 @@ impl MultiEasy {
                     state
                         .response_headers_buffer
                         .push(h.strip_suffix(b"\r\n").unwrap_or(h).into());
-                } else {
-                    if let Some(status) = h
-                        .split(u8::is_ascii_whitespace)
-                        .nth(1)
-                        .and_then(|s| std::str::from_utf8(s).ok())
-                        .and_then(|s| s.parse().ok())
-                    {
-                        state.temp_status_code = status;
-                    }
+                } else if let Some(status) = h
+                    .split(u8::is_ascii_whitespace)
+                    .nth(1)
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .and_then(|s| s.parse().ok())
+                {
+                    state.temp_status_code = status;
                 }
+
                 true
             }
         })

@@ -44,7 +44,7 @@ impl BlockingResponse for NSUrlSessionBlockingResponse {
     }
 
     fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
-        let inner_waker = coerce_waker(&self.inner.shared.waker_ref());
+        let inner_waker = coerce_waker(self.inner.shared.waker_ref());
         unsafe {
             self.inner.task.resume();
         }

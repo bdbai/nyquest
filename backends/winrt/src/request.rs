@@ -62,7 +62,7 @@ pub(crate) fn create_body<S>(
                     )))
                 })
                 .collect();
-            let content = HttpFormUrlEncodedContent::Create(&IIterable::try_from(pairs).unwrap())?; // TODO: use Result::into_ok()
+            let content = HttpFormUrlEncodedContent::Create(&IIterable::from(pairs))?;
             content.cast()?
         }
         #[cfg(feature = "multipart")]

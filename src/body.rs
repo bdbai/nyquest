@@ -19,6 +19,9 @@ pub struct PartBody<S> {
 }
 
 impl<S> Body<S> {
+    pub fn plain_text(text: impl Into<Cow<'static, str>>) -> Self {
+        Self::text(text, "text/plain")
+    }
     pub fn text(
         text: impl Into<Cow<'static, str>>,
         content_type: impl Into<Cow<'static, str>>,
@@ -34,6 +37,9 @@ impl<S> Body<S> {
         }
     }
 
+    pub fn binary_bytes(bytes: impl Into<Cow<'static, [u8]>>) -> Self {
+        Self::bytes(bytes, "application/octet-stream")
+    }
     pub fn bytes(
         bytes: impl Into<Cow<'static, [u8]>>,
         content_type: impl Into<Cow<'static, str>>,
@@ -49,6 +55,42 @@ impl<S> Body<S> {
     pub fn json_bytes(bytes: impl Into<Cow<'static, [u8]>>) -> Self {
         Self::bytes(bytes, "application/json")
     }
+    #[cfg(feature = "json")]
+    pub fn json<T: serde::Serialize>(value: &T) -> serde_json::Result<Self> {
+        let bytes = serde_json::to_vec(value)?;
+        Ok(Self::json_bytes(bytes))
+    }
+
+    pub fn form(fields: impl IntoIterator<Item = (Cow<'static, str>, Cow<'static, str>)>) -> Self {
+        Self {
+            inner: BodyImpl::Form {
+                fields: fields.into_iter().collect(),
+            },
+        }
+    }
+}
+
+/// Constructs a form body from a predefined set of fields.
+/// # Examples
+/// ```
+/// let body: nyquest::blocking::Body = body_form! {
+///     "key1" => "value1",
+///     "key2" => String::from("value2"),
+///     Cow::Borrowed("key3") => "value3",
+/// };
+/// ```
+#[macro_export]
+macro_rules! body_form {
+    ($($key:expr => $value:expr),* $(,)?) => {
+        ::nyquest::__private::Body::form(vec![
+            $(
+                (
+                    ::std::convert::Into::<::std::borrow::Cow::<'static, str>>::into($key),
+                    ::std::convert::Into::<::std::borrow::Cow::<'static, str>>::into($value)
+                ),
+            )*
+        ])
+    };
 }
 
 #[cfg(feature = "multipart")]

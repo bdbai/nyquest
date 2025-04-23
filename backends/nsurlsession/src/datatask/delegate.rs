@@ -152,7 +152,7 @@ impl DataTaskSharedContextRetained {
             return Err(error.into());
         }
         let response = self.retained.ivars().shared.response.swap(None);
-        Ok(response.and_then(|res| Some(res.0.downcast::<NSHTTPURLResponse>().ok()?.into())))
+        Ok(response.and_then(|res| res.0.downcast::<NSHTTPURLResponse>().ok()))
     }
 
     pub(crate) fn is_completed(&self) -> bool {

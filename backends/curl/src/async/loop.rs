@@ -167,7 +167,7 @@ impl LoopManagerShared {
         let (tx, rx) = oneshot::channel();
         {
             let mut inner = self.inner.lock().unwrap();
-            if let Err(_) = inner.multi_waker.wakeup() {
+            if inner.multi_waker.wakeup().is_err() {
                 drop(inner);
                 return Ok(Err((Some(easy), self)));
             }
@@ -268,7 +268,7 @@ impl EasyPause {
 // Safety: Nothing can happen when the handle is moved between threads without "unsafe"
 unsafe impl Send for EasyPause {}
 
-fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) -> () {
+fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
     let multi = Multi::new();
     let request_manager = LoopManagerShared {
         inner: Arc::new(Mutex::new(LoopManagerInner {
@@ -375,8 +375,9 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) -> () {
                             break;
                         };
                         let mut state = ctx.state.lock().unwrap();
-                        let res = handle.response_code().and_then(|status| {
-                            Ok(super::CurlAsyncResponse {
+                        let res = handle
+                            .response_code()
+                            .map(|status| super::CurlAsyncResponse {
                                 status: status as _,
                                 content_length: handle
                                     .content_length_download()
@@ -390,8 +391,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) -> () {
                                     .map(|(k, v)| (k.into(), v.trim_start().into()))
                                     .collect(),
                                 handle: req_handle,
-                            })
-                        });
+                            });
                         tx.send(res.into_nyquest_result()).ok();
                         break;
                     }

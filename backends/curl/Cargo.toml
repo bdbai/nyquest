@@ -1,6 +1,7 @@
 [package]
 name = "nyquest-backend-curl"
 description = "libcurl backend for nyquest"
+version = "0.0.1-alpha.1"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -8,7 +9,6 @@ keywords.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-version.workspace = true
 exclude.workspace = true
 
 [features]

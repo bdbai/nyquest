@@ -41,7 +41,7 @@ pub fn populate_request<S>(
             headers
                 .append(&format!("content-type: {}", content_type))
                 .into_nyquest_result()?;
-            easy.post_fields_copy(&content).into_nyquest_result()?;
+            easy.post_fields_copy(content).into_nyquest_result()?;
         }
         Some(Body::Stream(_)) => unimplemented!(),
         Some(Body::Form { fields }) => {
@@ -92,5 +92,6 @@ pub fn populate_request<S>(
         None => {}
     }
     easy.http_headers(headers).into_nyquest_result()?;
+    easy.accept_encoding("").into_nyquest_result()?;
     Ok(())
 }

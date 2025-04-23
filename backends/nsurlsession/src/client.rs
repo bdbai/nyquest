@@ -27,8 +27,8 @@ impl NSUrlSessionClient {
                     .map(|(_, v)| NSString::from_str(v))
                     .collect();
                 let dict = NSDictionary::from_retained_objects(
-                    &*keys.iter().map(|s| &**s).collect::<Vec<_>>(),
-                    &*values,
+                    &keys.iter().map(|s| &**s).collect::<Vec<_>>(),
+                    &values,
                 );
                 config.setHTTPAdditionalHeaders(Some(
                     Retained::cast_unchecked::<NSDictionary>(dict).as_ref(),
@@ -40,7 +40,7 @@ impl NSUrlSessionClient {
         let base_url = options
             .base_url
             .map(|url| unsafe {
-                NSURL::URLWithString(&*NSString::from_str(&url))
+                NSURL::URLWithString(&NSString::from_str(&url))
                     .ok_or(BuildClientError::BackendError(NyquestError::InvalidUrl))
             })
             .transpose()?;
@@ -54,12 +54,12 @@ impl NSUrlSessionClient {
         let nsreq = NSMutableURLRequest::alloc();
         unsafe {
             let url = NSURL::URLWithString_relativeToURL(
-                &*NSString::from_str(&req.relative_uri),
+                &NSString::from_str(&req.relative_uri),
                 self.base_url.as_deref(),
             )
             .ok_or(NyquestError::InvalidUrl)?;
-            let nsreq = NSMutableURLRequest::initWithURL(nsreq, &*url);
-            nsreq.setHTTPMethod(&*NSString::from_str(&req.method));
+            let nsreq = NSMutableURLRequest::initWithURL(nsreq, &url);
+            nsreq.setHTTPMethod(&NSString::from_str(&req.method));
             if let Some(body) = req.body {
                 match body {
                     Body::Bytes {
