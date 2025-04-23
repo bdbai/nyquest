@@ -47,6 +47,7 @@ mod tests {
             assert_eq!(double_deref(&form.next()), Some(("key1", VALUE1)));
             assert_eq!(double_deref(&form.next()), Some(("key2", VALUE2)));
             assert_eq!(double_deref(&form.next()), Some(("key3", VALUE3)));
+            assert_eq!(form.next().as_ref().map(|kv| &*kv.0), Some("key 4"));
             assert!(form.next().is_none());
         };
         #[cfg(feature = "blocking")]
@@ -55,6 +56,7 @@ mod tests {
                 "key1" => VALUE1,
                 "key2" => VALUE2,
                 "key3" => VALUE3,
+                "key 4" => "",
             };
             let client = builder.clone().build_blocking().unwrap();
             let res = client
@@ -71,6 +73,7 @@ mod tests {
                 "key1" => VALUE1,
                 "key2" => VALUE2,
                 "key3" => VALUE3,
+                "key 4" => "",
             };
             let facts = TOKIO_RT.block_on(async {
                 let client = builder.build_async().await.unwrap();

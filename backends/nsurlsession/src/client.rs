@@ -1,11 +1,14 @@
+use std::borrow::Cow;
+use std::sync::LazyLock;
+
 use nyquest_interface::client::{BuildClientError, BuildClientResult, ClientOptions};
 
 use nyquest_interface::{Body, Error as NyquestError, Request, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
-    ns_string, NSArray, NSData, NSDictionary, NSMutableURLRequest, NSString, NSURLComponents,
-    NSUTF8StringEncoding, NSURL,
+    ns_string, NSCharacterSet, NSData, NSDictionary, NSMutableCharacterSet, NSMutableURLRequest,
+    NSString, NSUTF8StringEncoding, NSURL,
 };
 
 #[derive(Clone)]
@@ -76,25 +79,10 @@ impl NSUrlSessionClient {
                         nsreq.setHTTPBody(Some(&NSData::from_vec(content.into())));
                     }
                     Body::Form { fields } => {
-                        let fields: Vec<_> = fields
-                            .iter()
-                            .map(|(k, v)| {
-                                objc2_foundation::NSURLQueryItem::queryItemWithName_value(
-                                    &NSString::from_str(k),
-                                    Some(&NSString::from_str(v)),
-                                )
-                            })
-                            .collect();
-                        let fields = NSArray::from_retained_slice(&fields);
-                        let tmp_url = NSURLComponents::new();
-                        tmp_url.setQueryItems(Some(&fields));
-                        let query = tmp_url.percentEncodedQuery();
-                        nsreq.setHTTPBody(
-                            query
-                                .as_deref()
-                                .and_then(|s| s.dataUsingEncoding(NSUTF8StringEncoding))
-                                .as_deref(),
-                        );
+                        static FORM_URLENCODER: LazyLock<FormUrlEncoder> =
+                            LazyLock::new(FormUrlEncoder::new);
+                        let data = FORM_URLENCODER.encode_fields(&fields);
+                        nsreq.setHTTPBody(Some(&data));
                     }
                     _ => todo!("body types"),
                 }
@@ -103,3 +91,43 @@ impl NSUrlSessionClient {
         }
     }
 }
+
+struct FormUrlEncoder(Retained<NSCharacterSet>);
+impl FormUrlEncoder {
+    fn new() -> Self {
+        unsafe {
+            let set = NSMutableCharacterSet::alphanumericCharacterSet();
+            set.addCharactersInString(ns_string!("-._* "));
+            Self(set.downcast().unwrap())
+        }
+    }
+    fn encode(&self, s: &str) -> Retained<NSString> {
+        unsafe {
+            NSString::from_str(s)
+                .stringByAddingPercentEncodingWithAllowedCharacters(&self.0)
+                .unwrap_or_default()
+                .stringByReplacingOccurrencesOfString_withString(ns_string!(" "), ns_string!("+"))
+        }
+    }
+    fn encode_fields(&self, fields: &[(Cow<'static, str>, Cow<'static, str>)]) -> Retained<NSData> {
+        let Some(((first_key, first_val), fields)) = fields.split_first() else {
+            return NSData::new();
+        };
+        let mut encoded = self
+            .encode(first_key)
+            .stringByAppendingString(ns_string!("="))
+            .stringByAppendingString(&self.encode(first_val));
+        for (key, val) in fields {
+            encoded = encoded
+                .stringByAppendingString(ns_string!("&"))
+                .stringByAppendingString(&self.encode(key))
+                .stringByAppendingString(ns_string!("="))
+                .stringByAppendingString(&self.encode(val));
+        }
+        let data = unsafe { encoded.dataUsingEncoding(NSUTF8StringEncoding) };
+        data.unwrap_or_default()
+    }
+}
+
+unsafe impl Send for FormUrlEncoder {}
+unsafe impl Sync for FormUrlEncoder {}
