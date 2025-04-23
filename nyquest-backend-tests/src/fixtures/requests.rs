@@ -22,12 +22,12 @@ mod tests {
         t.as_ref().map(|(a, b)| (&**a, &**b))
     }
     #[test]
-    fn test_body_query() {
-        const PATH: &str = "responses/get_text";
+    fn test_body_form() {
+        const PATH: &str = "requests/body_form";
         const VALUE1: &str = "valu e1";
         const VALUE2: &str = "value=2";
         const VALUE3: &str = "val&&u e +3";
-        let mut received_body = Arc::new(OnceLock::default());
+        let received_body = Arc::new(OnceLock::default());
         let _handle = crate::add_hyper_fixture(PATH, {
             let received_body = Arc::clone(&received_body);
             move |req| {
