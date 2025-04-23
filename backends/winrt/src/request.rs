@@ -2,13 +2,13 @@ use std::borrow::Cow;
 use std::io;
 
 use nyquest_interface::{Body, Request};
-use windows::Foundation::Collections::{IIterable, IKeyValuePair};
 use windows::Foundation::{IReference, PropertyValue, Uri};
 use windows::Storage::Streams::IBuffer;
 use windows::Web::Http::Headers::HttpMediaTypeHeaderValue;
 use windows::Web::Http::{
     HttpBufferContent, HttpFormUrlEncodedContent, HttpMethod, HttpRequestMessage, IHttpContent,
 };
+use windows_collections::{IIterable, IKeyValuePair};
 use windows_core::{Interface, HSTRING};
 
 use crate::buffer::VecBuffer;
@@ -62,7 +62,7 @@ pub(crate) fn create_body<S>(
                     )))
                 })
                 .collect();
-            let content = HttpFormUrlEncodedContent::Create(&IIterable::try_from(pairs)?)?;
+            let content = HttpFormUrlEncodedContent::Create(&IIterable::try_from(pairs).unwrap())?; // TODO: use Result::into_ok()
             content.cast()?
         }
         #[cfg(feature = "multipart")]

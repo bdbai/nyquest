@@ -1,6 +1,6 @@
 use windows::core as windows_core;
 use windows::core::*;
-use windows::Foundation::Collections::{IKeyValuePair, IKeyValuePair_Impl};
+use windows_collections::{IKeyValuePair, IKeyValuePair_Impl};
 
 #[implement(IKeyValuePair<HSTRING, HSTRING>)]
 pub(crate) struct StringPair(pub(crate) HSTRING, pub(crate) HSTRING);

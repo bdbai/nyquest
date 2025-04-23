@@ -9,7 +9,6 @@ use windows::Web::Http::HttpCompletionOption;
 use windows::Win32::System::WinRT::IBufferByteAccess;
 use windows::{core::HSTRING, Web::Http::HttpClient};
 
-use crate::async_utils::IAsyncExt;
 use crate::request::{create_body, create_request};
 use crate::response::WinrtResponse;
 use crate::uri::build_uri;
@@ -40,7 +39,6 @@ impl WinrtAsyncClient {
         let res = self
             .client
             .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)?
-            .wait()?
             .await?;
         WinrtResponse::new(res)
     }
@@ -66,12 +64,7 @@ impl AsyncResponse for WinrtResponse {
             .into_nyquest_result()?
             .ReadAsStringAsync()
             .into_nyquest_result()?;
-        Ok(task
-            .wait()
-            .into_nyquest_result()?
-            .await
-            .into_nyquest_result()?
-            .to_string_lossy())
+        Ok(task.await.into_nyquest_result()?.to_string_lossy())
     }
 
     async fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
@@ -81,11 +74,7 @@ impl AsyncResponse for WinrtResponse {
             .into_nyquest_result()?
             .ReadAsBufferAsync()
             .into_nyquest_result()?;
-        let buf = task
-            .wait()
-            .into_nyquest_result()?
-            .await
-            .into_nyquest_result()?;
+        let buf = task.await.into_nyquest_result()?;
         let len = buf.Length().into_nyquest_result()?;
         let iba = buf.cast::<IBufferByteAccess>().into_nyquest_result()?;
         unsafe {
