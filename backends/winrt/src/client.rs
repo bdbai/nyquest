@@ -2,6 +2,7 @@ use std::io;
 
 use nyquest_interface::client::ClientOptions;
 use windows::core::{h, HSTRING};
+use windows::Web::Http::Filters::HttpBaseProtocolFilter;
 use windows::Web::Http::HttpClient;
 
 pub(crate) trait WinrtClientExt: Sized {
@@ -10,7 +11,9 @@ pub(crate) trait WinrtClientExt: Sized {
 
 impl WinrtClientExt for HttpClient {
     fn create(options: ClientOptions) -> io::Result<Self> {
-        let client = HttpClient::new()?;
+        let filter = HttpBaseProtocolFilter::new()?;
+        filter.SetAutomaticDecompression(true)?;
+        let client = HttpClient::Create(&filter)?;
         if let Some(user_agent) = &options.user_agent {
             client
                 .DefaultRequestHeaders()?

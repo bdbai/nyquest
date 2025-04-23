@@ -2,4 +2,4 @@
 
 libcurl backend for nyquest.
 
-`async` feature requires 7.68.0 or later.
+`async` feature requires libcurl 7.68.0 or later.
