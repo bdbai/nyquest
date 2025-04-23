@@ -3,7 +3,10 @@ use nyquest_interface::client::{BuildClientError, BuildClientResult, ClientOptio
 use nyquest_interface::{Body, Error as NyquestError, Request, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::AllocAnyThread;
-use objc2_foundation::{ns_string, NSData, NSDictionary, NSMutableURLRequest, NSString, NSURL};
+use objc2_foundation::{
+    ns_string, NSArray, NSData, NSDictionary, NSMutableURLRequest, NSString, NSURLComponents,
+    NSUTF8StringEncoding, NSURL,
+};
 
 #[derive(Clone)]
 pub struct NSUrlSessionClient {
@@ -71,6 +74,27 @@ impl NSUrlSessionClient {
                             ns_string!("content-type"),
                         );
                         nsreq.setHTTPBody(Some(&NSData::from_vec(content.into())));
+                    }
+                    Body::Form { fields } => {
+                        let fields: Vec<_> = fields
+                            .iter()
+                            .map(|(k, v)| {
+                                objc2_foundation::NSURLQueryItem::queryItemWithName_value(
+                                    &NSString::from_str(k),
+                                    Some(&NSString::from_str(v)),
+                                )
+                            })
+                            .collect();
+                        let fields = NSArray::from_retained_slice(&fields);
+                        let tmp_url = NSURLComponents::new();
+                        tmp_url.setQueryItems(Some(&fields));
+                        let query = tmp_url.percentEncodedQuery();
+                        nsreq.setHTTPBody(
+                            query
+                                .as_deref()
+                                .and_then(|s| s.dataUsingEncoding(NSUTF8StringEncoding))
+                                .as_deref(),
+                        );
                     }
                     _ => todo!("body types"),
                 }

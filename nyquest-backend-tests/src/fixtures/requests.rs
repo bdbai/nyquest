@@ -25,7 +25,7 @@ mod tests {
     fn test_body_form() {
         const PATH: &str = "requests/body_form";
         const VALUE1: &str = "valu e1";
-        const VALUE2: &str = "value=2";
+        const VALUE2: &str = "value=2哈";
         const VALUE3: &str = "val&&u e +3";
         let received_body = Arc::new(OnceLock::default());
         let _handle = crate::add_hyper_fixture(PATH, {

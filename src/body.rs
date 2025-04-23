@@ -73,7 +73,10 @@ impl<S> Body<S> {
 /// Constructs a form body from a predefined set of fields.
 /// # Examples
 /// ```
-/// let body: nyquest::blocking::Body = body_form! {
+/// use std::borrow::Cow;
+/// use nyquest::{blocking::Body, body_form};
+///
+/// let body: Body = body_form! {
 ///     "key1" => "value1",
 ///     "key2" => String::from("value2"),
 ///     Cow::Borrowed("key3") => "value3",
