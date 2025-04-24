@@ -33,6 +33,7 @@ tokio = { version = "1", features = ["full"] }
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["full"] }
 form_urlencoded = "1"
+memchr = "2"
 
 nyquest-backend-winrt = { path = "../backends/winrt", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }

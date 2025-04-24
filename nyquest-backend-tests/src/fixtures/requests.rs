@@ -8,6 +8,7 @@ mod tests {
     use form_urlencoded::Target;
     use http_body_util::BodyExt;
     use hyper::{Method, StatusCode};
+    use memchr::memmem;
     #[cfg(feature = "blocking")]
     use nyquest::blocking::Body as NyquestBlockingBody;
     #[cfg(feature = "async")]
@@ -43,12 +44,14 @@ mod tests {
         });
         let builder = crate::init_builder_blocking().unwrap();
         let assertions = |(_status, _content_len, _content)| {
-            let mut form = form_urlencoded::parse(received_body.get().unwrap());
+            let bytes = received_body.get().unwrap();
+            let mut form = form_urlencoded::parse(bytes);
             assert_eq!(double_deref(&form.next()), Some(("key1", VALUE1)));
             assert_eq!(double_deref(&form.next()), Some(("key2", VALUE2)));
             assert_eq!(double_deref(&form.next()), Some(("key3", VALUE3)));
             assert_eq!(form.next().as_ref().map(|kv| &*kv.0), Some("key 4"));
             assert!(form.next().is_none());
+            assert!(memmem::find(bytes, b"valu+e1").is_some());
         };
         #[cfg(feature = "blocking")]
         {
