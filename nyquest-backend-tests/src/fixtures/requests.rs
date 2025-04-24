@@ -106,7 +106,7 @@ mod tests {
             file_name: String,
             content_type: String,
             bytes: Bytes,
-            extra_value: Option<String>,
+            content_lang: Option<String>,
         }
         let received_facts = Arc::new([const { OnceLock::new() }; 2]);
         let _handle = crate::add_hyper_fixture(PATH, {
@@ -140,9 +140,9 @@ mod tests {
                                 .content_type()
                                 .map(|mime| mime.to_string())
                                 .unwrap_or_default(),
-                            extra_value: field
+                            content_lang: field
                                 .headers()
-                                .get("extra-header")
+                                .get("content-language")
                                 .map(|v| v.to_str().unwrap_or_default().to_owned()),
                             bytes: field.bytes().await.unwrap_or_default(),
                         });
@@ -159,7 +159,7 @@ mod tests {
             assert!(content_type
                 .as_deref()
                 .unwrap()
-                .starts_with("multipart/form-data"),);
+                .starts_with("multipart/form-data; "),);
             assert_eq!(items.len(), 3);
             assert_eq!(
                 items[0],
@@ -168,7 +168,7 @@ mod tests {
                     file_name: "".into(),
                     content_type: "text/plain".to_owned(),
                     bytes: Bytes::from_static(b"ttt"),
-                    extra_value: None,
+                    content_lang: None,
                 }
             );
             assert_eq!(
@@ -178,7 +178,7 @@ mod tests {
                     file_name: "3253212.mp3".into(),
                     content_type: "audio/mpeg".to_owned(),
                     bytes: Bytes::from_static(b"ID3"),
-                    extra_value: None,
+                    content_lang: None,
                 }
             );
             assert_eq!(
@@ -188,7 +188,7 @@ mod tests {
                     file_name: "".into(),
                     content_type: "text/plain".to_owned(),
                     bytes: Bytes::from_static(b"head"),
-                    extra_value: Some("val".to_owned()),
+                    content_lang: Some("zh-CN".to_owned()),
                 }
             );
         };
@@ -200,7 +200,7 @@ mod tests {
                 Part::new_with_content_type("filename", "audio/mpeg", PartBody::bytes(b"ID3"))
                     .with_filename("3253212.mp3"),
                 Part::new_with_content_type("headed", "text/plain", PartBody::text("head"))
-                    .with_header("extra-header", "val"),
+                    .with_header("content-language", "zh-CN"),
             ]));
             let client = builder.build_blocking().unwrap();
             client.request(req_body).unwrap();
@@ -213,7 +213,7 @@ mod tests {
                 Part::new_with_content_type("filename", "audio/mpeg", PartBody::bytes(b"ID3"))
                     .with_filename("3253212.mp3"),
                 Part::new_with_content_type("headed", "text/plain", PartBody::text("head"))
-                    .with_header("extra-header", "val"),
+                    .with_header("content-language", "zh-CN"),
             ]));
             TOKIO_RT.block_on(async move {
                 let builder = crate::init_builder().await.unwrap();

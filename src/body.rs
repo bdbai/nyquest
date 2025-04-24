@@ -123,6 +123,10 @@ impl<S> Part<S> {
         }
     }
 
+    /// # Note
+    /// 
+    /// Support for per-part headers is subject to underlying implementation. For example,
+    /// `winrt` backend only supports well-known content headers as listed [here](https://learn.microsoft.com/en-us/uwp/api/windows.web.http.headers.httpcontentheadercollection?view=winrt-26100#properties).
     pub fn with_header(
         mut self,
         name: impl Into<Cow<'static, str>>,

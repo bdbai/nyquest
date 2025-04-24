@@ -79,7 +79,10 @@ pub(crate) fn create_body<S>(
                 };
                 let headers = part_content.Headers()?;
                 for (name, value) in part.headers {
-                    headers.Append(&HSTRING::from(&*name), &HSTRING::from(&*value))?;
+                    headers.TryAppendWithoutValidation(
+                        &HSTRING::from(&*name),
+                        &HSTRING::from(&*value),
+                    )?;
                 }
                 match part.filename {
                     Some(filename) => content.AddWithNameAndFileName(
