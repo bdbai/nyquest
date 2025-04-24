@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test curl
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking,curl
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking,curl,multipart
 
   test-windows:
     runs-on: windows-latest
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test winrt
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking,winrt
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking,winrt,multipart
 
   test-macos:
     runs-on: macos-latest
@@ -32,4 +32,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test nsurlsession
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking,nsurlsession
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking,nsurlsession,multipart
