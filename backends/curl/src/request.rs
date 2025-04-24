@@ -65,19 +65,30 @@ pub fn populate_request<S>(
             let mut form = curl::easy::Form::new();
             for part in parts {
                 let mut formpart = form.part(&part.name);
-                if let Some(filename) = &part.filename {
-                    formpart.filename(&**filename);
+                if !part.headers.is_empty() {
+                    let mut list = List::new();
+                    for (name, value) in &part.headers {
+                        list.append(&format!("{}: {}", name, value))
+                            .into_nyquest_result()?;
+                    }
+                    formpart.content_header(list);
                 }
                 match &part.body {
                     PartBody::Bytes { content } => {
-                        formpart.buffer(&*part.name, content.to_vec());
+                        formpart.buffer(
+                            part.filename.as_deref().unwrap_or_default(),
+                            content.to_vec(),
+                        );
                         formpart.content_type(&part.content_type);
                     }
                     PartBody::Stream(_) => {
+                        if let Some(filename) = &part.filename {
+                            formpart.filename(&**filename);
+                        }
                         return Err(nyquest_interface::Error::Io(io::Error::new(
                             ErrorKind::InvalidInput,
                             "unsupported body type",
-                        )))
+                        )));
                     }
                 }
                 formpart.add().map_err(|e| {
@@ -85,9 +96,6 @@ pub fn populate_request<S>(
                 })?;
             }
             easy.httppost(form).into_nyquest_result()?;
-            headers
-                .append("content-type: application/x-www-form-urlencoded")
-                .into_nyquest_result()?;
         }
         None => {}
     }

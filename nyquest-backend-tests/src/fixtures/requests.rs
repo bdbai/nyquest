@@ -5,15 +5,16 @@ mod tests {
         sync::{Arc, OnceLock},
     };
 
-    use form_urlencoded::Target;
-    use http_body_util::BodyExt;
-    use hyper::{header::CONTENT_TYPE, Method, StatusCode};
+    use futures::StreamExt as _;
+    use http_body_util::{BodyExt, BodyStream};
+    use hyper::header::CONTENT_TYPE;
     use memchr::memmem;
+    use multer::Multipart;
     #[cfg(feature = "blocking")]
     use nyquest::blocking::Body as NyquestBlockingBody;
     #[cfg(feature = "async")]
     use nyquest::r#async::Body as NyquestAsyncBody;
-    use nyquest::{body_form, Request as NyquestRequest};
+    use nyquest::{body_form, Part, PartBody, Request as NyquestRequest};
 
     use crate::*;
 
@@ -28,14 +29,13 @@ mod tests {
         const VALUE1: &str = "valu e1";
         const VALUE2: &str = "value=2哈";
         const VALUE3: &str = "val&&u e +3";
-        let received_body = Arc::new([const { OnceLock::new() }; 2]);
+        let received_facts = Arc::new([const { OnceLock::new() }; 2]);
         let _handle = crate::add_hyper_fixture(PATH, {
-            let received_body = Arc::clone(&received_body);
-            move |req| {
+            let received_body = Arc::clone(&received_facts);
+            move |req: Request<body::Incoming>| {
                 let received_body = Arc::clone(&received_body);
                 async move {
-                    let is_blocking =
-                        req.headers().get("blocking").map(|v| v.as_bytes()) == Some(b"1");
+                    let is_blocking = req.is_blocking();
                     let content_type = req
                         .headers()
                         .get(CONTENT_TYPE)
@@ -71,11 +71,11 @@ mod tests {
                 "key3" => VALUE3,
                 "key 4" => "",
             };
-            let client = builder.clone().build_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
             client
                 .request(NyquestRequest::post(PATH).with_body(req_body))
                 .unwrap();
-            assertions(&*received_body[1].get().unwrap());
+            assertions(&*received_facts[1].get().unwrap());
         }
         #[cfg(feature = "async")]
         {
@@ -93,7 +93,134 @@ mod tests {
                     .await
                     .unwrap();
             });
-            assertions(&*received_body[0].get().unwrap());
+            assertions(&*received_facts[0].get().unwrap());
+        }
+    }
+
+    #[test]
+    fn test_body_multipart_bytes() {
+        const PATH: &str = "requests/body_multipart_bytes";
+        #[derive(Debug, Clone, Default, PartialEq, Eq)]
+        struct FormItem {
+            name: String,
+            file_name: String,
+            content_type: String,
+            bytes: Bytes,
+            extra_value: Option<String>,
+        }
+        let received_facts = Arc::new([const { OnceLock::new() }; 2]);
+        let _handle = crate::add_hyper_fixture(PATH, {
+            let received_body = Arc::clone(&received_facts);
+            move |req: Request<body::Incoming>| {
+                let received_body = Arc::clone(&received_body);
+                async move {
+                    let boundary = req
+                        .headers()
+                        .get(CONTENT_TYPE)
+                        .and_then(|ct| ct.to_str().ok())
+                        .and_then(|ct| multer::parse_boundary(ct).ok());
+                    let is_blocking = req.is_blocking();
+                    let content_type = req
+                        .headers()
+                        .get(CONTENT_TYPE)
+                        .map(|v| v.to_str().unwrap().to_owned());
+
+                    let body_stream =
+                        BodyStream::new(req.into_body()).filter_map(|result| async move {
+                            result.map(|frame| frame.into_data().ok()).transpose()
+                        });
+
+                    let mut multipart = Multipart::new(body_stream, boundary.unwrap_or_default());
+                    let mut form_items = vec![];
+                    while let Some(field) = multipart.next_field().await.unwrap() {
+                        form_items.push(FormItem {
+                            name: field.name().unwrap_or_default().to_owned(),
+                            file_name: field.file_name().unwrap_or_default().into(),
+                            content_type: field
+                                .content_type()
+                                .map(|mime| mime.to_string())
+                                .unwrap_or_default(),
+                            extra_value: field
+                                .headers()
+                                .get("extra-header")
+                                .map(|v| v.to_str().unwrap_or_default().to_owned()),
+                            bytes: field.bytes().await.unwrap_or_default(),
+                        });
+                    }
+                    received_body[is_blocking as usize]
+                        .set((form_items, content_type))
+                        .ok();
+                    let res = Response::new(Full::new(Default::default()));
+                    (res, Ok(()))
+                }
+            }
+        });
+        let assertions = |(items, content_type): &(Vec<FormItem>, Option<String>)| {
+            assert!(content_type
+                .as_deref()
+                .unwrap()
+                .starts_with("multipart/form-data"),);
+            assert_eq!(items.len(), 3);
+            assert_eq!(
+                items[0],
+                FormItem {
+                    name: "text".to_owned(),
+                    file_name: "".into(),
+                    content_type: "text/plain".to_owned(),
+                    bytes: Bytes::from_static(b"ttt"),
+                    extra_value: None,
+                }
+            );
+            assert_eq!(
+                items[1],
+                FormItem {
+                    name: "filename".to_owned(),
+                    file_name: "3253212.mp3".into(),
+                    content_type: "audio/mpeg".to_owned(),
+                    bytes: Bytes::from_static(b"ID3"),
+                    extra_value: None,
+                }
+            );
+            assert_eq!(
+                items[2],
+                FormItem {
+                    name: "headed".to_owned(),
+                    file_name: "".into(),
+                    content_type: "text/plain".to_owned(),
+                    bytes: Bytes::from_static(b"head"),
+                    extra_value: Some("val".to_owned()),
+                }
+            );
+        };
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let req_body = NyquestRequest::post(PATH).with_body(NyquestBlockingBody::multipart([
+                Part::new_with_content_type("text", "text/plain", PartBody::text("ttt")),
+                Part::new_with_content_type("filename", "audio/mpeg", PartBody::bytes(b"ID3"))
+                    .with_filename("3253212.mp3"),
+                Part::new_with_content_type("headed", "text/plain", PartBody::text("head"))
+                    .with_header("extra-header", "val"),
+            ]));
+            let client = builder.build_blocking().unwrap();
+            client.request(req_body).unwrap();
+            assertions(&*received_facts[1].get().unwrap());
+        }
+        #[cfg(feature = "async")]
+        {
+            let req_body = NyquestRequest::post(PATH).with_body(NyquestAsyncBody::multipart([
+                Part::new_with_content_type("text", "text/plain", PartBody::text("ttt")),
+                Part::new_with_content_type("filename", "audio/mpeg", PartBody::bytes(b"ID3"))
+                    .with_filename("3253212.mp3"),
+                Part::new_with_content_type("headed", "text/plain", PartBody::text("head"))
+                    .with_header("extra-header", "val"),
+            ]));
+            TOKIO_RT.block_on(async move {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder.build_async().await.unwrap();
+                client.request(req_body).await.unwrap();
+            });
+            assertions(&*received_facts[0].get().unwrap());
         }
     }
 }

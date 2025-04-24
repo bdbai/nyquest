@@ -22,6 +22,9 @@ use nyquest::ClientBuilder;
 use tokio::net::TcpListener;
 
 mod fixtures;
+mod request_ext;
+
+pub use request_ext::RequestExt;
 
 #[must_use]
 struct HyperFixtureHandle(String);

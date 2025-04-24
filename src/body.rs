@@ -68,6 +68,15 @@ impl<S> Body<S> {
             },
         }
     }
+
+    #[cfg(feature = "multipart")]
+    pub fn multipart(parts: impl IntoIterator<Item = Part<S>>) -> Self {
+        Self {
+            inner: BodyImpl::Multipart {
+                parts: parts.into_iter().map(|part| part.inner).collect(),
+            },
+        }
+    }
 }
 
 /// Constructs a form body from a predefined set of fields.
@@ -98,7 +107,7 @@ macro_rules! body_form {
 
 #[cfg(feature = "multipart")]
 impl<S> Part<S> {
-    pub fn new(
+    pub fn new_with_content_type(
         name: impl Into<Cow<'static, str>>,
         content_type: impl Into<Cow<'static, str>>,
         body: PartBody<S>,
