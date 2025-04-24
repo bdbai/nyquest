@@ -146,7 +146,11 @@ async fn init_builder() -> io::Result<ClientBuilder> {
 }
 
 fn init_builder_blocking() -> io::Result<ClientBuilder> {
-    TOKIO_RT.block_on(init_builder())
+    TOKIO_RT.block_on(async {
+        init_builder()
+            .await
+            .map(|cb| cb.with_header("blocking", "1"))
+    })
 }
 
 fn init_backend() {

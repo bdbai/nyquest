@@ -7,7 +7,7 @@ mod tests {
 
     use form_urlencoded::Target;
     use http_body_util::BodyExt;
-    use hyper::{Method, StatusCode};
+    use hyper::{header::CONTENT_TYPE, Method, StatusCode};
     use memchr::memmem;
     #[cfg(feature = "blocking")]
     use nyquest::blocking::Body as NyquestBlockingBody;
@@ -28,33 +28,43 @@ mod tests {
         const VALUE1: &str = "valu e1";
         const VALUE2: &str = "value=2哈";
         const VALUE3: &str = "val&&u e +3";
-        let received_body = Arc::new(OnceLock::default());
+        let received_body = Arc::new([const { OnceLock::new() }; 2]);
         let _handle = crate::add_hyper_fixture(PATH, {
             let received_body = Arc::clone(&received_body);
             move |req| {
                 let received_body = Arc::clone(&received_body);
                 async move {
-                    received_body
-                        .set(req.into_body().collect().await.unwrap().to_bytes())
+                    let is_blocking =
+                        req.headers().get("blocking").map(|v| v.as_bytes()) == Some(b"1");
+                    let content_type = req
+                        .headers()
+                        .get(CONTENT_TYPE)
+                        .map(|v| v.to_str().unwrap().to_owned());
+                    let body = req.into_body().collect().await.unwrap().to_bytes();
+                    received_body[is_blocking as usize]
+                        .set((body, content_type))
                         .ok();
                     let res = Response::new(Full::new(Default::default()));
                     (res, Ok(()))
                 }
             }
         });
-        let builder = crate::init_builder_blocking().unwrap();
-        let assertions = |(_status, _content_len, _content)| {
-            let bytes = received_body.get().unwrap();
-            let mut form = form_urlencoded::parse(bytes);
+        let assertions = |(bytes, content_type): &(Bytes, Option<String>)| {
+            assert_eq!(
+                content_type.as_deref(),
+                Some("application/x-www-form-urlencoded")
+            );
+            let mut form = form_urlencoded::parse(&bytes);
             assert_eq!(double_deref(&form.next()), Some(("key1", VALUE1)));
             assert_eq!(double_deref(&form.next()), Some(("key2", VALUE2)));
             assert_eq!(double_deref(&form.next()), Some(("key3", VALUE3)));
             assert_eq!(form.next().as_ref().map(|kv| &*kv.0), Some("key 4"));
             assert!(form.next().is_none());
-            assert!(memmem::find(bytes, b"valu+e1").is_some());
+            assert!(memmem::find(&bytes, b"valu+e1").is_some());
         };
         #[cfg(feature = "blocking")]
         {
+            let builder = crate::init_builder_blocking().unwrap();
             let req_body = body_form! {
                 "key1" => VALUE1,
                 "key2" => VALUE2,
@@ -62,13 +72,10 @@ mod tests {
                 "key 4" => "",
             };
             let client = builder.clone().build_blocking().unwrap();
-            let res = client
+            client
                 .request(NyquestRequest::post(PATH).with_body(req_body))
                 .unwrap();
-            let status = res.status();
-            let content_len = res.content_length();
-            let content = res.text().unwrap();
-            assertions((status, content_len, content));
+            assertions(&*received_body[1].get().unwrap());
         }
         #[cfg(feature = "async")]
         {
@@ -78,17 +85,15 @@ mod tests {
                 "key3" => VALUE3,
                 "key 4" => "",
             };
-            let facts = TOKIO_RT.block_on(async {
+            TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
                 let client = builder.build_async().await.unwrap();
-                let res = client
+                client
                     .request(NyquestRequest::post(PATH).with_body(req_body))
                     .await
                     .unwrap();
-                let status = res.status();
-                let content_len = res.content_length();
-                (status, content_len, res.text().await.unwrap())
             });
-            assertions(facts);
+            assertions(&*received_body[0].get().unwrap());
         }
     }
 }

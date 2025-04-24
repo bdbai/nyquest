@@ -82,6 +82,10 @@ impl NSUrlSessionClient {
                         static FORM_URLENCODER: LazyLock<FormUrlEncoder> =
                             LazyLock::new(FormUrlEncoder::new);
                         let data = FORM_URLENCODER.encode_fields(&fields);
+                        nsreq.setValue_forHTTPHeaderField(
+                            Some(ns_string!("application/x-www-form-urlencoded")),
+                            ns_string!("content-type"),
+                        );
                         nsreq.setHTTPBody(Some(&data));
                     }
                     _ => todo!("body types"),
