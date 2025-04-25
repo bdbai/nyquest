@@ -9,7 +9,10 @@ mod urlencoded;
 
 pub struct CurlBackend;
 
-pub fn register() {
+pub fn init() {
     curl::init();
+}
+pub fn register() {
+    init();
     nyquest_interface::register_backend(CurlBackend);
 }
