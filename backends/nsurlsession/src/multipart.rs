@@ -2,13 +2,13 @@ use nyquest_interface::{Part, PartBody};
 use objc2::rc::Retained;
 use objc2_foundation::NSData;
 
-extern "C" {
+unsafe extern "C" {
     fn arc4random() -> u32;
 }
 
 pub fn generate_multipart_boundary() -> String {
     let [rnd1, rnd2] = unsafe { [arc4random(), arc4random()] };
-    format!("{}{:x}{:x}", "----nyquest.boundary.{:x}{:x}", rnd1, rnd2)
+    format!("----nyquest.boundary.{:08x}{:08x}", rnd1, rnd2)
 }
 
 fn estimate_multipart_body_size<S>(boundary: &str, parts: &[Part<S>]) -> usize {
@@ -47,8 +47,12 @@ pub fn generate_multipart_body<S>(boundary: &str, parts: Vec<Part<S>>) -> Retain
         body.extend_from_slice(b"\r\nContent-Disposition: form-data; name=\"");
         body.extend_from_slice(part.name.as_bytes());
         body.extend_from_slice(b"\"");
-        if let Some(filename) = part.filename {
+        if let Some(mut filename) = part.filename {
             body.extend_from_slice(b"; filename=\"");
+            const STRIPPED_CHARS: &[char] = &['"', '\\', '/'];
+            if filename.contains(STRIPPED_CHARS) {
+                filename = filename.replace(STRIPPED_CHARS, "_").into();
+            }
             body.extend_from_slice(filename.as_bytes());
             body.extend_from_slice(b"\"");
         }
