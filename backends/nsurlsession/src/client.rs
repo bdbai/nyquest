@@ -88,6 +88,19 @@ impl NSUrlSessionClient {
                         );
                         nsreq.setHTTPBody(Some(&data));
                     }
+                    #[cfg(feature = "multipart")]
+                    Body::Multipart { parts } => {
+                        use crate::multipart::{
+                            generate_multipart_body, generate_multipart_boundary,
+                        };
+                        let boundary = generate_multipart_boundary();
+                        let content_type = format!("multipart/form-data; boundary={}", boundary);
+                        nsreq.setValue_forHTTPHeaderField(
+                            Some(&NSString::from_str(&content_type)),
+                            ns_string!("content-type"),
+                        );
+                        nsreq.setHTTPBody(Some(&generate_multipart_body(&boundary, parts)));
+                    }
                     _ => todo!("body types"),
                 }
             }

@@ -10,6 +10,8 @@ cfg_if::cfg_if! {
 mod client;
 mod datatask;
 mod error;
+#[cfg(feature = "multipart")]
+mod multipart;
 mod response;
 
 #[derive(Clone)]
