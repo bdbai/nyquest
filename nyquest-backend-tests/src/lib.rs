@@ -10,7 +10,7 @@ use std::{
     sync::{LazyLock, Mutex, Once},
 };
 
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{self, Bytes},
     server::conn::http1,
@@ -45,7 +45,28 @@ impl Drop for HyperFixtureHandle {
     }
 }
 
-type FixtureAssertionResult = (Response<Full<Bytes>>, Result<(), Request<body::Incoming>>);
+// BoxedBody for supporting streaming/chunked responses
+type BoxedBody = http_body_util::combinators::BoxBody<Bytes, hyper::Error>;
+
+// New type allowing both Full<Bytes> and BoxedBody response types
+// This makes existing tests compatible with the new changes
+type FixtureAssertionResult = (ResponseWrapper, Result<(), Request<body::Incoming>>);
+
+struct ResponseWrapper(Response<BoxedBody>);
+
+impl From<Response<Full<Bytes>>> for ResponseWrapper {
+    fn from(resp: Response<Full<Bytes>>) -> Self {
+        let resp = resp.map(|body| body.map_err(|_| unreachable!()).boxed());
+        ResponseWrapper(resp)
+    }
+}
+
+impl From<Response<BoxedBody>> for ResponseWrapper {
+    fn from(resp: Response<BoxedBody>) -> Self {
+        ResponseWrapper(resp)
+    }
+}
+
 struct HyperServiceFixture {
     svc: Box<
         dyn Fn(
@@ -56,20 +77,28 @@ struct HyperServiceFixture {
     >,
     assertion_failed_request: Option<Request<body::Incoming>>,
 }
+
 static HYPER_SERVICE_FIXTURES: Mutex<BTreeMap<String, HyperServiceFixture>> =
     Mutex::new(BTreeMap::new());
 
-fn add_hyper_fixture<Fut: Future<Output = FixtureAssertionResult> + Send + 'static>(
+fn add_hyper_fixture<Fut, Resp>(
     url: impl Into<String>,
     svc_fn: impl Fn(Request<body::Incoming>) -> Fut + Send + Sync + 'static,
-) -> HyperFixtureHandle {
+) -> HyperFixtureHandle
+where
+    Fut: Future<Output = (Resp, Result<(), Request<body::Incoming>>)> + Send + 'static,
+    Resp: Into<ResponseWrapper>,
+{
     let mut url: String = url.into();
     if !url.starts_with('/') {
         url.insert(0, '/');
     }
     let svc = Box::new(move |req| {
         let fut = svc_fn(req);
-        Box::pin(async move { fut.await }) as _
+        Box::pin(async move {
+            let (resp, result) = fut.await;
+            (resp.into(), result)
+        }) as _
     });
     let fixture = HyperServiceFixture {
         svc,
@@ -83,7 +112,7 @@ fn add_hyper_fixture<Fut: Future<Output = FixtureAssertionResult> + Send + 'stat
     HyperFixtureHandle(url)
 }
 
-async fn handle_service(req: Request<body::Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
+async fn handle_service(req: Request<body::Incoming>) -> Result<Response<BoxedBody>, Infallible> {
     let path = req.uri().path().to_owned();
     let fut = {
         let services = HYPER_SERVICE_FIXTURES.lock().unwrap();
@@ -91,12 +120,14 @@ async fn handle_service(req: Request<body::Incoming>) -> Result<Response<Full<By
         (fixture.svc)(req)
     };
     let (response, result) = fut.await;
+
     if let Err(req) = result {
         let mut services = HYPER_SERVICE_FIXTURES.lock().unwrap();
         let fixture = services.get_mut(&*path).unwrap();
         fixture.assertion_failed_request = Some(req);
     }
-    Ok(response)
+
+    Ok(response.0)
 }
 
 async fn setup_hyper_impl() -> Result<String, io::Error> {

@@ -87,7 +87,7 @@ mod tests {
         const PATH: &str = "responses/status_codes";
         const STATUS_CODES: [u16; 4] = [400, 404, 500, 502];
         let _handle = crate::add_hyper_fixture(PATH, |mut req| async move {
-            let mut res = Response::default();
+            let mut res = Response::<Full<Bytes>>::default();
             let body = req.body_mut().collect().await.ok().and_then(|bytes| {
                 let status = String::from_utf8_lossy(&bytes.to_bytes()).parse().ok()?;
                 StatusCode::from_u16(status).ok()
@@ -140,7 +140,7 @@ mod tests {
         const HEADER_NAME: &str = "X-Test-Header";
         const HEADER_VALUE: &str = "test-value";
         let _handle = crate::add_hyper_fixture(PATH, |_req| async move {
-            let mut res = Response::default();
+            let mut res = Response::<Full<Bytes>>::default();
             res.headers_mut()
                 .insert(HEADER_NAME, HEADER_VALUE.parse().unwrap());
             (res, Ok(()))
