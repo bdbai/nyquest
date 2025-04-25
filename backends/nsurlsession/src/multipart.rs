@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use nyquest_interface::{Part, PartBody};
 use objc2::rc::Retained;
 use objc2_foundation::NSData;
@@ -9,6 +11,18 @@ unsafe extern "C" {
 pub fn generate_multipart_boundary() -> String {
     let [rnd1, rnd2] = unsafe { [arc4random(), arc4random()] };
     format!("----nyquest.boundary.{:08x}{:08x}", rnd1, rnd2)
+}
+
+fn quick_escape_header(key: &mut Cow<'static, str>, value: &mut Cow<'static, str>) {
+    if key.contains(':') {
+        *key = key.replace(':', "%3A").into();
+    }
+    static NEW_LINE: &[char] = &['\r', '\n'];
+    for s in [key, value] {
+        if s.contains(NEW_LINE) {
+            *s = s.replace(NEW_LINE, "\\n").into();
+        }
+    }
 }
 
 fn estimate_multipart_body_size<S>(boundary: &str, parts: &[Part<S>]) -> usize {
@@ -59,7 +73,15 @@ pub fn generate_multipart_body<S>(boundary: &str, parts: Vec<Part<S>>) -> Retain
         body.extend_from_slice(b"\r\n");
         body.extend_from_slice(b"Content-Type: ");
         body.extend_from_slice(part.content_type.as_bytes());
-        body.extend_from_slice(b"\r\n\r\n");
+        body.extend_from_slice(b"\r\n");
+        for (mut k, mut v) in part.headers {
+            quick_escape_header(&mut k, &mut v);
+            body.extend_from_slice(k.as_bytes());
+            body.extend_from_slice(b": ");
+            body.extend_from_slice(v.as_bytes());
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(b"\r\n");
         body.extend_from_slice(&partbody);
         body.extend_from_slice(b"\r\n");
     }
