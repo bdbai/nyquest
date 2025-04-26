@@ -66,6 +66,12 @@ impl NSUrlSessionClient {
             .ok_or(NyquestError::InvalidUrl)?;
             let nsreq = NSMutableURLRequest::initWithURL(nsreq, &url);
             nsreq.setHTTPMethod(&NSString::from_str(&req.method));
+            for (name, value) in &req.additional_headers {
+                nsreq.setValue_forHTTPHeaderField(
+                    Some(&NSString::from_str(value)),
+                    &NSString::from_str(name),
+                );
+            }
             if let Some(body) = req.body {
                 match body {
                     Body::Bytes {
