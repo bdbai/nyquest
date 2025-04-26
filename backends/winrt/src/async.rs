@@ -2,44 +2,38 @@ use std::io;
 
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse, Request};
-use windows::core::{Interface, HSTRING};
-use windows::Foundation::Uri;
-use windows::Web::Http::{HttpClient, HttpCompletionOption};
+use nyquest_interface::Result as NyquestResult;
+use windows::core::Interface;
+use windows::Web::Http::HttpCompletionOption;
 use windows::Win32::System::WinRT::IBufferByteAccess;
 
-use crate::client::WinrtClientExt;
+use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
-use crate::request::{create_body, create_request};
+use crate::request::create_body;
 use crate::response::WinrtResponse;
-use crate::uri::build_uri;
-
-#[derive(Clone)]
-pub struct WinrtAsyncClient {
-    base_url: Option<HSTRING>,
-    client: HttpClient,
-}
 
 impl crate::WinrtBackend {
-    pub fn create_async_client(&self, options: ClientOptions) -> io::Result<WinrtAsyncClient> {
-        let base_url = options.base_url.as_ref().map(HSTRING::from);
-        let client = HttpClient::create(options)?;
-        Ok(WinrtAsyncClient { base_url, client })
+    pub fn create_async_client(&self, options: ClientOptions) -> io::Result<WinrtClient> {
+        WinrtClient::create(options)
     }
 }
 
-impl WinrtAsyncClient {
-    async fn send_request(&self, uri: &Uri, req: Request) -> io::Result<WinrtResponse> {
-        let req_msg = create_request(uri, &req)?;
+impl WinrtClient {
+    async fn send_request_async(&self, req: Request) -> NyquestResult<WinrtResponse> {
+        let req_msg = self.create_request(&req)?;
         // TODO: stream
         if let Some(body) = req.body {
             let body = create_body(body, &mut |_| unimplemented!())?;
-            req_msg.SetContent(&body)?;
+            self.append_content_headers(&body, &req.additional_headers)?;
+            req_msg.SetContent(&body).into_nyquest_result()?;
         }
         let res = self
             .client
-            .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)?
-            .await?;
-        WinrtResponse::new(res)
+            .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)
+            .into_nyquest_result()?
+            .await
+            .into_nyquest_result()?;
+        WinrtResponse::new(res).into_nyquest_result()
     }
 }
 
@@ -84,18 +78,16 @@ impl AsyncResponse for WinrtResponse {
     }
 }
 
-impl AsyncClient for WinrtAsyncClient {
+impl AsyncClient for WinrtClient {
     type Response = WinrtResponse;
 
     async fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
-        let uri = build_uri(&self.base_url, &req.relative_uri)
-            .map_err(|_| nyquest_interface::Error::InvalidUrl)?;
-        self.send_request(&uri, req).await.into_nyquest_result()
+        self.send_request_async(req).await
     }
 }
 
 impl AsyncBackend for crate::WinrtBackend {
-    type AsyncClient = WinrtAsyncClient;
+    type AsyncClient = WinrtClient;
 
     async fn create_async_client(
         &self,

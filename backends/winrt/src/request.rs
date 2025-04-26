@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::io;
 
-use nyquest_interface::{Body, Request};
-use windows::Foundation::{IReference, PropertyValue, Uri};
+use nyquest_interface::{Body, Request, Result as NyquestResult};
+use windows::Foundation::{IReference, PropertyValue};
 use windows::Storage::Streams::IBuffer;
 use windows::Web::Http::Headers::HttpMediaTypeHeaderValue;
 use windows::Web::Http::{
@@ -12,20 +12,57 @@ use windows_collections::{IIterable, IKeyValuePair};
 use windows_core::{Interface, HSTRING};
 
 use crate::buffer::VecBuffer;
+use crate::client::WinrtClient;
+use crate::error::IntoNyquestResult;
 use crate::string_pair::StringPair;
+use crate::uri::build_uri;
 
-pub(crate) fn create_request<B>(uri: &Uri, req: &Request<B>) -> io::Result<HttpRequestMessage> {
-    let method = HttpMethod::Create(&HSTRING::from(&*req.method))?;
-    let req_msg = HttpRequestMessage::Create(&method, uri)?;
-    // TODO: cache method
-    if !req.additional_headers.is_empty() {
-        let headers = req_msg.Headers()?;
-        for (name, value) in &req.additional_headers {
-            headers.Append(&HSTRING::from(&**name), &HSTRING::from(&**value))?;
+impl WinrtClient {
+    pub(crate) fn create_request<B>(&self, req: &Request<B>) -> NyquestResult<HttpRequestMessage> {
+        let uri = build_uri(&self.base_url, &req.relative_uri)
+            .map_err(|_| nyquest_interface::Error::InvalidUrl)?;
+        let method = HttpMethod::Create(&HSTRING::from(&*req.method)).into_nyquest_result()?;
+        let req_msg = HttpRequestMessage::Create(&method, &uri).into_nyquest_result()?;
+        // TODO: cache method
+        if !req.additional_headers.is_empty() || !self.default_content_headers.is_empty() {
+            let headers = req_msg.Headers().into_nyquest_result()?;
+            for (name, value) in &req.additional_headers {
+                headers
+                    .TryAppendWithoutValidation(&HSTRING::from(&**name), &HSTRING::from(&**value))
+                    .into_nyquest_result()?;
+            }
         }
+        Ok(req_msg)
     }
-    req_msg.SetRequestUri(uri)?;
-    Ok(req_msg)
+
+    pub(crate) fn append_content_headers(
+        &self,
+        content: &IHttpContent,
+        additional_headers: &[(Cow<'static, str>, Cow<'static, str>)],
+    ) -> io::Result<()> {
+        let headers = content.Headers()?;
+        for (name, value) in additional_headers {
+            if is_header_name_content_related(name) {
+                headers.TryAppendWithoutValidation(
+                    &HSTRING::from(&**name),
+                    &HSTRING::from(&**value),
+                )?;
+            }
+        }
+        for (name, value) in &self.default_content_headers {
+            headers.TryAppendWithoutValidation(name, value)?;
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn is_header_name_content_related(name: &str) -> bool {
+    name.get(..8)
+        .filter(|n| n.eq_ignore_ascii_case("content-"))
+        .is_some()
+        || ["expires", "last-modified"]
+            .iter()
+            .any(|h| h.eq_ignore_ascii_case(name))
 }
 
 fn create_content_from_bytes(

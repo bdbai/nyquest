@@ -1,7 +1,11 @@
 #[cfg(test)]
 mod tests {
     use http_body_util::Full;
-    use hyper::header::{ACCEPT, CONTENT_TYPE, USER_AGENT};
+    use hyper::header::{ACCEPT, CONTENT_LANGUAGE, USER_AGENT};
+    #[cfg(feature = "blocking")]
+    use nyquest::blocking::Body as NyquestBlockingBody;
+    #[cfg(feature = "async")]
+    use nyquest::r#async::Body as NyquestAsyncBody;
     use nyquest::Request as NyquestRequest;
 
     use crate::*;
@@ -65,7 +69,7 @@ mod tests {
     fn test_default_headers() {
         const PATH: &str = "client_options/default_headers";
         const ACCEPT_VALUE: &str = "application/json";
-        const CONTENT_TYPE_VALUE: &str = "application/json";
+        const CONTENT_LANGUAGE_VALUE: &str = "en-US";
 
         let _handle = crate::add_hyper_fixture(PATH, {
             move |req| async move {
@@ -75,13 +79,13 @@ mod tests {
                     .map(|v| v.to_str().unwrap_or_default().to_owned())
                     .unwrap_or_default();
 
-                let content_type = req
+                let content_lang = req
                     .headers()
-                    .get(CONTENT_TYPE)
+                    .get(CONTENT_LANGUAGE)
                     .map(|v| v.to_str().unwrap_or_default().to_owned())
                     .unwrap_or_default();
 
-                let header_values = format!("{}|{}", accept, content_type);
+                let header_values = format!("{}|{}", accept, content_lang);
                 let response_body = Bytes::from(header_values.into_bytes());
 
                 let res = Response::new(Full::new(response_body));
@@ -94,7 +98,7 @@ mod tests {
             assert_eq!(values.get(0).copied().unwrap_or_default(), ACCEPT_VALUE);
             assert_eq!(
                 values.get(1).copied().unwrap_or_default(),
-                CONTENT_TYPE_VALUE
+                CONTENT_LANGUAGE_VALUE
             );
         };
 
@@ -103,10 +107,12 @@ mod tests {
             let builder = crate::init_builder_blocking()
                 .unwrap()
                 .with_header("Accept", ACCEPT_VALUE)
-                .with_header("Content-Type", CONTENT_TYPE_VALUE);
+                .with_header("Content-Language", CONTENT_LANGUAGE_VALUE);
             let client = builder.build_blocking().unwrap();
             let res = client
-                .request(NyquestRequest::get(PATH))
+                .request(
+                    NyquestRequest::post(PATH).with_body(NyquestBlockingBody::plain_text("aa")),
+                )
                 .unwrap()
                 .text()
                 .unwrap();
@@ -120,10 +126,12 @@ mod tests {
                     .await
                     .unwrap()
                     .with_header("Accept", ACCEPT_VALUE)
-                    .with_header("Content-Type", CONTENT_TYPE_VALUE);
+                    .with_header("Content-Language", CONTENT_LANGUAGE_VALUE);
                 let client = builder.build_async().await.unwrap();
                 client
-                    .request(NyquestRequest::get(PATH))
+                    .request(
+                        NyquestRequest::post(PATH).with_body(NyquestAsyncBody::plain_text("aa")),
+                    )
                     .await
                     .unwrap()
                     .text()

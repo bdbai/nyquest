@@ -7,7 +7,7 @@ mod tests {
 
     use futures::StreamExt as _;
     use http_body_util::{BodyExt, BodyStream};
-    use hyper::header::CONTENT_TYPE;
+    use hyper::header::{ACCEPT, CONTENT_LANGUAGE, CONTENT_TYPE};
     use memchr::memmem;
     use multer::Multipart;
     #[cfg(feature = "blocking")]
@@ -19,6 +19,82 @@ mod tests {
     use nyquest::{Part, PartBody};
 
     use crate::*;
+
+    #[test]
+    fn test_headers() {
+        const PATH: &str = "requests/headers";
+        const ACCEPT_VALUE: &str = "application/json";
+        const CONTENT_LANGUAGE_VALUE: &str = "en-US";
+
+        let _handle = crate::add_hyper_fixture(PATH, {
+            move |req| async move {
+                let accept = req
+                    .headers()
+                    .get(ACCEPT)
+                    .map(|v| v.to_str().unwrap_or_default().to_owned())
+                    .unwrap_or_default();
+
+                let content_lang = req
+                    .headers()
+                    .get(CONTENT_LANGUAGE)
+                    .map(|v| v.to_str().unwrap_or_default().to_owned())
+                    .unwrap_or_default();
+
+                let header_values = format!("{}|{}", accept, content_lang);
+                let response_body = Bytes::from(header_values.into_bytes());
+
+                let res = Response::new(Full::new(response_body));
+                (res, Ok(()))
+            }
+        });
+
+        let assertions = |header_values: String| {
+            let values: Vec<&str> = header_values.split('|').collect();
+            assert_eq!(values.get(0).copied().unwrap_or_default(), ACCEPT_VALUE);
+            assert_eq!(
+                values.get(1).copied().unwrap_or_default(),
+                CONTENT_LANGUAGE_VALUE
+            );
+        };
+
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
+            let res = client
+                .request(
+                    NyquestRequest::post(PATH)
+                        .with_header("Accept", ACCEPT_VALUE)
+                        .with_header("Content-Language", CONTENT_LANGUAGE_VALUE)
+                        .with_body(NyquestBlockingBody::plain_text("aa")),
+                )
+                .unwrap()
+                .text()
+                .unwrap();
+            assertions(res);
+        }
+
+        #[cfg(feature = "async")]
+        {
+            let res = TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder.build_async().await.unwrap();
+                client
+                    .request(
+                        NyquestRequest::post(PATH)
+                            .with_header("Accept", ACCEPT_VALUE)
+                            .with_header("Content-Language", CONTENT_LANGUAGE_VALUE)
+                            .with_body(NyquestAsyncBody::plain_text("aa")),
+                    )
+                    .await
+                    .unwrap()
+                    .text()
+                    .await
+                    .unwrap()
+            });
+            assertions(res);
+        }
+    }
 
     fn double_deref<'a, A: ?Sized, B: ?Sized>(
         t: &'a Option<(impl Deref<Target = A>, impl Deref<Target = B>)>,
