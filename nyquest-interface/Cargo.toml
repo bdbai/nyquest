@@ -11,6 +11,10 @@ repository.workspace = true
 rust-version.workspace = true
 exclude.workspace = true
 
+[package.metadata.docs.rs]
+features = ["async", "blocking", "multipart"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 async = ["dep:futures-core", "dep:futures-io"]
 blocking = []

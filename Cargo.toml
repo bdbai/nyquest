@@ -37,7 +37,8 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async", "blocking"]
+features = ["async", "blocking", "multipart", "json"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 async = ["dep:futures-io", "nyquest-interface/async"]

@@ -14,7 +14,9 @@ mod tests {
     use nyquest::blocking::Body as NyquestBlockingBody;
     #[cfg(feature = "async")]
     use nyquest::r#async::Body as NyquestAsyncBody;
-    use nyquest::{body_form, Part, PartBody, Request as NyquestRequest};
+    use nyquest::{body_form, Request as NyquestRequest};
+    #[cfg(feature = "multipart")]
+    use nyquest::{Part, PartBody};
 
     use crate::*;
 
