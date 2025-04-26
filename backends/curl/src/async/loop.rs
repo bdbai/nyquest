@@ -7,13 +7,17 @@ use std::{io, thread};
 
 use curl::easy::Easy;
 use curl::multi::{EasyHandle, Multi, MultiWaker};
-use curl::MultiError;
+use curl_sys::{CURLPAUSE_RECV, CURLPAUSE_RECV_CONT, CURLPAUSE_SEND, CURLPAUSE_SEND_CONT};
 use futures_channel::oneshot;
 use futures_util::lock::Mutex as FuturesMutex;
 use futures_util::task::AtomicWaker;
+use nyquest_interface::Result as NyquestResult;
 use slab::Slab;
 
 use crate::error::IntoNyquestResult;
+
+pub const CURLPAUSE_CONT: i32 = CURLPAUSE_RECV_CONT | CURLPAUSE_SEND_CONT;
+pub const CURLPAUSE_ALL: i32 = CURLPAUSE_RECV | CURLPAUSE_SEND;
 
 pub(super) struct RequestHandle {
     shared_context: Arc<SharedRequestContext>,
@@ -22,7 +26,7 @@ pub(super) struct RequestHandle {
 
 #[derive(Debug, Default)]
 struct SharedRequestContextState {
-    result: Option<Result<(), curl::Error>>,
+    result: Option<NyquestResult<()>>,
     temp_status_code: u16,
     is_established: bool,
     header_finished: bool,
@@ -48,12 +52,12 @@ impl SharedRequestContext {
 enum LoopTask {
     ConstructHandle(
         Easy,
-        oneshot::Sender<Result<Arc<SharedRequestContext>, MultiError>>,
+        oneshot::Sender<NyquestResult<Arc<SharedRequestContext>>>,
     ),
     QueryHandleResponse(
         usize,
         RequestHandle,
-        oneshot::Sender<nyquest_interface::Result<super::CurlAsyncResponse>>,
+        oneshot::Sender<NyquestResult<super::CurlAsyncResponse>>,
     ),
     UnpauseHandle(usize),
     DropHandle(usize),
@@ -77,8 +81,7 @@ impl RequestHandle {
             self.shared_context.waker.register(cx.waker());
             Poll::Pending
         })
-        .await
-        .into_nyquest_result()?;
+        .await?;
 
         let (tx, rx) = oneshot::channel();
         self.manager
@@ -114,7 +117,7 @@ impl RequestHandle {
                 return Poll::Ready(res.map(Some));
             }
             if let Some(res) = state.result.take() {
-                return Poll::Ready(res.map(|()| None).into_nyquest_result());
+                return Poll::Ready(res.map(|()| None));
             };
             self.shared_context.waker.register(cx.waker());
             Poll::Pending
@@ -163,7 +166,7 @@ impl LoopManagerShared {
     async fn start_request(
         self,
         easy: Easy,
-    ) -> Result<Result<RequestHandle, (Option<Easy>, Self)>, MultiError> {
+    ) -> NyquestResult<Result<RequestHandle, (Option<Easy>, Self)>> {
         let (tx, rx) = oneshot::channel();
         {
             let mut inner = self.inner.lock().unwrap();
@@ -216,11 +219,10 @@ impl LoopManager {
                     .insert(LoopManagerShared::start_loop().await)
                     .clone(),
             };
-            let (backup_easy, inner) =
-                match inner.start_request(easy).await.into_nyquest_result()? {
-                    Ok(res) => return Ok(MaybeStartedRequest::Started(res)),
-                    Err(res) => res,
-                };
+            let (backup_easy, inner) = match inner.start_request(easy).await? {
+                Ok(res) => return Ok(MaybeStartedRequest::Started(res)),
+                Err(res) => res,
+            };
             {
                 let mut new_manager = self.inner.lock().await;
                 if *new_manager == Some(inner) {
@@ -258,10 +260,7 @@ impl EasyPause {
     /// 1. The handle is a valid CURL handle.
     /// 2. The handle is either within the same thread or we are in a callback.
     unsafe fn pause(&self) {
-        curl_sys::curl_easy_pause(
-            self.0,
-            (curl_sys::CURL_READFUNC_PAUSE | curl_sys::CURL_WRITEFUNC_PAUSE) as i32,
-        );
+        curl_sys::curl_easy_pause(self.0, CURLPAUSE_ALL);
     }
 }
 
@@ -349,7 +348,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                             }
                         })
                         .expect("set curl write function");
-                        let handle = multi.add(easy);
+                        let handle = multi.add(easy).into_nyquest_result("curl_multi_add_handle");
                         let send_res = match handle {
                             Ok(mut handle) => {
                                 handle
@@ -392,17 +391,16 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                                     .collect(),
                                 handle: req_handle,
                             });
-                        tx.send(res.into_nyquest_result()).ok();
+                        tx.send(res.into_nyquest_result("get CURLINFO_RESPONSE_CODE"))
+                            .ok();
                         break;
                     }
                     LoopTask::UnpauseHandle(id) => {
-                        if let Some((handle, ctx)) = slab.get(id) {
+                        if let Some((handle, _)) = slab.get(id) {
                             unsafe {
-                                let res = curl_sys::curl_easy_pause(handle.raw(), 0);
-                                if res != 0 {
-                                    let mut state = ctx.state.lock().unwrap();
-                                    state.result = Some(Err(curl::Error::new(res)));
-                                }
+                                let _res = curl_sys::curl_easy_pause(handle.raw(), CURLPAUSE_CONT);
+                                // Ignore the error. Also see
+                                // https://github.com/sagebind/isahc/blob/9d1edd475231ad5cfd5842d939db1382dc3a88f5/src/agent/mod.rs#L432
                             }
                         }
                     }
@@ -419,10 +417,24 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             }
         }
         let perform_res = multi.perform();
-        let (poll_res, perform_res) = match (poll_res, perform_res) {
-            (Ok(poll_res), Ok(perform_res)) => (poll_res, perform_res),
-            // TODO: handle error
-            _ => break,
+        let loop_res = match (poll_res, perform_res) {
+            (Ok(poll_res), Ok(perform_res)) => Ok((poll_res, perform_res)),
+            (Err(poll_err), _) => Err((poll_err, "async loop curl_multi_poll")),
+            (_, Err(perform_err)) => Err((perform_err, "async loop curl_multi_perform")),
+        };
+        let (_poll_res, _perform_res) = match loop_res {
+            Ok(res) => res,
+            Err((err, err_ctx)) => {
+                for (_, (handle, ctx)) in slab {
+                    if let Ok(mut state) = ctx.state.lock() {
+                        if state.result.is_none() {
+                            state.result = Some(Err(err.clone()).into_nyquest_result(err_ctx));
+                        }
+                    }
+                    multi.remove(handle).ok();
+                }
+                break;
+            }
         };
         // TODO: terminate the loop if the multi is empty after timeout
         multi.messages(|msg| {
@@ -434,7 +446,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                 return;
             };
             if let Some(res) = msg.result_for(handle) {
-                shared_state.result = Some(res);
+                shared_state.result = Some(res.into_nyquest_result("curl_multi_info_read cb"));
             }
             drop(shared_state);
             ctx.waker.wake();

@@ -14,24 +14,24 @@ pub fn populate_request<S>(
     if let Some(user_agent) = options.user_agent.as_deref() {
         easy.useragent(user_agent).expect("set curl user agent");
     }
-    easy.url(url).into_nyquest_result()?;
+    easy.url(url).into_nyquest_result("set CURLOPT_URL")?;
     match &*req.method {
         "GET" | "get" if req.body.is_none() => easy.get(true),
         "POST" | "post" => easy.post(true),
         "PUT" | "put" => easy.put(true),
         method => easy.custom_request(method),
     }
-    .into_nyquest_result()?;
+    .into_nyquest_result("set CURLOPT_CUSTOMREQUEST")?;
     let mut headers = List::new();
     for (name, value) in &options.default_headers {
         headers
             .append(&format!("{}: {}", name, value))
-            .into_nyquest_result()?;
+            .into_nyquest_result("default_headers curl_slist_append")?;
     }
     for (name, value) in &req.additional_headers {
         headers
             .append(&format!("{}: {}", name, value))
-            .into_nyquest_result()?;
+            .into_nyquest_result("additional_headers curl_slist_append")?;
     }
     match &req.body {
         Some(Body::Bytes {
@@ -40,8 +40,9 @@ pub fn populate_request<S>(
         }) => {
             headers
                 .append(&format!("content-type: {}", content_type))
-                .into_nyquest_result()?;
-            easy.post_fields_copy(content).into_nyquest_result()?;
+                .into_nyquest_result("set content-type curl_slist_append")?;
+            easy.post_fields_copy(content)
+                .into_nyquest_result("set CURLOPT_COPYPOSTFIELDS")?;
         }
         Some(Body::Stream(_)) => unimplemented!(),
         Some(Body::Form { fields }) => {
@@ -54,7 +55,8 @@ pub fn populate_request<S>(
                 buf.push(b'&');
             }
             buf.pop();
-            easy.post_fields_copy(&buf).into_nyquest_result()?;
+            easy.post_fields_copy(&buf)
+                .into_nyquest_result("set CURLOPT_COPYPOSTFIELDS")?;
         }
         #[cfg(feature = "multipart")]
         Some(Body::Multipart { parts }) => {
@@ -69,7 +71,7 @@ pub fn populate_request<S>(
                     let mut list = List::new();
                     for (name, value) in &part.headers {
                         list.append(&format!("{}: {}", name, value))
-                            .into_nyquest_result()?;
+                            .into_nyquest_result("multipart header curl_slist_append")?;
                     }
                     formpart.content_header(list);
                 }
@@ -95,11 +97,14 @@ pub fn populate_request<S>(
                     nyquest_interface::Error::Io(io::Error::new(ErrorKind::Other, e.to_string()))
                 })?;
             }
-            easy.httppost(form).into_nyquest_result()?;
+            easy.httppost(form)
+                .into_nyquest_result("set CURLOPT_HTTPPOST")?;
         }
         None => {}
     }
-    easy.http_headers(headers).into_nyquest_result()?;
-    easy.accept_encoding("").into_nyquest_result()?;
+    easy.http_headers(headers)
+        .into_nyquest_result("set CURLOPT_HTTPHEADER")?;
+    easy.accept_encoding("")
+        .into_nyquest_result("set CURLOPT_ACCEPT_ENCODING")?;
     Ok(())
 }

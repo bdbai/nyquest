@@ -5,19 +5,16 @@ use std::time::{Duration, Instant};
 use curl::{
     easy::Easy,
     multi::{EasyHandle, Multi},
-    MultiError,
 };
-use curl_sys::CURLM_OK;
 use nyquest_interface::blocking::Request;
+use nyquest_interface::Result as NyquestResult;
 
 use crate::error::IntoNyquestResult;
-
-type CurlResult<T> = Result<T, curl::Error>;
 
 enum MaybeAttachedEasy {
     Attached(EasyHandle),
     Detached(Easy),
-    Error(MultiError),
+    Error(NyquestResult<()>),
 }
 
 pub(crate) struct MultiEasy {
@@ -35,15 +32,12 @@ struct MultiEasyState {
 }
 
 impl MaybeAttachedEasy {
-    fn attach(&mut self, multi: &mut Multi) -> Result<&mut EasyHandle, MultiError> {
+    fn attach(&mut self, multi: &mut Multi) -> NyquestResult<&mut EasyHandle> {
         loop {
             match self {
                 MaybeAttachedEasy::Attached(handle) => return Ok(handle),
                 MaybeAttachedEasy::Detached(_) => {
-                    let this = std::mem::replace(
-                        self,
-                        MaybeAttachedEasy::Error(MultiError::new(CURLM_OK)),
-                    );
+                    let this = std::mem::replace(self, MaybeAttachedEasy::Error(Ok(())));
                     let easy = match this {
                         MaybeAttachedEasy::Detached(easy) => easy,
                         _ => unsafe {
@@ -53,22 +47,23 @@ impl MaybeAttachedEasy {
                     };
                     *self = match multi.add(easy) {
                         Ok(handle) => MaybeAttachedEasy::Attached(handle),
-                        Err(err) => MaybeAttachedEasy::Error(err),
+                        Err(err) => MaybeAttachedEasy::Error(
+                            Err(err).into_nyquest_result("multi_easy curl_multi_add_handle"),
+                        ),
                     };
                     continue;
                 }
-                MaybeAttachedEasy::Error(err) => return Err(err.clone()),
+                MaybeAttachedEasy::Error(err) => {
+                    return std::mem::replace(err, Ok(())).map(|()| unreachable!());
+                }
             };
         }
     }
-    fn detach(&mut self, multi: &mut Multi) -> Result<&mut Easy, MultiError> {
+    fn detach(&mut self, multi: &mut Multi) -> NyquestResult<&mut Easy> {
         loop {
             match self {
                 MaybeAttachedEasy::Attached(_) => {
-                    let this = std::mem::replace(
-                        self,
-                        MaybeAttachedEasy::Error(MultiError::new(CURLM_OK)),
-                    );
+                    let this = std::mem::replace(self, MaybeAttachedEasy::Error(Ok(())));
                     let easy = match this {
                         MaybeAttachedEasy::Attached(easy) => easy,
                         _ => unsafe {
@@ -78,12 +73,16 @@ impl MaybeAttachedEasy {
                     };
                     *self = match multi.remove(easy) {
                         Ok(easy) => MaybeAttachedEasy::Detached(easy),
-                        Err(err) => MaybeAttachedEasy::Error(err),
+                        Err(err) => MaybeAttachedEasy::Error(
+                            Err(err).into_nyquest_result("multi_easy curl_multi_remove_handle"),
+                        ),
                     };
                     continue;
                 }
                 MaybeAttachedEasy::Detached(easy) => return Ok(easy),
-                MaybeAttachedEasy::Error(err) => return Err(err.clone()),
+                MaybeAttachedEasy::Error(err) => {
+                    return std::mem::replace(err, Ok(())).map(|()| unreachable!());
+                }
             }
         }
     }
@@ -146,43 +145,44 @@ impl MultiEasy {
     fn poll_until(
         &mut self,
         timeout: Duration,
-        mut cb: impl FnMut(&Mutex<MultiEasyState>) -> CurlResult<ControlFlow<()>>,
-    ) -> nyquest_interface::Result<()> {
-        let easy = self.easy.attach(&mut self.multi).into_nyquest_result()?;
+        mut cb: impl FnMut(&Mutex<MultiEasyState>) -> NyquestResult<ControlFlow<()>>,
+    ) -> NyquestResult<()> {
+        let easy = self.easy.attach(&mut self.multi)?;
         let deadline = Instant::now() + timeout;
         // TODO: sigpipe
         while Instant::now() < deadline {
-            let mut multi_res = self.multi.wait(&mut [], Duration::from_secs(1)); // TODO: proper timeout per wait
-            multi_res = multi_res.and_then(|_| self.multi.perform());
-            let multi_res = match multi_res {
-                Ok(res) => res,
-                Err(err) => {
-                    return Err(err).into_nyquest_result();
-                }
-            };
+            let multi_res = self
+                .multi
+                .wait(&mut [], Duration::from_secs(1))
+                .into_nyquest_result("multi_easy curl_multi_wait"); // TODO: proper timeout per wait
+            let multi_res = multi_res.and_then(|_| {
+                self.multi
+                    .perform()
+                    .into_nyquest_result("multi_easy curl_multi_perform")
+            })?;
             let mut res = ControlFlow::Continue(());
             self.multi.messages(|msg| match msg.result_for(easy) {
                 Some(Ok(())) => res = ControlFlow::Break(Ok(())),
-                Some(Err(err)) => res = ControlFlow::Break(Err(err)),
+                Some(Err(err)) => {
+                    res = ControlFlow::Break(
+                        Err(err).into_nyquest_result("multi_easy curl_multi_info_read cb"),
+                    )
+                }
                 None => {}
             });
             match res {
-                ControlFlow::Break(res) => return res.into_nyquest_result(),
-                ControlFlow::Continue(())
-                    if multi_res == 0 || cb(&self.state).into_nyquest_result()?.is_break() =>
-                {
+                ControlFlow::Break(res) => return res,
+                ControlFlow::Continue(()) if multi_res == 0 || cb(&self.state)?.is_break() => {
                     return Ok(())
                 }
                 _ => {}
             }
         }
-        Err(curl::Error::new(curl_sys::CURLE_OPERATION_TIMEDOUT)).into_nyquest_result()
+        Err(curl::Error::new(curl_sys::CURLE_OPERATION_TIMEDOUT))
+            .into_nyquest_result("multi_easy poll_until")
     }
 
-    pub fn poll_until_response_headers(
-        &mut self,
-        timeout: Duration,
-    ) -> nyquest_interface::Result<()> {
+    pub fn poll_until_response_headers(&mut self, timeout: Duration) -> NyquestResult<()> {
         self.poll_until(timeout, |state| {
             Ok(if state.lock().unwrap().header_finished {
                 ControlFlow::Break(())
@@ -198,19 +198,19 @@ impl MultiEasy {
         url: &str,
         req: Request,
         options: &nyquest_interface::client::ClientOptions,
-    ) -> nyquest_interface::Result<()> {
+    ) -> NyquestResult<()> {
         self.reset_state();
-        let easy = self.easy.detach(&mut self.multi).into_nyquest_result()?;
+        let easy = self.easy.detach(&mut self.multi)?;
         easy.reset();
         *self.state.lock().unwrap() = Default::default();
         crate::request::populate_request(url, &req, options, easy)
     }
 
-    pub fn status(&mut self) -> nyquest_interface::Result<u16> {
+    pub fn status(&mut self) -> NyquestResult<u16> {
         Ok(self.state.lock().unwrap().temp_status_code)
     }
 
-    pub fn content_length(&mut self) -> nyquest_interface::Result<Option<u64>> {
+    pub fn content_length(&mut self) -> NyquestResult<Option<u64>> {
         let content_length = match &mut self.easy {
             MaybeAttachedEasy::Attached(handle) => handle.content_length_download().ok(),
             MaybeAttachedEasy::Detached(handle) => handle.content_length_download().ok(),
@@ -219,10 +219,7 @@ impl MultiEasy {
         Ok(content_length.map(|len| len as u64))
     }
 
-    pub fn poll_until_whole_response(
-        &mut self,
-        timeout: Duration,
-    ) -> nyquest_interface::Result<()> {
+    pub fn poll_until_whole_response(&mut self, timeout: Duration) -> NyquestResult<()> {
         self.poll_until(timeout, |_| Ok(ControlFlow::Continue(())))
     }
 
