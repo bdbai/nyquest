@@ -1,14 +1,16 @@
 use std::borrow::Cow;
 use std::sync::LazyLock;
 
-use nyquest_interface::client::{BuildClientError, BuildClientResult, ClientOptions};
+use nyquest_interface::client::{
+    BuildClientError, BuildClientResult, CachingBehavior, ClientOptions,
+};
 
 use nyquest_interface::{Body, Error as NyquestError, Request, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
     ns_string, NSCharacterSet, NSData, NSDictionary, NSMutableCharacterSet, NSMutableURLRequest,
-    NSString, NSUTF8StringEncoding, NSURL,
+    NSString, NSURLRequestCachePolicy, NSUTF8StringEncoding, NSURL,
 };
 
 #[derive(Clone)]
@@ -39,6 +41,11 @@ impl NSUrlSessionClient {
                 config.setHTTPAdditionalHeaders(Some(
                     Retained::cast_unchecked::<NSDictionary>(dict).as_ref(),
                 ));
+                if options.caching_behavior == CachingBehavior::Disabled {
+                    config.setRequestCachePolicy(
+                        NSURLRequestCachePolicy::ReloadIgnoringLocalCacheData,
+                    );
+                }
             }
             // TODO: set options
             objc2_foundation::NSURLSession::sessionWithConfiguration(&config)
