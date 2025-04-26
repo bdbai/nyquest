@@ -1,8 +1,10 @@
 use std::io;
 
-use nyquest_interface::client::ClientOptions;
+use nyquest_interface::client::{CachingBehavior, ClientOptions};
 use windows::core::{h, HSTRING};
-use windows::Web::Http::Filters::HttpBaseProtocolFilter;
+use windows::Web::Http::Filters::{
+    HttpBaseProtocolFilter, HttpCacheReadBehavior, HttpCacheWriteBehavior,
+};
 use windows::Web::Http::HttpClient;
 
 use crate::request::is_header_name_content_related;
@@ -19,6 +21,11 @@ impl WinrtClient {
         let base_url = options.base_url.as_ref().map(HSTRING::from);
         let filter = HttpBaseProtocolFilter::new()?;
         filter.SetAutomaticDecompression(true)?;
+        if options.caching_behavior == CachingBehavior::Disabled {
+            let cache_control = filter.CacheControl()?;
+            cache_control.SetReadBehavior(HttpCacheReadBehavior::NoCache)?;
+            cache_control.SetWriteBehavior(HttpCacheWriteBehavior::NoCache)?;
+        }
         let client = HttpClient::Create(&filter)?;
         if let Some(user_agent) = &options.user_agent {
             client
