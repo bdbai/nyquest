@@ -21,17 +21,17 @@ impl NSUrlSessionClient {
     pub(crate) fn create(options: ClientOptions) -> BuildClientResult<Self> {
         let session = unsafe {
             let config = objc2_foundation::NSURLSessionConfiguration::defaultSessionConfiguration();
-            if !options.default_headers.is_empty() {
-                let keys: Vec<_> = options
+            if !options.default_headers.is_empty() || options.user_agent.is_some() {
+                let headers = options
                     .default_headers
                     .iter()
+                    .map(|(k, v)| (&**k, &**v))
+                    .chain(options.user_agent.as_deref().map(|ua| ("user-agent", ua)));
+                let keys: Vec<_> = headers
+                    .clone()
                     .map(|(k, _)| NSString::from_str(k))
                     .collect();
-                let values: Vec<_> = options
-                    .default_headers
-                    .iter()
-                    .map(|(_, v)| NSString::from_str(v))
-                    .collect();
+                let values: Vec<_> = headers.map(|(_, v)| NSString::from_str(v)).collect();
                 let dict = NSDictionary::from_retained_objects(
                     &keys.iter().map(|s| &**s).collect::<Vec<_>>(),
                     &values,
