@@ -33,6 +33,7 @@ multipart = [
 
 [dependencies]
 nyquest = { path = "../..", default-features = false }
+cfg-if = "1"
 
 [target.'cfg(windows)'.dependencies]
 nyquest-backend-winrt = { path = "../../backends/winrt", default-features = false }

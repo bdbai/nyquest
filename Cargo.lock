@@ -582,6 +582,7 @@ dependencies = [
 name = "nyquest-preset"
 version = "0.0.1-alpha.1"
 dependencies = [
+ "cfg-if",
  "nyquest",
  "nyquest-backend-curl",
  "nyquest-backend-nsurlsession",
