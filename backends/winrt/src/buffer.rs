@@ -1,5 +1,4 @@
-use windows::core as windows_core;
-use windows::core::*;
+use windows::core::{self as windows_core, *};
 use windows::Storage::Streams::{IBuffer, IBuffer_Impl};
 use windows::Win32::System::WinRT::*;
 

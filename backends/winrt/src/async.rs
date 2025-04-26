@@ -1,18 +1,17 @@
 use std::io;
 
-use nyquest_interface::r#async::Request;
-use nyquest_interface::r#async::{AsyncBackend, AsyncResponse};
-use nyquest_interface::{client::ClientOptions, r#async::AsyncClient};
-use windows::core::Interface;
+use nyquest_interface::client::ClientOptions;
+use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse, Request};
+use windows::core::{Interface, HSTRING};
 use windows::Foundation::Uri;
-use windows::Web::Http::HttpCompletionOption;
+use windows::Web::Http::{HttpClient, HttpCompletionOption};
 use windows::Win32::System::WinRT::IBufferByteAccess;
-use windows::{core::HSTRING, Web::Http::HttpClient};
 
+use crate::client::WinrtClientExt;
+use crate::error::IntoNyquestResult;
 use crate::request::{create_body, create_request};
 use crate::response::WinrtResponse;
 use crate::uri::build_uri;
-use crate::{client::WinrtClientExt, error::IntoNyquestResult};
 
 #[derive(Clone)]
 pub struct WinrtAsyncClient {

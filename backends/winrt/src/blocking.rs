@@ -1,7 +1,6 @@
 use std::io;
 
-use nyquest_interface::blocking::Request;
-use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse};
+use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::{BuildClientResult, ClientOptions};
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use windows::core::{Interface, HSTRING};

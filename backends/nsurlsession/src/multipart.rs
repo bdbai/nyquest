@@ -27,7 +27,7 @@ fn quick_escape_header(key: &mut Cow<'static, str>, value: &mut Cow<'static, str
 
 fn estimate_multipart_body_size<S>(boundary: &str, parts: &[Part<S>]) -> usize {
     let size: usize = parts
-        .into_iter()
+        .iter()
         .map(|part| {
             let partbody = match &part.body {
                 PartBody::Bytes { content } => content,
