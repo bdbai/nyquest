@@ -3,7 +3,7 @@ use std::io;
 use nyquest_interface::client::{CachingBehavior, ClientOptions};
 use windows::core::{h, HSTRING};
 use windows::Web::Http::Filters::{
-    HttpBaseProtocolFilter, HttpCacheReadBehavior, HttpCacheWriteBehavior,
+    HttpBaseProtocolFilter, HttpCacheReadBehavior, HttpCacheWriteBehavior, HttpCookieUsageBehavior,
 };
 use windows::Web::Http::HttpClient;
 
@@ -28,6 +28,9 @@ impl WinrtClient {
         }
         if !options.use_default_proxy {
             filter.SetUseProxy(false)?;
+        }
+        if !options.use_cookies {
+            filter.SetCookieUsageBehavior(HttpCookieUsageBehavior::NoCookies)?;
         }
         let client = HttpClient::Create(&filter)?;
         if let Some(user_agent) = &options.user_agent {

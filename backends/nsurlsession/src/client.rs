@@ -23,8 +23,14 @@ impl NSUrlSessionClient {
     pub(crate) fn create(options: ClientOptions) -> BuildClientResult<Self> {
         let session = unsafe {
             let config = objc2_foundation::NSURLSessionConfiguration::defaultSessionConfiguration();
+            if options.caching_behavior == CachingBehavior::Disabled {
+                config.setRequestCachePolicy(NSURLRequestCachePolicy::ReloadIgnoringLocalCacheData);
+            }
             if !options.use_default_proxy {
                 config.setConnectionProxyDictionary(Some(&*NSDictionary::new()));
+            }
+            if !options.use_cookies {
+                config.setHTTPShouldSetCookies(false);
             }
             if !options.default_headers.is_empty() || options.user_agent.is_some() {
                 let headers = options
@@ -44,11 +50,6 @@ impl NSUrlSessionClient {
                 config.setHTTPAdditionalHeaders(Some(
                     Retained::cast_unchecked::<NSDictionary>(dict).as_ref(),
                 ));
-                if options.caching_behavior == CachingBehavior::Disabled {
-                    config.setRequestCachePolicy(
-                        NSURLRequestCachePolicy::ReloadIgnoringLocalCacheData,
-                    );
-                }
             }
             // TODO: set options
             objc2_foundation::NSURLSession::sessionWithConfiguration(&config)

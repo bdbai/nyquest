@@ -39,6 +39,10 @@ impl<S> Request<S> {
         Self::new("DELETE", uri)
     }
 
+    pub fn patch(uri: impl Into<Cow<'static, str>>) -> Self {
+        Self::new("PATCH", uri)
+    }
+
     pub fn with_header(
         mut self,
         name: impl Into<Cow<'static, str>>,

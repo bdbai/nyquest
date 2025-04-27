@@ -18,12 +18,16 @@ pub fn populate_request<S>(
     if let Some(user_agent) = options.user_agent.as_deref() {
         easy.useragent(user_agent).expect("set curl user agent");
     }
+    if options.use_cookies {
+        easy.cookie_file("")
+            .into_nyquest_result("set CURLOPT_COOKIEFILE")?;
+    }
     easy.url(url).into_nyquest_result("set CURLOPT_URL")?;
-    match &*req.method {
-        "GET" | "get" if req.body.is_none() => easy.get(true),
-        "POST" | "post" => easy.post(true),
-        "PUT" | "put" => easy.put(true),
-        method => easy.custom_request(method),
+    let require_body = match &*req.method {
+        "GET" | "get" if req.body.is_none() => easy.get(true).map(|()| false),
+        "POST" | "post" => easy.post(true).map(|()| true),
+        "PUT" | "put" => easy.put(true).map(|()| true),
+        method => easy.custom_request(method).map(|()| false),
     }
     .into_nyquest_result("set CURLOPT_CUSTOMREQUEST")?;
     let mut headers = List::new();
@@ -103,6 +107,11 @@ pub fn populate_request<S>(
             }
             easy.httppost(form)
                 .into_nyquest_result("set CURLOPT_HTTPPOST")?;
+        }
+        None if require_body => {
+            // Workaround for https://github.com/curl/curl/issues/1625
+            easy.post_fields_copy(b"")
+                .into_nyquest_result("set require_body CURLOPT_COPYPOSTFIELDS")?;
         }
         None => {}
     }
