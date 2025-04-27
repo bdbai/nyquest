@@ -10,6 +10,7 @@ use nyquest_interface::blocking::Request;
 use nyquest_interface::Result as NyquestResult;
 
 use crate::error::IntoNyquestResult;
+use crate::share::{Share, ShareHandle};
 
 enum MaybeAttachedEasy {
     Attached(EasyHandle),
@@ -21,6 +22,7 @@ pub(crate) struct MultiEasy {
     state: Arc<Mutex<MultiEasyState>>,
     easy: MaybeAttachedEasy,
     multi: Multi,
+    _share_handle: ShareHandle,
 }
 
 #[derive(Default)]
@@ -89,9 +91,11 @@ impl MaybeAttachedEasy {
 }
 
 impl MultiEasy {
-    pub fn new() -> Self {
+    pub fn new(share: &Share) -> Self {
         let state = Arc::new(Mutex::new(MultiEasyState::default()));
+        let share_handle = share.get_handle(); // Drop later than easy
         let mut easy = Easy::new();
+        unsafe { share.bind_easy(&mut easy) }.expect("bind easy to share");
         easy.header_function({
             let state = state.clone();
             move |h| {
@@ -135,6 +139,7 @@ impl MultiEasy {
             state,
             multi,
             easy: MaybeAttachedEasy::Detached(easy),
+            _share_handle: share_handle,
         }
     }
 

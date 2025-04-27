@@ -15,6 +15,7 @@ use nyquest_interface::Result as NyquestResult;
 use slab::Slab;
 
 use crate::error::IntoNyquestResult;
+use crate::share::{Share, ShareHandle};
 
 pub const CURLPAUSE_CONT: i32 = CURLPAUSE_RECV_CONT | CURLPAUSE_SEND_CONT;
 pub const CURLPAUSE_ALL: i32 = CURLPAUSE_RECV | CURLPAUSE_SEND;
@@ -145,14 +146,16 @@ struct LoopManagerShared {
 
 pub(super) struct LoopManager {
     inner: FuturesMutex<Option<LoopManagerShared>>,
+    share: Share,
 }
 
 impl LoopManagerShared {
-    async fn start_loop() -> Self {
+    async fn start_loop(share_handle: ShareHandle) -> Self {
         let (multi_waker_tx, multi_waker_rx) = oneshot::channel();
         thread::Builder::new()
             .name("nyquest-curl-multi-loop".into())
-            .spawn(|| {
+            .spawn(move || {
+                let _share_handle = share_handle; // Ensure the handle outlives all easy handles in the loop
                 run_loop(multi_waker_tx);
             })
             .expect("failed to spawn curl multi loop");
@@ -206,17 +209,23 @@ impl LoopManager {
     pub(super) fn new() -> Self {
         Self {
             inner: FuturesMutex::new(None),
+            share: Share::new(),
         }
     }
     pub(super) async fn start_request(
         &self,
         mut easy: Easy,
     ) -> nyquest_interface::Result<MaybeStartedRequest> {
+        unsafe {
+            self.share
+                .bind_easy(&mut easy)
+                .expect("failed to bind easy handle to share");
+        }
         loop {
             let inner = match &mut *self.inner.lock().await {
                 Some(inner) => inner.clone(),
                 manager @ None => manager
-                    .insert(LoopManagerShared::start_loop().await)
+                    .insert(LoopManagerShared::start_loop(self.share.get_handle()).await)
                     .clone(),
             };
             let (backup_easy, inner) = match inner.start_request(easy).await? {
@@ -226,7 +235,8 @@ impl LoopManager {
             {
                 let mut new_manager = self.inner.lock().await;
                 if *new_manager == Some(inner) {
-                    *new_manager = Some(LoopManagerShared::start_loop().await);
+                    *new_manager =
+                        Some(LoopManagerShared::start_loop(self.share.get_handle()).await);
                 }
             }
             match backup_easy {

@@ -4,6 +4,7 @@ pub mod r#async;
 pub mod blocking;
 mod error;
 mod request;
+mod share;
 mod url;
 mod urlencoded;
 

@@ -8,6 +8,7 @@ use nyquest_interface::Error as NyquestError;
 
 mod multi_easy;
 
+use crate::share::Share;
 use crate::url::concat_url;
 use multi_easy::MultiEasy;
 
@@ -15,6 +16,7 @@ use multi_easy::MultiEasy;
 pub struct CurlEasyClient {
     options: Arc<nyquest_interface::client::ClientOptions>,
     slot: Arc<Mutex<Option<MultiEasy>>>,
+    share: Share,
 }
 
 struct EasyHandleGuard<S: AsRef<Mutex<Option<MultiEasy>>>> {
@@ -67,6 +69,7 @@ impl CurlEasyClient {
         Self {
             options: Arc::new(options),
             slot: Arc::new(Mutex::new(None)),
+            share: Share::new(),
         }
     }
 
@@ -77,7 +80,7 @@ impl CurlEasyClient {
         };
         let handle = match slot {
             Some(handle) => handle,
-            None => MultiEasy::new(),
+            None => MultiEasy::new(&self.share),
         };
         EasyHandleGuard {
             slot: &self.slot,

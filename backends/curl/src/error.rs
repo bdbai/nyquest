@@ -29,3 +29,15 @@ impl<T> IntoNyquestResult<T> for Result<T, curl::MultiError> {
         })?)
     }
 }
+
+impl<T> IntoNyquestResult<T> for Result<T, curl::ShareError> {
+    fn into_nyquest_result(self, ctx: &str) -> NyquestResult<T> {
+        // TODO: proper error mapping
+        Ok(self.map_err(|e| {
+            std::io::Error::new(
+                ErrorKind::Other,
+                format!("curl share error:{}:{}", ctx, e.description()),
+            )
+        })?)
+    }
+}
