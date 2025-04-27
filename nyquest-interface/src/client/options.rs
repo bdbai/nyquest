@@ -1,9 +1,8 @@
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CachingBehavior {
     Disabled,
-    BestEffort,
     #[default]
-    Default,
+    BestEffort,
 }
 
 #[derive(Debug, Clone)]
@@ -25,7 +24,7 @@ impl Default for ClientOptions {
             base_url: None,
             user_agent: None,
             default_headers: vec![],
-            caching_behavior: CachingBehavior::Default,
+            caching_behavior: CachingBehavior::default(),
             use_default_proxy: true,
             use_cookies: true,
             follow_redirects: true,
