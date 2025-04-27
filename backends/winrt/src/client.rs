@@ -26,6 +26,9 @@ impl WinrtClient {
             cache_control.SetReadBehavior(HttpCacheReadBehavior::NoCache)?;
             cache_control.SetWriteBehavior(HttpCacheWriteBehavior::NoCache)?;
         }
+        if !options.use_default_proxy {
+            filter.SetUseProxy(false)?;
+        }
         let client = HttpClient::Create(&filter)?;
         if let Some(user_agent) = &options.user_agent {
             client

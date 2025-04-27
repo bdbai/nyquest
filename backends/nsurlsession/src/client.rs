@@ -23,6 +23,9 @@ impl NSUrlSessionClient {
     pub(crate) fn create(options: ClientOptions) -> BuildClientResult<Self> {
         let session = unsafe {
             let config = objc2_foundation::NSURLSessionConfiguration::defaultSessionConfiguration();
+            if !options.use_default_proxy {
+                config.setConnectionProxyDictionary(Some(&*NSDictionary::new()));
+            }
             if !options.default_headers.is_empty() || options.user_agent.is_some() {
                 let headers = options
                     .default_headers

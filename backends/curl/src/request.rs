@@ -11,6 +11,10 @@ pub fn populate_request<S>(
     options: &nyquest_interface::client::ClientOptions,
     easy: &mut Easy,
 ) -> nyquest_interface::Result<()> {
+    if !options.use_default_proxy {
+        easy.noproxy("*")
+            .into_nyquest_result("set CURLOPT_NOPROXY")?;
+    }
     if let Some(user_agent) = options.user_agent.as_deref() {
         easy.useragent(user_agent).expect("set curl user agent");
     }
