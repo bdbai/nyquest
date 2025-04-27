@@ -1,10 +1,13 @@
-use std::io;
+use std::{fmt, io};
 
 use super::Request;
 use crate::client::{BuildClientResult, ClientOptions};
 
 pub trait BlockingClient: Clone + Send + Sync + 'static {
     type Response: BlockingResponse;
+    fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "BlockingClient")
+    }
     fn request(&self, req: Request) -> crate::Result<Self::Response>;
 }
 
@@ -17,6 +20,9 @@ pub trait BlockingBackend: Send + Sync + 'static {
 }
 
 pub trait BlockingResponse: io::Read + Send + Sync + 'static {
+    fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "BlockingResponse")
+    }
     fn status(&self) -> u16;
     fn content_length(&self) -> Option<u64>;
     fn get_header(&self, header: &str) -> crate::Result<Vec<String>>;

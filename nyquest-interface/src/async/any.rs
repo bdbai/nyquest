@@ -1,3 +1,6 @@
+use std::any::Any;
+use std::fmt;
+
 use futures_core::future::BoxFuture;
 
 use super::backend::AsyncResponse;
@@ -12,12 +15,14 @@ pub trait AnyAsyncBackend: Send + Sync + 'static {
     ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>>;
 }
 
-pub trait AnyAsyncClient: Send + Sync + 'static {
+pub trait AnyAsyncClient: Any + Send + Sync + 'static {
+    fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     fn clone_boxed(&self) -> Box<dyn AnyAsyncClient>;
     fn request(&self, req: Request) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>>;
 }
 
-pub trait AnyAsyncResponse: Send + Sync + 'static {
+pub trait AnyAsyncResponse: Any + Send + Sync + 'static {
+    fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     fn status(&self) -> u16;
     fn content_length(&self) -> Option<u64>;
     fn get_header(&self, header: &str) -> Result<Vec<String>>;
@@ -48,6 +53,10 @@ where
     fn bytes(&mut self) -> BoxFuture<Result<Vec<u8>>> {
         Box::pin(AsyncResponse::bytes(self))
     }
+
+    fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        AsyncResponse::describe(self, f)
+    }
 }
 
 impl<A> AnyAsyncBackend for A
@@ -71,6 +80,10 @@ impl<A> AnyAsyncClient for A
 where
     A: super::backend::AsyncClient,
 {
+    fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        super::backend::AsyncClient::describe(self, f)
+    }
+
     fn clone_boxed(&self) -> Box<dyn AnyAsyncClient> {
         Box::new(self.clone())
     }

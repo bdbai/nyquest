@@ -1,9 +1,9 @@
 use std::io;
 
-use nyquest_interface::blocking::BlockingResponse;
+use nyquest_interface::blocking::AnyBlockingResponse;
 
 pub struct Response {
-    inner: Box<dyn BlockingResponse>,
+    inner: Box<dyn AnyBlockingResponse>,
 }
 
 impl Response {
@@ -24,7 +24,7 @@ impl Response {
     }
 
     pub fn bytes(mut self) -> crate::Result<Vec<u8>> {
-        Ok(BlockingResponse::bytes(&mut *self.inner)?)
+        Ok(AnyBlockingResponse::bytes(&mut *self.inner)?)
     }
 
     pub fn into_read(self) -> impl io::Read {
@@ -32,8 +32,8 @@ impl Response {
     }
 }
 
-impl From<Box<dyn BlockingResponse>> for Response {
-    fn from(inner: Box<dyn BlockingResponse>) -> Self {
+impl From<Box<dyn AnyBlockingResponse>> for Response {
+    fn from(inner: Box<dyn AnyBlockingResponse>) -> Self {
         Self { inner }
     }
 }

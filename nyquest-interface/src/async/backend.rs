@@ -1,3 +1,4 @@
+use std::fmt;
 use std::future::Future;
 
 use super::Request as AsyncRequest;
@@ -6,6 +7,9 @@ use crate::Result;
 
 pub trait AsyncClient: Clone + Send + Sync + 'static {
     type Response: AsyncResponse + Send;
+    fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AsyncClient")
+    }
     fn request(&self, req: AsyncRequest) -> impl Future<Output = Result<Self::Response>> + Send;
     // TODO: fn request_with_progress
     // TODO: fn request_file
@@ -20,6 +24,9 @@ pub trait AsyncBackend: Send + Sync + 'static {
 }
 
 pub trait AsyncResponse: Send + Sync + 'static {
+    fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AsyncResponse")
+    }
     fn status(&self) -> u16;
     fn content_length(&self) -> Option<u64>;
     fn get_header(&self, header: &str) -> Result<Vec<String>>;
