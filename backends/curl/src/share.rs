@@ -137,7 +137,7 @@ unsafe impl Sync for RawShare {}
 unsafe fn set_share_option(
     share: *mut curl_sys::CURLSH,
     option: curl_sys::CURLSHoption,
-    value: i32,
+    value: curl_lock_data,
 ) -> Result<(), ShareError> {
     let result = unsafe { curl_sys::curl_share_setopt(share, option, value) };
     if result == CURLSHE_OK {
