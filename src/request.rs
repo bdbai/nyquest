@@ -1,21 +1,61 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Debug};
 
-use nyquest_interface::Request as RequestImpl;
+use nyquest_interface::{Method as MethodImpl, Request as RequestImpl};
 
 use crate::body::Body;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Method {
+    inner: MethodImpl,
+}
 
 pub struct Request<S> {
     pub(crate) inner: RequestImpl<S>,
 }
 
+impl Method {
+    pub fn custom(method: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            inner: MethodImpl::Other(method.into()),
+        }
+    }
+
+    pub fn get() -> Self {
+        Self {
+            inner: MethodImpl::Get,
+        }
+    }
+
+    pub fn post() -> Self {
+        Self {
+            inner: MethodImpl::Post,
+        }
+    }
+
+    pub fn put() -> Self {
+        Self {
+            inner: MethodImpl::Put,
+        }
+    }
+
+    pub fn delete() -> Self {
+        Self {
+            inner: MethodImpl::Delete,
+        }
+    }
+
+    pub fn patch() -> Self {
+        Self {
+            inner: MethodImpl::Patch,
+        }
+    }
+}
+
 impl<S> Request<S> {
-    pub fn new(
-        method: impl Into<Cow<'static, str>>,
-        relative_uri: impl Into<Cow<'static, str>>,
-    ) -> Self {
+    pub fn new(method: Method, relative_uri: impl Into<Cow<'static, str>>) -> Self {
         Self {
             inner: RequestImpl {
-                method: method.into(),
+                method: method.inner,
                 relative_uri: relative_uri.into(),
                 additional_headers: vec![],
                 body: None,
@@ -24,23 +64,23 @@ impl<S> Request<S> {
     }
 
     pub fn get(uri: impl Into<Cow<'static, str>>) -> Self {
-        Self::new("GET", uri)
+        Self::new(Method::get(), uri)
     }
 
     pub fn post(uri: impl Into<Cow<'static, str>>) -> Self {
-        Self::new("POST", uri)
+        Self::new(Method::post(), uri)
     }
 
     pub fn put(uri: impl Into<Cow<'static, str>>) -> Self {
-        Self::new("PUT", uri)
+        Self::new(Method::put(), uri)
     }
 
     pub fn delete(uri: impl Into<Cow<'static, str>>) -> Self {
-        Self::new("DELETE", uri)
+        Self::new(Method::delete(), uri)
     }
 
     pub fn patch(uri: impl Into<Cow<'static, str>>) -> Self {
-        Self::new("PATCH", uri)
+        Self::new(Method::patch(), uri)
     }
 
     pub fn with_header(
@@ -57,5 +97,25 @@ impl<S> Request<S> {
     pub fn with_body(mut self, body: Body<S>) -> Self {
         self.inner.body = Some(body.inner);
         self
+    }
+}
+
+impl<S> Debug for Request<S>
+where
+    RequestImpl<S>: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl<S> Clone for Request<S>
+where
+    RequestImpl<S>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }

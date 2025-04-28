@@ -5,7 +5,7 @@ use nyquest_interface::client::{
     BuildClientError, BuildClientResult, CachingBehavior, ClientOptions,
 };
 
-use nyquest_interface::{Body, Error as NyquestError, Request, Result as NyquestResult};
+use nyquest_interface::{Body, Error as NyquestError, Method, Request, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
@@ -76,7 +76,14 @@ impl NSUrlSessionClient {
             )
             .ok_or(NyquestError::InvalidUrl)?;
             let nsreq = NSMutableURLRequest::initWithURL(nsreq, &url);
-            nsreq.setHTTPMethod(&NSString::from_str(&req.method));
+            nsreq.setHTTPMethod(match req.method {
+                Method::Get => ns_string!("GET"),
+                Method::Post => ns_string!("POST"),
+                Method::Put => ns_string!("PUT"),
+                Method::Delete => ns_string!("DELETE"),
+                Method::Patch => ns_string!("PATCH"),
+                Method::Other(method) => &NSString::from_str(&method),
+            });
             for (name, value) in &req.additional_headers {
                 nsreq.setValue_forHTTPHeaderField(
                     Some(&NSString::from_str(value)),

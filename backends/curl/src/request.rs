@@ -1,7 +1,7 @@
 use std::io::ErrorKind;
 
 use curl::easy::{Easy, List};
-use nyquest_interface::{Body, Request};
+use nyquest_interface::{Body, Method, Request};
 
 use crate::{error::IntoNyquestResult, urlencoded::curl_escape};
 
@@ -23,11 +23,14 @@ pub fn populate_request<S>(
             .into_nyquest_result("set CURLOPT_COOKIEFILE")?;
     }
     easy.url(url).into_nyquest_result("set CURLOPT_URL")?;
-    let require_body = match &*req.method {
-        "GET" | "get" if req.body.is_none() => easy.get(true).map(|()| false),
-        "POST" | "post" => easy.post(true).map(|()| true),
-        "PUT" | "put" => easy.put(true).map(|()| true),
-        method => easy.custom_request(method).map(|()| false),
+    let require_body = match &req.method {
+        Method::Get if req.body.is_none() => easy.get(true).map(|()| false),
+        Method::Get => easy.custom_request("get").map(|()| false),
+        Method::Post => easy.post(true).map(|()| true),
+        Method::Put => easy.put(true).map(|()| true),
+        Method::Delete => easy.custom_request("delete").map(|()| false),
+        Method::Patch => easy.custom_request("patch").map(|()| false),
+        Method::Other(method) => easy.custom_request(method).map(|()| false),
     }
     .into_nyquest_result("set CURLOPT_CUSTOMREQUEST")?;
     let mut headers = List::new();

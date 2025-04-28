@@ -19,4 +19,4 @@ pub use body::{Body, StreamReader};
 pub use body::{Part, PartBody};
 pub use error::{Error, Result};
 pub use register::register_backend;
-pub use request::Request;
+pub use request::{Method, Request};

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::io;
 
-use nyquest_interface::{Body, Request, Result as NyquestResult};
+use nyquest_interface::{Body, Method, Request, Result as NyquestResult};
 use windows::Foundation::{IReference, PropertyValue};
 use windows::Storage::Streams::IBuffer;
 use windows::Web::Http::Headers::HttpMediaTypeHeaderValue;
@@ -21,7 +21,15 @@ impl WinrtClient {
     pub(crate) fn create_request<B>(&self, req: &Request<B>) -> NyquestResult<HttpRequestMessage> {
         let uri = build_uri(&self.base_url, &req.relative_uri)
             .map_err(|_| nyquest_interface::Error::InvalidUrl)?;
-        let method = HttpMethod::Create(&HSTRING::from(&*req.method)).into_nyquest_result()?;
+        let method = match &req.method {
+            Method::Get => HttpMethod::Get(),
+            Method::Post => HttpMethod::Post(),
+            Method::Put => HttpMethod::Put(),
+            Method::Delete => HttpMethod::Delete(),
+            Method::Patch => HttpMethod::Patch(),
+            Method::Other(method) => HttpMethod::Create(&HSTRING::from(&**method)),
+        }
+        .into_nyquest_result()?;
         let req_msg = HttpRequestMessage::Create(&method, &uri).into_nyquest_result()?;
         // TODO: cache method
         if !req.additional_headers.is_empty() || !self.default_content_headers.is_empty() {

@@ -27,6 +27,12 @@ impl Response {
         Ok(AnyBlockingResponse::bytes(&mut *self.inner)?)
     }
 
+    #[cfg(feature = "json")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
+    pub async fn json<T: serde::de::DeserializeOwned>(self) -> crate::Result<T> {
+        Ok(serde_json::from_slice(&self.bytes()?)?)
+    }
+
     pub fn into_read(self) -> impl io::Read {
         self.inner
     }

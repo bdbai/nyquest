@@ -8,6 +8,9 @@ pub enum Error {
     InvalidUrl,
     #[error("IO Error")]
     Io(#[from] std::io::Error),
+    #[cfg(feature = "json")]
+    #[error("JSON ser/de Error")]
+    Json(#[from] serde_json::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

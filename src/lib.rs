@@ -23,7 +23,7 @@ pub use error::{Error, Result};
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use r#async::client::AsyncClient;
-pub use request::Request;
+pub use request::{Method, Request};
 
 #[doc(hidden)]
 pub mod __private {
