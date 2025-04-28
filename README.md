@@ -51,18 +51,19 @@ The following items are planned in MVP:
 - [x] Backend: libcurl (WIP)
   - [x] Blocking (WIP)
   - [x] Async (WIP)
-- [ ] Backend: reqwest
 - [x] Backend: NSURLSession (WIP)
-- [ ] Client Options
-- [x] Test framework for backends (WIP)
-- [x] Presets (WIP)
+- [x] Client Options (WIP)
+- [ ] Streaming download
+- [x] Test framework for backends
+- [x] Presets
 - [ ] Documentation
 
 Future work may include:
 
+- [ ] Backend: reqwest
 - [ ] Cookie management
 - [ ] Progress tracking
-- [ ] Streaming support
+- [ ] Streaming upload
 - [ ] Direct file upload/download support
 - [ ] URL manipulation utilities
 - [ ] Middleware infrastructure

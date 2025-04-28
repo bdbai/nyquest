@@ -16,6 +16,9 @@ pub struct ClientOptions {
     pub follow_redirects: bool,
     pub max_response_buffer_size: Option<u64>,
     // TODO: timeouts
+    // TODO: ignore TLS validation
+    // TODO: auth
+    // TODO: redirects
 }
 
 impl Default for ClientOptions {

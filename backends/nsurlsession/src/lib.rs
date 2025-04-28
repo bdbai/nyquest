@@ -4,20 +4,20 @@ cfg_if::cfg_if! {
         pub mod blocking;
         #[cfg(feature = "async")]
         pub mod r#async;
+
+        mod client;
+        mod datatask;
+        mod error;
+        #[cfg(feature = "multipart")]
+        mod multipart;
+        mod response;
+
+        #[cfg(target_vendor = "apple")]
+        pub fn register() {
+            nyquest_interface::register_backend(NSUrlSessionBackend);
+        }
     }
 }
 
-mod client;
-mod datatask;
-mod error;
-#[cfg(feature = "multipart")]
-mod multipart;
-mod response;
-
 #[derive(Clone)]
 pub struct NSUrlSessionBackend;
-
-#[cfg(target_vendor = "apple")]
-pub fn register() {
-    nyquest_interface::register_backend(NSUrlSessionBackend);
-}
