@@ -3,14 +3,14 @@ use std::io;
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse, Request};
 use nyquest_interface::Result as NyquestResult;
-use windows::core::Interface;
 use windows::Web::Http::HttpCompletionOption;
-use windows::Win32::System::WinRT::IBufferByteAccess;
 
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
+use crate::ibuffer::IBufferExt;
 use crate::request::create_body;
 use crate::response::WinrtResponse;
+use crate::response_size_limiter::ResponseSizeLimiter;
 
 impl crate::WinrtBackend {
     pub fn create_async_client(&self, options: ClientOptions) -> io::Result<WinrtClient> {
@@ -33,7 +33,7 @@ impl WinrtClient {
             .into_nyquest_result()?
             .await
             .into_nyquest_result()?;
-        WinrtResponse::new(res).into_nyquest_result()
+        WinrtResponse::new(res, self.max_response_buffer_size).into_nyquest_result()
     }
 }
 
@@ -57,7 +57,14 @@ impl AsyncResponse for WinrtResponse {
             .into_nyquest_result()?
             .ReadAsStringAsync()
             .into_nyquest_result()?;
-        Ok(task.await.into_nyquest_result()?.to_string_lossy())
+        let size_limiter =
+            ResponseSizeLimiter::hook_progress(self.max_response_buffer_size, &task)?;
+        let res = task
+            .await
+            .into_nyquest_result()
+            .map(|r| r.to_string_lossy());
+        let content = size_limiter.assert_size(res)?;
+        Ok(content)
     }
 
     async fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
@@ -67,14 +74,11 @@ impl AsyncResponse for WinrtResponse {
             .into_nyquest_result()?
             .ReadAsBufferAsync()
             .into_nyquest_result()?;
-        let buf = task.await.into_nyquest_result()?;
-        let len = buf.Length().into_nyquest_result()?;
-        let iba = buf.cast::<IBufferByteAccess>().into_nyquest_result()?;
-        unsafe {
-            let ptr = iba.Buffer().into_nyquest_result()?;
-            let bytes = std::slice::from_raw_parts(ptr, len as usize);
-            Ok(bytes.to_vec())
-        }
+        let size_limiter =
+            ResponseSizeLimiter::hook_progress(self.max_response_buffer_size, &task)?;
+        let res = task.await.into_nyquest_result().and_then(|b| b.to_vec());
+        let arr = size_limiter.assert_size(res)?;
+        Ok(arr)
     }
 }
 

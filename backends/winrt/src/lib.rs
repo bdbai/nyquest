@@ -7,8 +7,10 @@ cfg_if::cfg_if! {
         mod buffer;
         mod client;
         mod error;
+        mod ibuffer;
         mod request;
         mod response;
+        mod response_size_limiter;
         mod string_pair;
         mod uri;
     }

@@ -1,9 +1,11 @@
 #![allow(non_snake_case)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use arc_swap::ArcSwapAny;
 use block2::DynBlock;
+use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
 use objc2_foundation::{
@@ -78,7 +80,10 @@ pub(crate) struct DataTaskSharedContextRetained {
 }
 
 impl DataTaskDelegate {
-    pub(crate) fn new(waker: GenericWaker) -> Retained<Self> {
+    pub(crate) fn new(
+        waker: GenericWaker,
+        max_response_buffer_size: Option<u64>,
+    ) -> Retained<Self> {
         let this = Self::alloc().set_ivars(DataTaskIvars {
             // continue_response_block: ArcSwapAny::new(None),
             shared: DataTaskIvarsShared {
@@ -86,8 +91,9 @@ impl DataTaskDelegate {
                 waker,
                 completed: AtomicBool::new(false),
                 client_error: ArcSwapAny::new(None),
-                response_buffer: Default::default(),
+                response_buffer: Mutex::new(Ok(vec![])),
             },
+            max_response_buffer_size,
         });
         // SAFETY: The signature of `NSObject`'s `init` method is correct.
         unsafe { msg_send![super(this), init] }
@@ -130,12 +136,28 @@ impl DataTaskDelegate {
     fn callback_URLSession_dataTask_didReceiveData(
         &self,
         _session: &NSURLSession,
-        _data_task: &NSURLSessionDataTask,
+        data_task: &NSURLSessionDataTask,
         data: &NSData,
     ) {
-        let mut buffer = self.ivars().shared.response_buffer.lock().unwrap();
+        let ivars = self.ivars();
+        let mut buffer_guard = ivars.shared.response_buffer.lock().unwrap();
+        let Ok(buffer) = &mut *buffer_guard else {
+            unsafe {
+                data_task.cancel();
+            }
+            return;
+        };
+        if let Some(max_response_buffer_size) = ivars.max_response_buffer_size {
+            if buffer.len() + data.len() > max_response_buffer_size as usize {
+                unsafe {
+                    data_task.cancel();
+                }
+                *buffer_guard = Err(NyquestError::ResponseTooLarge);
+                return;
+            }
+        }
         unsafe {
-            buffer.extend_from_slice(data.as_bytes_unchecked());
+            buffer_guard.extend_from_slice(data.as_bytes_unchecked());
         }
     }
 }
@@ -163,9 +185,9 @@ impl DataTaskSharedContextRetained {
             .load(Ordering::Acquire)
     }
 
-    pub(crate) fn take_response_buffer(&self) -> Vec<u8> {
+    pub(crate) fn take_response_buffer(&self) -> NyquestResult<Vec<u8>> {
         let mut buffer = self.retained.ivars().shared.response_buffer.lock().unwrap();
-        std::mem::take(&mut *buffer)
+        std::mem::replace(&mut *buffer, Ok(vec![]))
     }
 }
 

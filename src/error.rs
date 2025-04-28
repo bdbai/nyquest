@@ -11,6 +11,8 @@ pub enum Error {
     #[cfg(feature = "json")]
     #[error("JSON ser/de Error")]
     Json(#[from] serde_json::Error),
+    #[error("Response body size exceeds max limit")]
+    ResponseTooLarge,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -20,6 +22,7 @@ impl From<ErrorImpl> for Error {
         match e {
             ErrorImpl::InvalidUrl => Self::InvalidUrl,
             ErrorImpl::Io(e) => Self::Io(e),
+            ErrorImpl::ResponseTooLarge => Self::ResponseTooLarge,
         }
     }
 }

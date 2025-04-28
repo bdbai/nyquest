@@ -56,7 +56,7 @@ impl BlockingResponse for NSUrlSessionBlockingResponse {
         unsafe {
             self.inner.task.error().into_nyquest_result()?;
         }
-        Ok(self.inner.shared.take_response_buffer())
+        self.inner.shared.take_response_buffer()
     }
 }
 
@@ -66,9 +66,10 @@ impl BlockingClient for NSUrlSessionBlockingClient {
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
         let task = self.inner.build_data_task(req)?;
         let shared = unsafe {
-            let delegate = DataTaskDelegate::new(GenericWaker::Blocking(
-                BlockingWaker::new_from_current_thread(),
-            ));
+            let delegate = DataTaskDelegate::new(
+                GenericWaker::Blocking(BlockingWaker::new_from_current_thread()),
+                self.inner.max_response_buffer_size,
+            );
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
             DataTaskDelegate::into_shared(delegate)

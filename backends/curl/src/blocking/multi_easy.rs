@@ -7,7 +7,7 @@ use curl::{
     multi::{EasyHandle, Multi},
 };
 use nyquest_interface::blocking::Request;
-use nyquest_interface::Result as NyquestResult;
+use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 use crate::error::IntoNyquestResult;
 use crate::share::{Share, ShareHandle};
@@ -224,8 +224,21 @@ impl MultiEasy {
         Ok(content_length.map(|len| len as u64))
     }
 
-    pub fn poll_until_whole_response(&mut self, timeout: Duration) -> NyquestResult<()> {
-        self.poll_until(timeout, |_| Ok(ControlFlow::Continue(())))
+    pub fn poll_until_whole_response(
+        &mut self,
+        timeout: Duration,
+        max_response_buffer_size: Option<u64>,
+    ) -> NyquestResult<()> {
+        self.poll_until(timeout, |state| {
+            let Some(max_response_buffer_size) = max_response_buffer_size else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            let received_len = state.lock().unwrap().response_buffer.len();
+            if received_len > max_response_buffer_size as usize {
+                return Err(NyquestError::ResponseTooLarge);
+            }
+            Ok(ControlFlow::Continue(()))
+        })
     }
 
     pub fn take_response_buffer(&mut self) -> Vec<u8> {

@@ -7,12 +7,16 @@ use windows::Web::Http::{HttpResponseMessage, IHttpContent};
 pub struct WinrtResponse {
     pub(crate) status: u16,
     pub(crate) content_length: Option<u64>,
+    pub(crate) max_response_buffer_size: Option<u64>,
     pub(crate) response: HttpResponseMessage,
     pub(crate) reader: Option<DataReader>,
 }
 
 impl WinrtResponse {
-    pub(crate) fn new(res: HttpResponseMessage) -> io::Result<WinrtResponse> {
+    pub(crate) fn new(
+        res: HttpResponseMessage,
+        response_size_limit: Option<u64>,
+    ) -> io::Result<WinrtResponse> {
         let content_length = match res.Content() {
             Ok(content) => content
                 .Headers()?
@@ -24,6 +28,7 @@ impl WinrtResponse {
         Ok(WinrtResponse {
             status: res.StatusCode()?.0 as u16,
             content_length,
+            max_response_buffer_size: response_size_limit,
             response: res,
             reader: None,
         })

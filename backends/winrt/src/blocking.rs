@@ -3,14 +3,14 @@ use std::io;
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::{BuildClientResult, ClientOptions};
 use nyquest_interface::Result as NyquestResult;
-use windows::core::Interface;
 use windows::Web::Http::HttpCompletionOption;
-use windows::Win32::System::WinRT::IBufferByteAccess;
 
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
+use crate::ibuffer::IBufferExt;
 use crate::request::create_body;
 use crate::response::WinrtResponse;
+use crate::response_size_limiter::ResponseSizeLimiter;
 
 impl crate::WinrtBackend {
     pub fn create_blocking_client(&self, options: ClientOptions) -> io::Result<WinrtClient> {
@@ -33,7 +33,7 @@ impl WinrtClient {
             .into_nyquest_result()?
             .get()
             .into_nyquest_result()?;
-        WinrtResponse::new(res).into_nyquest_result()
+        WinrtResponse::new(res, self.max_response_buffer_size).into_nyquest_result()
     }
 }
 
@@ -69,33 +69,31 @@ impl BlockingResponse for WinrtResponse {
     }
 
     fn text(&mut self) -> NyquestResult<String> {
-        let content = self
+        let task = self
             .content()
             .into_nyquest_result()?
             .ReadAsStringAsync()
-            .into_nyquest_result()?
-            .get()
             .into_nyquest_result()?;
-        Ok(content.to_string_lossy())
+        let size_limiter =
+            ResponseSizeLimiter::hook_progress(self.max_response_buffer_size, &task)?;
+        let res = task
+            .get()
+            .into_nyquest_result()
+            .map(|r| r.to_string_lossy());
+        let content = size_limiter.assert_size(res)?;
+        Ok(content)
     }
 
     fn bytes(&mut self) -> NyquestResult<Vec<u8>> {
-        let content = self
+        let task = self
             .content()
             .into_nyquest_result()?
             .ReadAsBufferAsync()
-            .into_nyquest_result()?
-            .get()
             .into_nyquest_result()?;
-        let iba = content.cast::<IBufferByteAccess>().into_nyquest_result()?;
-        let arr = unsafe {
-            let len = content.Length().into_nyquest_result()? as usize;
-            let ptr = iba.Buffer().into_nyquest_result()?;
-            let mut arr = Vec::with_capacity(len);
-            std::ptr::copy_nonoverlapping(ptr, arr.as_mut_ptr(), len);
-            arr.set_len(len);
-            arr
-        };
+        let size_limiter =
+            ResponseSizeLimiter::hook_progress(self.max_response_buffer_size, &task)?;
+        let res = task.get().into_nyquest_result().and_then(|b| b.to_vec());
+        let arr = size_limiter.assert_size(res)?;
         Ok(arr)
     }
 }

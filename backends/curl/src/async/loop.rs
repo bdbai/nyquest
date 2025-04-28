@@ -400,6 +400,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                                     .map(|(k, v)| (k.into(), v.trim_start().into()))
                                     .collect(),
                                 handle: req_handle,
+                                max_response_buffer_size: None, // To be filled in client.request()
                             });
                         tx.send(res.into_nyquest_result("get CURLINFO_RESPONSE_CODE"))
                             .ok();

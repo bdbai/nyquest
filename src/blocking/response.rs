@@ -1,4 +1,4 @@
-use std::io;
+use std::{fmt::Debug, io};
 
 use nyquest_interface::blocking::AnyBlockingResponse;
 
@@ -41,5 +41,29 @@ impl Response {
 impl From<Box<dyn AnyBlockingResponse>> for Response {
     fn from(inner: Box<dyn AnyBlockingResponse>) -> Self {
         Self { inner }
+    }
+}
+
+struct ResponseDebug<'a> {
+    inner: &'a dyn AnyBlockingResponse,
+}
+impl Debug for ResponseDebug<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.describe(f)
+    }
+}
+
+impl Debug for Response {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlockingResponse")
+            .field("status", &self.status())
+            .field("content_length", &self.content_length())
+            .field(
+                "inner",
+                &ResponseDebug {
+                    inner: &*self.inner,
+                },
+            )
+            .finish()
     }
 }

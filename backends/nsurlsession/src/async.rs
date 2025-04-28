@@ -58,7 +58,7 @@ impl AsyncResponse for NSUrlSessionAsyncResponse {
         unsafe {
             self.inner.task.error().into_nyquest_result()?;
         }
-        Ok(self.inner.shared.take_response_buffer())
+        self.inner.shared.take_response_buffer()
     }
 }
 
@@ -71,7 +71,10 @@ impl AsyncClient for NSUrlSessionAsyncClient {
     ) -> NyquestResult<Self::Response> {
         let task = self.inner.build_data_task(req)?;
         let shared = unsafe {
-            let delegate = DataTaskDelegate::new(GenericWaker::Async(AsyncWaker::new()));
+            let delegate = DataTaskDelegate::new(
+                GenericWaker::Async(AsyncWaker::new()),
+                self.inner.max_response_buffer_size,
+            );
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
             DataTaskDelegate::into_shared(delegate)

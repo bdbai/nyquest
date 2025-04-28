@@ -21,6 +21,7 @@ pub struct CurlAsyncResponse {
     content_length: Option<u64>,
     headers: Vec<(String, String)>,
     handle: r#loop::RequestHandle,
+    max_response_buffer_size: Option<u64>,
 }
 
 impl AsyncResponse for CurlAsyncResponse {
@@ -65,6 +66,11 @@ impl AsyncResponse for CurlAsyncResponse {
         while let Some(()) = self
             .handle
             .poll_bytes(|data| {
+                if let Some(max_response_buffer_size) = self.max_response_buffer_size {
+                    if buf.len() + data.len() > max_response_buffer_size as usize {
+                        return Err(nyquest_interface::Error::ResponseTooLarge);
+                    }
+                }
                 buf.extend_from_slice(data);
                 Ok(())
             })
@@ -93,7 +99,8 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
                 r#loop::MaybeStartedRequest::Started(req) => break req,
             }
         };
-        let res = req.wait_for_response().await?;
+        let mut res = req.wait_for_response().await?;
+        res.max_response_buffer_size = self.inner.options.max_response_buffer_size;
         Ok(res)
     }
 }

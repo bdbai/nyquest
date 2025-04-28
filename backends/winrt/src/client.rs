@@ -12,6 +12,7 @@ use crate::request::is_header_name_content_related;
 #[derive(Clone)]
 pub struct WinrtClient {
     pub(crate) base_url: Option<HSTRING>,
+    pub(crate) max_response_buffer_size: Option<u64>,
     pub(crate) client: HttpClient,
     pub(crate) default_content_headers: Vec<(HSTRING, HSTRING)>,
 }
@@ -51,6 +52,7 @@ impl WinrtClient {
         // TODO: options
         Ok(Self {
             base_url,
+            max_response_buffer_size: options.max_response_buffer_size,
             client,
             default_content_headers,
         })

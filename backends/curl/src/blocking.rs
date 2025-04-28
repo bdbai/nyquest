@@ -31,6 +31,7 @@ pub struct CurlResponse {
     content_length: Option<u64>,
     headers: Vec<(String, String)>,
     handle: OwnedEasyHandleGuard,
+    max_response_buffer_size: Option<u64>,
 }
 
 impl<S: AsRef<Mutex<Option<MultiEasy>>>> EasyHandleGuard<S> {
@@ -134,11 +135,19 @@ impl nyquest_interface::blocking::BlockingResponse for CurlResponse {
 
     fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
         // TODO: proper timeouts
-        self.handle
-            .with_handle(|handle| handle.poll_until_whole_response(Duration::from_secs(30)))?;
+        self.handle.with_handle(|handle| {
+            handle.poll_until_whole_response(Duration::from_secs(30), self.max_response_buffer_size)
+        })?;
         let buf = self
             .handle
             .with_handle(|handle| handle.take_response_buffer());
+        if self
+            .max_response_buffer_size
+            .map(|limit| buf.len() > limit as usize)
+            .unwrap_or_default()
+        {
+            return Err(NyquestError::ResponseTooLarge);
+        }
         Ok(buf)
     }
 }
@@ -168,6 +177,7 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
             content_length,
             headers,
             handle: handle.into_owned(),
+            max_response_buffer_size: self.options.max_response_buffer_size,
         })
     }
 }
