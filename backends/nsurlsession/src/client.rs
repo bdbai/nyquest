@@ -81,14 +81,17 @@ impl NSUrlSessionClient {
             )
             .ok_or(NyquestError::InvalidUrl)?;
             let nsreq = NSMutableURLRequest::initWithURL(nsreq, &url);
-            nsreq.setHTTPMethod(match req.method {
-                Method::Get => ns_string!("GET"),
-                Method::Post => ns_string!("POST"),
-                Method::Put => ns_string!("PUT"),
-                Method::Delete => ns_string!("DELETE"),
-                Method::Patch => ns_string!("PATCH"),
-                Method::Other(method) => &NSString::from_str(&method),
-            });
+            {
+                let mut method_storage = None;
+                nsreq.setHTTPMethod(match req.method {
+                    Method::Get => ns_string!("GET"),
+                    Method::Post => ns_string!("POST"),
+                    Method::Put => ns_string!("PUT"),
+                    Method::Delete => ns_string!("DELETE"),
+                    Method::Patch => ns_string!("PATCH"),
+                    Method::Other(method) => &*method_storage.insert(NSString::from_str(&method)),
+                });
+            }
             for (name, value) in &req.additional_headers {
                 nsreq.setValue_forHTTPHeaderField(
                     Some(&NSString::from_str(value)),
