@@ -157,7 +157,7 @@ impl DataTaskDelegate {
             }
         }
         unsafe {
-            buffer_guard.extend_from_slice(data.as_bytes_unchecked());
+            buffer.extend_from_slice(data.as_bytes_unchecked());
         }
     }
 }
