@@ -145,20 +145,21 @@ impl DataTaskDelegate {
             unsafe {
                 data_task.cancel();
             }
+            self.ivars().shared.waker.wake();
             return;
         };
+        let data = unsafe { data.as_bytes_unchecked() };
         if let Some(max_response_buffer_size) = ivars.max_response_buffer_size {
             if buffer.len() + data.len() > max_response_buffer_size as usize {
                 unsafe {
                     data_task.cancel();
                 }
                 *buffer_guard = Err(NyquestError::ResponseTooLarge);
+                self.ivars().shared.waker.wake();
                 return;
             }
         }
-        unsafe {
-            buffer.extend_from_slice(data.as_bytes_unchecked());
-        }
+        buffer.extend_from_slice(data);
     }
 }
 
@@ -186,8 +187,8 @@ impl DataTaskSharedContextRetained {
     }
 
     pub(crate) fn take_response_buffer(&self) -> NyquestResult<Vec<u8>> {
-        let mut buffer = self.retained.ivars().shared.response_buffer.lock().unwrap();
-        std::mem::replace(&mut *buffer, Ok(vec![]))
+        let mut buffer_guard = self.retained.ivars().shared.response_buffer.lock().unwrap();
+        std::mem::replace(&mut *buffer_guard, Ok(vec![]))
     }
 }
 
