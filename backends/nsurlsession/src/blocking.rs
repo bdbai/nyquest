@@ -53,10 +53,11 @@ impl BlockingResponse for NSUrlSessionBlockingResponse {
         while !self.inner.shared.is_completed() {
             std::thread::park();
         }
+        let res = self.inner.shared.take_response_buffer()?;
         unsafe {
             self.inner.task.error().into_nyquest_result()?;
         }
-        self.inner.shared.take_response_buffer()
+        Ok(res)
     }
 }
 

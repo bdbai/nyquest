@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 
 use arc_swap::ArcSwapAny;
 use block2::DynBlock;
@@ -13,6 +12,8 @@ use objc2_foundation::{
     NSURLSession, NSURLSessionDataDelegate, NSURLSessionDataTask, NSURLSessionDelegate,
     NSURLSessionResponseDisposition, NSURLSessionTask, NSURLSessionTaskDelegate,
 };
+
+use crate::error::IntoNyquestResult;
 
 use super::generic_waker::GenericWaker;
 use super::ivars::{DataTaskIvars, DataTaskIvarsShared};
@@ -90,8 +91,8 @@ impl DataTaskDelegate {
                 response: ArcSwapAny::new(None),
                 waker,
                 completed: AtomicBool::new(false),
-                client_error: ArcSwapAny::new(None),
-                response_buffer: Mutex::new(Ok(vec![])),
+                received_error: Default::default(),
+                response_buffer: Default::default(),
             },
             max_response_buffer_size,
         });
@@ -124,14 +125,10 @@ impl DataTaskDelegate {
         _task: &NSURLSessionTask,
         error: Option<&NSError>,
     ) {
-        self.ivars().shared.completed.store(true, Ordering::Release);
+        self.ivars().shared.completed.store(true, Ordering::SeqCst);
         if let Some(error) = error {
-            self.ivars()
-                .shared
-                .client_error
-                .store(Some(error.copy().into()));
+            self.ivars().set_error(error.copy());
         }
-        self.ivars().shared.waker.wake();
     }
     fn callback_URLSession_dataTask_didReceiveData(
         &self,
@@ -140,22 +137,15 @@ impl DataTaskDelegate {
         data: &NSData,
     ) {
         let ivars = self.ivars();
-        let mut buffer_guard = ivars.shared.response_buffer.lock().unwrap();
-        let Ok(buffer) = &mut *buffer_guard else {
-            unsafe {
-                data_task.cancel();
-            }
-            self.ivars().shared.waker.wake();
-            return;
-        };
+        let mut buffer = ivars.shared.response_buffer.lock().unwrap();
         let data = unsafe { data.as_bytes_unchecked() };
         if let Some(max_response_buffer_size) = ivars.max_response_buffer_size {
             if buffer.len() + data.len() > max_response_buffer_size as usize {
+                drop(buffer);
+                ivars.set_error(NyquestError::ResponseTooLarge);
                 unsafe {
                     data_task.cancel();
                 }
-                *buffer_guard = Err(NyquestError::ResponseTooLarge);
-                self.ivars().shared.waker.wake();
                 return;
             }
         }
@@ -168,13 +158,12 @@ impl DataTaskSharedContextRetained {
         &self.retained.ivars().shared.waker
     }
 
-    pub(crate) fn try_take_response(
-        &self,
-    ) -> Result<Option<Retained<NSHTTPURLResponse>>, Retained<NSError>> {
-        if let Some(error) = self.retained.ivars().shared.client_error.swap(None) {
-            return Err(error.into());
+    pub(crate) fn try_take_response(&self) -> NyquestResult<Option<Retained<NSHTTPURLResponse>>> {
+        let shared = &self.retained.ivars().shared;
+        if let Some(error) = shared.received_error.lock().unwrap().take() {
+            return Err(error);
         }
-        let response = self.retained.ivars().shared.response.swap(None);
+        let response = shared.response.swap(None);
         Ok(response.and_then(|res| res.0.downcast::<NSHTTPURLResponse>().ok()))
     }
 
@@ -187,8 +176,13 @@ impl DataTaskSharedContextRetained {
     }
 
     pub(crate) fn take_response_buffer(&self) -> NyquestResult<Vec<u8>> {
-        let mut buffer_guard = self.retained.ivars().shared.response_buffer.lock().unwrap();
-        std::mem::replace(&mut *buffer_guard, Ok(vec![]))
+        let shared = &self.retained.ivars().shared;
+
+        let err = shared.received_error.lock().unwrap().take();
+        err.map(Err::<(), _>).transpose().into_nyquest_result()?;
+
+        let mut buffer = self.retained.ivars().shared.response_buffer.lock().unwrap();
+        Ok(std::mem::take(&mut *buffer))
     }
 }
 

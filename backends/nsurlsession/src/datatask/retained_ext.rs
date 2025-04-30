@@ -3,6 +3,7 @@ use std::ops::Deref;
 use arc_swap::RefCnt;
 use objc2::{rc::Retained, Message};
 
+#[derive(Debug)]
 pub(super) struct SwappableRetained<T: ?Sized>(pub(super) Retained<T>);
 
 impl<T: Message> Clone for SwappableRetained<T> {

@@ -55,10 +55,11 @@ impl AsyncResponse for NSUrlSessionAsyncResponse {
             Poll::Pending
         })
         .await;
+        let res = self.inner.shared.take_response_buffer()?;
         unsafe {
             self.inner.task.error().into_nyquest_result()?;
         }
-        self.inner.shared.take_response_buffer()
+        Ok(res)
     }
 }
 

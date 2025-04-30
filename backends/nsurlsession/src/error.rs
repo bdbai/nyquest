@@ -29,3 +29,9 @@ impl IntoNyquestResult<()> for Option<Retained<NSError>> {
         }
     }
 }
+
+impl<T> IntoNyquestResult<T> for NyquestResult<T> {
+    fn into_nyquest_result(self) -> NyquestResult<T> {
+        self
+    }
+}
