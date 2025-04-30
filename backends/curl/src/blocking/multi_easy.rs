@@ -156,10 +156,15 @@ impl MultiEasy {
         let deadline = Instant::now() + timeout;
         // TODO: sigpipe
         while Instant::now() < deadline {
+            let suggested_timeout = self
+                .multi
+                .get_timeout()
+                .into_nyquest_result("multi_easy curl_multi_timeout")?
+                .unwrap_or(Duration::from_secs(1));
             let multi_res = self
                 .multi
-                .wait(&mut [], Duration::from_secs(1))
-                .into_nyquest_result("multi_easy curl_multi_wait"); // TODO: proper timeout per wait
+                .wait(&mut [], suggested_timeout)
+                .into_nyquest_result("multi_easy curl_multi_wait");
             let multi_res = multi_res.and_then(|_| {
                 self.multi
                     .perform()

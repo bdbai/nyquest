@@ -22,6 +22,10 @@ pub fn populate_request<S>(
         easy.cookie_file("")
             .into_nyquest_result("set CURLOPT_COOKIEFILE")?;
     }
+    if let Some(timeout) = options.request_timeout {
+        easy.timeout(timeout)
+            .into_nyquest_result("set CURLOPT_TIMEOUT")?;
+    }
     easy.url(url).into_nyquest_result("set CURLOPT_URL")?;
     let require_body = match &req.method {
         Method::Get if req.body.is_none() => easy.get(true).map(|()| false),

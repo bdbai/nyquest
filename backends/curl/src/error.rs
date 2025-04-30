@@ -1,6 +1,6 @@
 use std::io::ErrorKind;
 
-use nyquest_interface::Result as NyquestResult;
+use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 pub(crate) trait IntoNyquestResult<T> {
     fn into_nyquest_result(self, ctx: &str) -> NyquestResult<T>;
@@ -9,6 +9,14 @@ pub(crate) trait IntoNyquestResult<T> {
 impl<T> IntoNyquestResult<T> for Result<T, curl::Error> {
     fn into_nyquest_result(self, ctx: &str) -> NyquestResult<T> {
         // TODO: proper error mapping
+        if self
+            .as_ref()
+            .err()
+            .map(|e| e.is_operation_timedout())
+            .is_some()
+        {
+            return Err(NyquestError::RequestTimeout);
+        }
         Ok(self.map_err(|e| {
             std::io::Error::new(
                 ErrorKind::Other,
