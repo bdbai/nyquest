@@ -1,4 +1,5 @@
 use std::io;
+use std::time::Duration;
 
 use nyquest_interface::client::{CachingBehavior, ClientOptions};
 use windows::core::{h, HSTRING};
@@ -13,6 +14,7 @@ use crate::request::is_header_name_content_related;
 pub struct WinrtClient {
     pub(crate) base_url: Option<HSTRING>,
     pub(crate) max_response_buffer_size: Option<u64>,
+    pub(crate) request_timeout: Option<Duration>,
     pub(crate) client: HttpClient,
     pub(crate) default_content_headers: Vec<(HSTRING, HSTRING)>,
 }
@@ -53,6 +55,7 @@ impl WinrtClient {
         Ok(Self {
             base_url,
             max_response_buffer_size: options.max_response_buffer_size,
+            request_timeout: options.request_timeout,
             client,
             default_content_headers,
         })

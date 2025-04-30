@@ -11,6 +11,7 @@ use crate::ibuffer::IBufferExt;
 use crate::request::create_body;
 use crate::response::WinrtResponse;
 use crate::response_size_limiter::ResponseSizeLimiter;
+use crate::timer::{BlockingTimeoutExt, Timer};
 
 impl crate::WinrtBackend {
     pub fn create_blocking_client(&self, options: ClientOptions) -> io::Result<WinrtClient> {
@@ -27,13 +28,13 @@ impl WinrtClient {
             self.append_content_headers(&body, &req.additional_headers)?;
             req_msg.SetContent(&body).into_nyquest_result()?;
         }
+        let mut timer = Timer::new(self.request_timeout);
         let res = self
             .client
             .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)
             .into_nyquest_result()?
-            .get()
-            .into_nyquest_result()?;
-        WinrtResponse::new(res, self.max_response_buffer_size).into_nyquest_result()
+            .timeout_by(&mut timer)?;
+        WinrtResponse::new(res, self.max_response_buffer_size, timer).into_nyquest_result()
     }
 }
 
@@ -77,8 +78,7 @@ impl BlockingResponse for WinrtResponse {
         let size_limiter =
             ResponseSizeLimiter::hook_progress(self.max_response_buffer_size, &task)?;
         let res = task
-            .get()
-            .into_nyquest_result()
+            .timeout_by(&mut self.request_timer)
             .map(|r| r.to_string_lossy());
         let content = size_limiter.assert_size(res)?;
         Ok(content)
@@ -92,7 +92,9 @@ impl BlockingResponse for WinrtResponse {
             .into_nyquest_result()?;
         let size_limiter =
             ResponseSizeLimiter::hook_progress(self.max_response_buffer_size, &task)?;
-        let res = task.get().into_nyquest_result().and_then(|b| b.to_vec());
+        let res = task
+            .timeout_by(&mut self.request_timer)
+            .and_then(|b| b.to_vec());
         let arr = size_limiter.assert_size(res)?;
         Ok(arr)
     }

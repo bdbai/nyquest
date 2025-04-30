@@ -22,6 +22,7 @@ exclude = [".vscode/*", ".github/*", "examples/README.md", "rustfmt.toml"]
 futures = "0.3.31"
 thiserror = "2"
 cfg-if = "1"
+arc-swap = "1"
 
 [package]
 name = "nyquest"

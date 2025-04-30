@@ -4,10 +4,13 @@ use windows::core::HSTRING;
 use windows::Storage::Streams::{DataReader, InputStreamOptions};
 use windows::Web::Http::{HttpResponseMessage, IHttpContent};
 
+use crate::timer::Timer;
+
 pub struct WinrtResponse {
     pub(crate) status: u16,
     pub(crate) content_length: Option<u64>,
     pub(crate) max_response_buffer_size: Option<u64>,
+    pub(crate) request_timer: Timer,
     pub(crate) response: HttpResponseMessage,
     pub(crate) reader: Option<DataReader>,
 }
@@ -16,6 +19,7 @@ impl WinrtResponse {
     pub(crate) fn new(
         res: HttpResponseMessage,
         response_size_limit: Option<u64>,
+        request_timer: Timer,
     ) -> io::Result<WinrtResponse> {
         let content_length = match res.Content() {
             Ok(content) => content
@@ -29,6 +33,7 @@ impl WinrtResponse {
             status: res.StatusCode()?.0 as u16,
             content_length,
             max_response_buffer_size: response_size_limit,
+            request_timer,
             response: res,
             reader: None,
         })

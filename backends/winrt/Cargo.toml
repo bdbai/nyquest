@@ -26,6 +26,7 @@ version = "0.61"
 features = [
     "Foundation_Collections",
     "Storage_Streams",
+    "System_Threading",
     "Web_Http_Filters",
     "Web_Http_Headers",
     "Win32_System_WinRT",

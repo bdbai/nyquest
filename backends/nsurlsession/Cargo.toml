@@ -44,4 +44,4 @@ objc2-core-foundation = { version = "0.3", default-features = false, features = 
 futures-util = { version = "0.3", optional = true, default-features = false, features = [
     "std",
 ] }
-arc-swap = "1"
+arc-swap.workspace = true

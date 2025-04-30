@@ -12,6 +12,7 @@ cfg_if::cfg_if! {
         mod response;
         mod response_size_limiter;
         mod string_pair;
+        mod timer;
         mod uri;
     }
 }
