@@ -7,7 +7,7 @@ use crate::Error as BackendError;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum BuildClientError {
-    #[error("No backend registered")]
+    #[error("No backend registered. Please find a backend crate (e.g. nyquest-preset) and call the `register` method at program startup.")]
     NoBackend,
     #[error("Error creating client: {0}")]
     BackendError(#[from] BackendError),

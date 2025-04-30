@@ -13,6 +13,8 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("Response body size exceeds max limit")]
     ResponseTooLarge,
+    #[error("Request is not finished within timeout")]
+    RequestTimeout,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -23,6 +25,7 @@ impl From<ErrorImpl> for Error {
             ErrorImpl::InvalidUrl => Self::InvalidUrl,
             ErrorImpl::Io(e) => Self::Io(e),
             ErrorImpl::ResponseTooLarge => Self::ResponseTooLarge,
+            ErrorImpl::RequestTimeout => Self::RequestTimeout,
         }
     }
 }

@@ -33,6 +33,9 @@ impl NSUrlSessionClient {
             if !options.use_cookies {
                 config.setHTTPShouldSetCookies(false);
             }
+            if let Some(request_timeout) = options.request_timeout {
+                config.setTimeoutIntervalForRequest(request_timeout.as_secs_f64());
+            }
             if !options.default_headers.is_empty() || options.user_agent.is_some() {
                 let headers = options
                     .default_headers

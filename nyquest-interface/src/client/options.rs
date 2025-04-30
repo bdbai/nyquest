@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CachingBehavior {
     Disabled,
@@ -15,7 +17,7 @@ pub struct ClientOptions {
     pub use_cookies: bool,
     pub follow_redirects: bool,
     pub max_response_buffer_size: Option<u64>,
-    // TODO: timeouts
+    pub request_timeout: Option<Duration>,
     // TODO: ignore TLS validation
     // TODO: auth
     // TODO: redirects
@@ -32,6 +34,7 @@ impl Default for ClientOptions {
             use_cookies: true,
             follow_redirects: true,
             max_response_buffer_size: None,
+            request_timeout: None,
         }
     }
 }

@@ -31,6 +31,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSCharacterSet",
     "NSString",
     "NSData",
+    "NSDate",
     "NSURL",
     "NSDictionary",
     "NSURLRequest",
