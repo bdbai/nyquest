@@ -5,13 +5,16 @@ use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse, Reque
 use nyquest_interface::Result as NyquestResult;
 use windows::Web::Http::HttpCompletionOption;
 
+mod timer_ext;
+
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
 use crate::ibuffer::IBufferExt;
 use crate::request::create_body;
 use crate::response::WinrtResponse;
 use crate::response_size_limiter::ResponseSizeLimiter;
-use crate::timer::{AsyncTimeoutExt, Timer};
+use crate::timer::Timer;
+use timer_ext::AsyncTimeoutExt;
 
 impl crate::WinrtBackend {
     pub fn create_async_client(&self, options: ClientOptions) -> io::Result<WinrtClient> {

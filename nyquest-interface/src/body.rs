@@ -94,3 +94,15 @@ where
         }
     }
 }
+
+impl<S> Clone for StreamReader<S>
+where
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            stream: self.stream.clone(),
+            content_length: self.content_length,
+        }
+    }
+}
