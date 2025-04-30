@@ -125,10 +125,12 @@ impl DataTaskDelegate {
         _task: &NSURLSessionTask,
         error: Option<&NSError>,
     ) {
-        self.ivars().shared.completed.store(true, Ordering::SeqCst);
+        let ivars = self.ivars();
+        ivars.shared.completed.store(true, Ordering::SeqCst);
         if let Some(error) = error {
-            self.ivars().set_error(error.copy());
+            ivars.set_error(error.copy());
         }
+        ivars.shared.waker.wake();
     }
     fn callback_URLSession_dataTask_didReceiveData(
         &self,
@@ -172,7 +174,7 @@ impl DataTaskSharedContextRetained {
             .ivars()
             .shared
             .completed
-            .load(Ordering::Acquire)
+            .load(Ordering::SeqCst)
     }
 
     pub(crate) fn take_response_buffer(&self) -> NyquestResult<Vec<u8>> {

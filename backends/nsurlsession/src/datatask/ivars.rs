@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use arc_swap::ArcSwapAny;
@@ -30,6 +30,7 @@ impl DataTaskIvars {
     where
         Result<(), E>: IntoNyquestResult<()>,
     {
+        self.shared.completed.store(true, Ordering::SeqCst);
         let error = Err(error).into_nyquest_result().unwrap_err();
         if let error_slot @ None = &mut *self.shared.received_error.lock().unwrap() {
             *error_slot = Some(error);
