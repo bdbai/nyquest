@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use nyquest_interface::{r#async::AnyAsyncClient, register::BACKEND};
 
 use super::response::Response;
@@ -34,5 +36,11 @@ impl Clone for AsyncClient {
         Self {
             client: self.client.clone_boxed(),
         }
+    }
+}
+
+impl Debug for AsyncClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.client.describe(f)
     }
 }

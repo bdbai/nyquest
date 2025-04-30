@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use nyquest_interface::{blocking::AnyBlockingClient, register::BACKEND};
 
 use super::{response::Response, Request};
@@ -32,5 +34,11 @@ impl Clone for BlockingClient {
         Self {
             client: self.client.clone_boxed(),
         }
+    }
+}
+
+impl Debug for BlockingClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.client.describe(f)
     }
 }
