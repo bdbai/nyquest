@@ -1,17 +1,40 @@
+//! Multipart form data definitions for HTTP requests.
+//!
+//! This module defines types for creating multipart/form-data bodies,
+//! which allow sending complex data including files in HTTP requests.
+
 use std::{borrow::Cow, fmt::Debug};
 
 use super::StreamReader;
 
+/// Represents a part in a multipart form.
+///
+/// Each part has a name, optional filename, content type, and a body,
+/// along with optional additional headers.
 pub struct Part<S> {
+    /// Additional headers for this part.
     pub headers: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    /// Name of the form field.
     pub name: Cow<'static, str>,
+    /// Optional filename for file parts.
     pub filename: Option<Cow<'static, str>>,
+    /// MIME content type for this part.
     pub content_type: Cow<'static, str>,
+    /// Body content for this part.
     pub body: PartBody<S>,
 }
 
+/// Body content for a multipart form part.
+///
+/// This can be either raw bytes or a stream.
 pub enum PartBody<S> {
-    Bytes { content: Cow<'static, [u8]> },
+    /// Raw byte content.
+    Bytes {
+        /// The bytes that make up this part's content.
+        content: Cow<'static, [u8]>,
+    },
+    /// Streaming content for larger part bodies.
+    #[doc(hidden)]
     Stream(StreamReader<S>),
 }
 

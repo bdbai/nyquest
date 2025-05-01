@@ -1,3 +1,8 @@
+//! Request body types for nyquest HTTP clients.
+//!
+//! This module defines the various body types that can be used in HTTP requests,
+//! including byte content, form data, and multipart forms.
+
 use std::{borrow::Cow, fmt::Debug};
 
 #[cfg(feature = "multipart")]
@@ -7,23 +12,40 @@ mod multipart;
 #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use multipart::{Part, PartBody};
 
+/// A wrapper for streaming request body data.
+#[doc(hidden)]
 pub struct StreamReader<S> {
+    /// The underlying stream that provides the body data.
     pub stream: S,
+    /// Optional content length of the stream, if known in advance.
     pub content_length: Option<u64>,
 }
 
+/// Represents different types of HTTP request bodies.
+///
+/// This enum encapsulates the various body formats that can be sent in an HTTP request,
+/// including raw bytes, form data, and multipart forms.
 pub enum Body<S> {
+    /// Raw byte content with a specified content type.
     Bytes {
+        /// The actual byte content of the body.
         content: Cow<'static, [u8]>,
+        /// The MIME content type for the body.
         content_type: Cow<'static, str>,
     },
+    /// URL-encoded form data.
     Form {
+        /// Collection of key-value pairs representing the form fields.
         fields: Vec<(Cow<'static, str>, Cow<'static, str>)>,
     },
+    /// Multipart form data, enabled with the "multipart" feature.
     #[cfg(feature = "multipart")]
     Multipart {
+        /// Collection of parts that make up the multipart form.
         parts: Vec<Part<S>>,
     },
+    /// Streaming body data.
+    #[doc(hidden)]
     Stream(StreamReader<S>),
 }
 

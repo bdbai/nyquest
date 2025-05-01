@@ -1,3 +1,12 @@
+//! Type-erased async client interface traits.
+//!
+//! This module provides trait definitions for type-erased asynchronous HTTP client
+//! implementations, allowing different backend implementations to be used interchangeably.
+//!
+//! The traits in this module are automatically implemented for types that implement the
+//! corresponding traits from the `async::backend` module, so backend developers don't need
+//! to implement them directly.
+
 use std::any::Any;
 use std::fmt;
 
@@ -8,27 +17,49 @@ use super::Request;
 use crate::client::{BuildClientResult, ClientOptions};
 use crate::Result;
 
+/// Trait for type-erased async backend implementations.
+///
+/// Automatically implemented for types implementing `AsyncBackend`.
 pub trait AnyAsyncBackend: Send + Sync + 'static {
+    /// Creates a new async client with the given options.
     fn create_async_client(
         &self,
         options: ClientOptions,
     ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>>;
 }
 
+/// Trait for type-erased async HTTP clients.
+///
+/// Automatically implemented for types implementing `AsyncClient`.
 pub trait AnyAsyncClient: Any + Send + Sync + 'static {
+    /// Provides a textual description of this client.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// Creates a cloned boxed version of this client.
     fn clone_boxed(&self) -> Box<dyn AnyAsyncClient>;
+    /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>>;
 }
 
+/// Trait for type-erased async HTTP responses.
+///
+/// Automatically implemented for types implementing `AsyncResponse`.
 pub trait AnyAsyncResponse: Any + Send + Sync + 'static {
+    /// Provides a textual description of this response.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// Returns the HTTP status code of this response.
     fn status(&self) -> u16;
+    /// Returns the content-length of the response body, if known.
     fn content_length(&self) -> Option<u64>;
+    /// Gets all values for the specified header.
     fn get_header(&self, header: &str) -> Result<Vec<String>>;
+    /// Reads the response body as text.
     fn text(&mut self) -> BoxFuture<Result<String>>;
+    /// Reads the response body as bytes.
     fn bytes(&mut self) -> BoxFuture<Result<Vec<u8>>>;
 }
+
+// These implementations allow backend types implementing the base traits
+// to be used with the type-erased trait system automatically.
 
 impl<R> AnyAsyncResponse for R
 where

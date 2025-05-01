@@ -1,21 +1,38 @@
+//! HTTP request definitions for nyquest HTTP clients.
+//!
+//! This module provides the core request types used to construct and send
+//! HTTP requests through nyquest backends.
+
 use std::{borrow::Cow, fmt::Debug};
 
 use crate::body::Body;
 
+/// HTTP request methods supported by nyquest.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Method {
+    /// HTTP GET method
     Get,
+    /// HTTP POST method
     Post,
+    /// HTTP PUT method
     Put,
+    /// HTTP DELETE method
     Delete,
+    /// HTTP PATCH method
     Patch,
+    /// Other HTTP methods not explicitly enumerated
     Other(Cow<'static, str>),
 }
 
+/// Represents an HTTP request to be sent by a nyquest client.
 pub struct Request<S> {
+    /// The HTTP method for this request
     pub method: Method,
+    /// The URI for this request, can be absolute or relative
     pub relative_uri: Cow<'static, str>,
+    /// Additional HTTP headers to include with this request
     pub additional_headers: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    /// Optional request body
     pub body: Option<Body<S>>,
 }
 
