@@ -27,7 +27,7 @@ pub use response::Response;
 /// be used if making many requests. Create a [`AsyncClient`] instead.
 ///
 /// [`AsyncClient`]: crate::AsyncClient
-pub async fn get(uri: Cow<'static, str>) -> crate::Result<Response> {
+pub async fn get(uri: impl Into<Cow<'static, str>>) -> crate::Result<Response> {
     let client = crate::client::ClientBuilder::default()
         .build_async()
         .await

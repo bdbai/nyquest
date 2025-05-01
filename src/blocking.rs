@@ -30,7 +30,7 @@ pub use response::Response;
 /// not be used if making many requests. Create a [`BlockingClient`] instead.
 ///
 /// [`BlockingClient`]: crate::BlockingClient
-pub fn get(uri: Cow<'static, str>) -> crate::Result<Response> {
+pub fn get(uri: impl Into<Cow<'static, str>>) -> crate::Result<Response> {
     let client = crate::client::ClientBuilder::default()
         .build_blocking()
         .map_err(|e| match e {

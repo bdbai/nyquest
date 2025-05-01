@@ -20,7 +20,7 @@ pub struct NSUrlSessionBlockingResponse {
 }
 
 impl std::io::Read for NSUrlSessionBlockingResponse {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
         todo!()
     }
 }

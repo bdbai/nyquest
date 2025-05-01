@@ -66,8 +66,11 @@
 //! use the shortcut `get` function:
 //!
 //! ```no_run
+//! # async fn run() -> Result<(), nyquest::Error> {
 //! let body = nyquest::r#async::get("https://example.com").await?.text().await?;
 //! println!("{body}");
+//! # Ok(())
+//! # }
 //! ``````
 //!
 //! **Note**: If you plan to perform multiple requests, it is best to create a Client and reuse
@@ -78,12 +81,15 @@
 //! ```no_run
 //! use nyquest::{body_form, ClientBuilder};
 //! use nyquest::r#async::Request;
+//! # async fn run() -> Result<(), nyquest::client::BuildClientError> {
 //! let client = ClientBuilder::default().build_async().await?;
 //! let body = Request::post("http://httpbin.org/post").with_body(body_form! {
 //!     "key1" => "value1",
 //!     "key2" => "value2",
 //! });
 //! let resp = client.request(body).await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! For blocking requests, simply change `r#async` to `blocking` and remove `.await`s in the above
