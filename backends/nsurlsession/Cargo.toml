@@ -11,6 +11,11 @@ repository.workspace = true
 rust-version.workspace = true
 exclude.workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-apple-darwin", "x86_64-apple-darwin", "aarch64-apple-ios"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 async = ["nyquest-interface/async", "dep:futures-util"]
 blocking = ["nyquest-interface/blocking"]

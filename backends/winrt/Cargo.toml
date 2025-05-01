@@ -11,6 +11,11 @@ repository.workspace = true
 rust-version.workspace = true
 exclude.workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 async = ["nyquest-interface/async"]
 blocking = ["nyquest-interface/blocking"]

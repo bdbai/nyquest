@@ -12,7 +12,7 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async", "blocking", "multipart"]
+all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]

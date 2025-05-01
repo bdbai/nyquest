@@ -1,3 +1,6 @@
+//! Contains types for building a client.
+//!
+
 mod builder;
 mod error;
 

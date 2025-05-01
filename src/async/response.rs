@@ -2,31 +2,59 @@ use std::fmt::Debug;
 
 use nyquest_interface::r#async::AnyAsyncResponse;
 
+/// An async HTTP response.
 pub struct Response {
     inner: Box<dyn AnyAsyncResponse>,
 }
 
 impl Response {
+    /// Get the `StatusCode` of this Response.
     pub fn status(&self) -> u16 {
         self.inner.status()
     }
 
+    /// Get the `content-length` of this response, if known by the backend.
     pub fn content_length(&self) -> Option<u64> {
         self.inner.content_length()
     }
 
+    /// Get the response values of the specified header.
+    ///
+    /// Multiple values may be returned if the header is present multiple times, depending on the
+    /// backend implementation.
     pub fn get_header(&self, header: &str) -> crate::Result<Vec<String>> {
         Ok(self.inner.get_header(header)?)
     }
 
+    /// Get the full response text.
+    ///
+    /// Encoding conversion is handled by the backend if possible. Some backends needs extra
+    /// features to be enabled to support encoding conversion.
+    ///
+    /// The maximum size of the response is limited by the
+    /// [`crate::ClientBuilder::max_response_buffer_size`] option. If the backend is not able to
+    /// receive the response body within the limit, [`crate::Error::ResponseTooLarge`] will be
+    /// returned.
     pub async fn text(mut self) -> crate::Result<String> {
         Ok(self.inner.text().await?)
     }
 
+    /// Get the full response bytes.
+    ///
+    /// The maximum size of the response is limited by the
+    /// [`crate::ClientBuilder::max_response_buffer_size`] option. If the backend is not able to
+    /// receive the response body within the limit, [`crate::Error::ResponseTooLarge`] will be
+    /// returned.
     pub async fn bytes(mut self) -> crate::Result<Vec<u8>> {
         Ok(self.inner.bytes().await?)
     }
 
+    /// Get the full response bytes and deserialize into the given type.
+    ///
+    /// The maximum size of the response is limited by the
+    /// [`crate::ClientBuilder::max_response_buffer_size`] option. If the backend is not able to
+    /// receive the response body within the limit, [`crate::Error::ResponseTooLarge`] will be
+    /// returned.
     #[cfg(feature = "json")]
     #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
     pub async fn json<T: serde::de::DeserializeOwned>(self) -> crate::Result<T> {

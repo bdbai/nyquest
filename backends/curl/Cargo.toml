@@ -11,6 +11,10 @@ repository.workspace = true
 rust-version.workspace = true
 exclude.workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = ["ssl"]
 async = [
@@ -24,7 +28,7 @@ blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart"]
 ssl = ["curl/ssl"]
 charset = ["dep:iconv-native"]
-charset-defaults = ["iconv-native/default"]
+charset-defaults = ["charset", "iconv-native/default"]
 
 [dependencies]
 nyquest-interface = { path = "../../nyquest-interface", default-features = false }

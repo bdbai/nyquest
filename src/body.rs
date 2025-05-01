@@ -4,24 +4,29 @@ use nyquest_interface::Body as BodyImpl;
 #[cfg(feature = "multipart")]
 use nyquest_interface::{Part as PartImpl, PartBody as PartBodyImpl, StreamReader};
 
+/// A request body generic over async or blocking stream.
 pub struct Body<S> {
     pub(crate) inner: BodyImpl<S>,
 }
 
+/// A field in a multipart form.
 #[cfg(feature = "multipart")]
 pub struct Part<S> {
     inner: PartImpl<S>,
 }
 
+/// Represents the body of a field in a multipart form.
 #[cfg(feature = "multipart")]
 pub struct PartBody<S> {
     inner: PartBodyImpl<S>,
 }
 
 impl<S> Body<S> {
+    /// Constructs a body from a string of content type `text/plain`.
     pub fn plain_text(text: impl Into<Cow<'static, str>>) -> Self {
         Self::text(text, "text/plain")
     }
+    /// Constructs a body from a string of the given content type.
     pub fn text(
         text: impl Into<Cow<'static, str>>,
         content_type: impl Into<Cow<'static, str>>,
@@ -37,9 +42,11 @@ impl<S> Body<S> {
         }
     }
 
+    /// Constructs a body from a byte array of content type `application/octet-stream`.
     pub fn binary_bytes(bytes: impl Into<Cow<'static, [u8]>>) -> Self {
         Self::bytes(bytes, "application/octet-stream")
     }
+    /// Constructs a body from a byte array of the given content type.
     pub fn bytes(
         bytes: impl Into<Cow<'static, [u8]>>,
         content_type: impl Into<Cow<'static, str>>,
@@ -52,15 +59,18 @@ impl<S> Body<S> {
         }
     }
 
+    /// Constructs a body from a byte array of content type `application/json`.
     pub fn json_bytes(bytes: impl Into<Cow<'static, [u8]>>) -> Self {
         Self::bytes(bytes, "application/json")
     }
+    /// Constructs a body by serializing the given value into JSON.
     #[cfg(feature = "json")]
     pub fn json<T: serde::Serialize>(value: &T) -> serde_json::Result<Self> {
         let bytes = serde_json::to_vec(value)?;
         Ok(Self::json_bytes(bytes))
     }
 
+    /// Constructs a url-encoded form body from given key-value string pairs.
     pub fn form(fields: impl IntoIterator<Item = (Cow<'static, str>, Cow<'static, str>)>) -> Self {
         Self {
             inner: BodyImpl::Form {
@@ -69,6 +79,7 @@ impl<S> Body<S> {
         }
     }
 
+    /// Constructs a multipart form body from the given parts.
     #[cfg(feature = "multipart")]
     pub fn multipart(parts: impl IntoIterator<Item = Part<S>>) -> Self {
         Self {
@@ -80,6 +91,9 @@ impl<S> Body<S> {
 }
 
 /// Constructs a form body from a predefined set of fields.
+///
+/// The keys and values can be any type that implements `Into<Cow<'static, str>>`.
+///
 /// # Examples
 /// ```
 /// use std::borrow::Cow;
@@ -107,6 +121,7 @@ macro_rules! body_form {
 
 #[cfg(feature = "multipart")]
 impl<S> Part<S> {
+    /// Constructs a part with the given name and body of the given content type.
     pub fn new_with_content_type(
         name: impl Into<Cow<'static, str>>,
         content_type: impl Into<Cow<'static, str>>,
@@ -123,6 +138,8 @@ impl<S> Part<S> {
         }
     }
 
+    /// Attach a header to the part.
+    ///
     /// # Note
     ///
     /// Support for per-part headers is subject to underlying implementation. For example,
@@ -136,6 +153,7 @@ impl<S> Part<S> {
         self
     }
 
+    /// Specify the filename of the part.
     pub fn with_filename(mut self, filename: impl Into<Cow<'static, str>>) -> Self {
         self.inner.filename = Some(filename.into());
         self
@@ -144,6 +162,7 @@ impl<S> Part<S> {
 
 #[cfg(feature = "multipart")]
 impl<S> PartBody<S> {
+    /// Constructs a part body from a string.
     pub fn text(text: impl Into<Cow<'static, str>>) -> Self {
         Self {
             inner: PartBodyImpl::Bytes {
@@ -155,6 +174,7 @@ impl<S> PartBody<S> {
         }
     }
 
+    /// Constructs a part body from a byte array.
     pub fn bytes(bytes: impl Into<Cow<'static, [u8]>>) -> Self {
         Self {
             inner: PartBodyImpl::Bytes {
@@ -163,6 +183,7 @@ impl<S> PartBody<S> {
         }
     }
 
+    #[doc(hidden)]
     pub fn stream(stream: S, content_length: Option<u64>) -> Self {
         Self {
             inner: PartBodyImpl::Stream(StreamReader {

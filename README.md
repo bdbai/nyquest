@@ -11,7 +11,7 @@ A truly native HTTP client library for Rust.
 
 You should ask the other way around: why shipping an entire HTTP stack with your application when you know your users already have WinHTTP/NSURLSession/libcurl/whatever HTTP client library available on their system?
 
-Similar to the [RustCrypto](https://github.com/RustCrypto) ecosystem, Nyquest aims to provide only an abstraction over the HTTP client operations. The actual functionality is implemented by Nyquest backends that talk to either platform APIs or third-party libraries. Even though Nyquest API interface has an async variant, it is not tied to any specific async runtime. Instead, the backends will as much as possible utilize the async mechanism or event loop provided by the system, or manage an event loop for the application. This way, end application developers can easily choose and switch among HTTP client implementations without thinking too much about the details. Library authors can also consume HTTP endpoints without worrying about which async runtime the end application uses.
+The `nyquest-interface` crate provides only an abstraction over the HTTP client operations. The actual functionality is implemented by Nyquest backends that talk to either platform APIs or third-party libraries. Even though Nyquest API interface has an async variant, it is not tied to any specific async runtime. Instead, the backends will as much as possible utilize the async mechanism or event loop provided by the system, or manage an event loop for the application. This way, end application developers can easily choose and switch among HTTP client implementations without thinking too much about the details. Library authors can also consume HTTP endpoints without worrying about which async runtime the end application uses.
 
 By using platform native APIs, users will automatically benefit from system-managed security updates, functionality improvements, cache management, global proxy settings etc. that are tightly integrated with the operating system. [^1]
 
@@ -37,26 +37,39 @@ Meanwhile, you might not need Nyquest if you:
 
 [^1]: Subject to the backend's capability.
 
+On top of the `nyquest-interface` crate and backend crates, the `nyquest` crate provides a convenient, user-friendly API for Nyquest users, including library authors and end application developers.
+
+## Package Structure
+
+- `nyquest`: The main crate that provides a user-friendly HTTP client API.
+- `nyquest-interface`: The interface crate that defines the API for Nyquest backends and hosts the global default Nyquest backend.
+- `nyquest-preset`: The umbralla crate of recommended Nyquest backends on various platforms.
+- `nyquest-backend-<backend>`: The backend crate that implements the Nyquest interface for a specific HTTP client library or platform API. Currently, we have:
+  - `nyquest-backend-libcurl`: libcurl
+  - `nyquest-backend-winrt`: UWP/WinRT [HttpClient](https://learn.microsoft.com/en-us/uwp/api/Windows.Web.Http.HttpClient)
+  - `nyquest-backend-nsurlsession`: `NSURLSession`
+- `nyquest-backend-tests`: The test framework for Nyquest backends going through `nyquest`.
+
 ## Roadmap
 
 Nyquest is still at POC stage. We want to keep Nyquest itself as a greatest common divisor for all backends, therefore the API surface is subject to change along with the development of backends.
 
 The following items are planned in MVP:
 
-- [x] Nyquest blocking API (WIP)
-- [x] Nyquest async API (WIP)
-- [x] Backend: WinRT HttpClient (WIP)
-  - [x] Blocking (WIP)
-  - [x] Async (WIP)
-- [x] Backend: libcurl (WIP)
-  - [x] Blocking (WIP)
-  - [x] Async (WIP)
-- [x] Backend: NSURLSession (WIP)
-- [x] Client Options (WIP)
+- [x] Nyquest blocking API
+- [x] Nyquest async API
+- [x] Backend: WinRT HttpClient
+  - [x] Blocking
+  - [x] Async
+- [x] Backend: libcurl
+  - [x] Blocking
+  - [x] Async
+- [x] Backend: NSURLSession
+- [x] Client Options
 - [ ] Streaming download
 - [x] Test framework for backends
 - [x] Presets
-- [ ] Documentation
+- [x] Documentation
 
 Future work may include:
 
