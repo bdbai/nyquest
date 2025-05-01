@@ -42,7 +42,7 @@ features = ["async", "blocking", "multipart", "json"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-async = ["dep:futures-io", "nyquest-interface/async"]
+async = ["nyquest-interface/async"]
 blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart"]
 json = ["dep:serde", "dep:serde_json"]
@@ -50,9 +50,6 @@ json = ["dep:serde", "dep:serde_json"]
 [dependencies]
 nyquest-interface = { path = "nyquest-interface", default-features = false }
 thiserror.workspace = true
-futures-io = { version = "0.3", optional = true, default-features = false, features = [
-    "std",
-] }
 
 serde = { version = "1", optional = true }
 serde_json = { version = "1.0.140", optional = true }
