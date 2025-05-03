@@ -58,7 +58,7 @@ impl Response {
     /// returned.
     #[cfg(feature = "json")]
     #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
-    pub async fn json<T: serde::de::DeserializeOwned>(self) -> crate::Result<T> {
+    pub fn json<T: serde::de::DeserializeOwned>(self) -> crate::Result<T> {
         Ok(serde_json::from_slice(&self.bytes()?)?)
     }
 
