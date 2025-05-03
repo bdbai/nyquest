@@ -27,7 +27,7 @@ arc-swap = "1"
 [package]
 name = "nyquest"
 description = "truly native HTTP client library"
-version = "0.0.1-alpha.2"
+version = "0.1.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -48,7 +48,7 @@ multipart = ["nyquest-interface/multipart"]
 json = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
-nyquest-interface = { path = "nyquest-interface", default-features = false }
+nyquest-interface = { version = "0.1.0", path = "nyquest-interface", default-features = false }
 thiserror.workspace = true
 
 serde = { version = "1", optional = true }
