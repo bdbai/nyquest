@@ -32,7 +32,7 @@ multipart = [
 ]
 
 [dependencies]
-nyquest = { path = "../..", default-features = false }
+nyquest = { version = "0.1.0", path = "../..", default-features = false }
 cfg-if = "1"
 
 [target.'cfg(windows)'.dependencies]
