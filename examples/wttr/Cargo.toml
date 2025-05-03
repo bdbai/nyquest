@@ -6,3 +6,6 @@ edition.workspace = true
 [dependencies]
 nyquest = { path = "../..", features = ["blocking"] }
 nyquest-preset = { path = "../../presets/default", features = ["blocking"] }
+
+[lints]
+workspace = true

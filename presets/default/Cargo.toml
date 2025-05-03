@@ -43,3 +43,6 @@ nyquest-backend-nsurlsession = { version = "0.1.0", path = "../../backends/nsurl
 
 [target.'cfg(not(any(windows, target_vendor = "apple")))'.dependencies]
 nyquest-backend-curl = { version = "0.1.0", path = "../../backends/curl", default-features = false }
+
+[lints]
+workspace = true

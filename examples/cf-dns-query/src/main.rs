@@ -1,3 +1,9 @@
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "This is a demo code, so unwrap/expect is used for simplicity"
+)]
+
 use std::borrow::Cow;
 
 use futures::future::join;
@@ -52,7 +58,7 @@ async fn query_address(client: &AsyncClient, domain_name: &str) -> nyquest::Resu
     struct Answer<'a> {
         data: Cow<'a, str>,
     }
-    let Response { answer } = match serde_json::from_str::<Response>(&res) {
+    let Response { answer } = match serde_json::from_str::<'_, Response<'_>>(&res) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("Failed to parse response: {}", e);

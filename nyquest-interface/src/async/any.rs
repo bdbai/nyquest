@@ -25,7 +25,7 @@ pub trait AnyAsyncBackend: Send + Sync + 'static {
     fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>>;
+    ) -> BoxFuture<'_, BuildClientResult<Box<dyn AnyAsyncClient>>>;
 }
 
 /// Trait for type-erased async HTTP clients.
@@ -37,7 +37,7 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     /// Creates a cloned boxed version of this client.
     fn clone_boxed(&self) -> Box<dyn AnyAsyncClient>;
     /// Sends an HTTP request and returns the response.
-    fn request(&self, req: Request) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>>;
+    fn request(&self, req: Request) -> BoxFuture<'_, Result<Box<dyn AnyAsyncResponse>>>;
 }
 
 /// Trait for type-erased async HTTP responses.
@@ -53,9 +53,9 @@ pub trait AnyAsyncResponse: Any + Send + Sync + 'static {
     /// Gets all values for the specified header.
     fn get_header(&self, header: &str) -> Result<Vec<String>>;
     /// Reads the response body as text.
-    fn text(&mut self) -> BoxFuture<Result<String>>;
+    fn text(&mut self) -> BoxFuture<'_, Result<String>>;
     /// Reads the response body as bytes.
-    fn bytes(&mut self) -> BoxFuture<Result<Vec<u8>>>;
+    fn bytes(&mut self) -> BoxFuture<'_, Result<Vec<u8>>>;
 }
 
 // These implementations allow backend types implementing the base traits
@@ -77,11 +77,11 @@ where
         AsyncResponse::get_header(self, header)
     }
 
-    fn text(&mut self) -> BoxFuture<Result<String>> {
+    fn text(&mut self) -> BoxFuture<'_, Result<String>> {
         Box::pin(AsyncResponse::text(self))
     }
 
-    fn bytes(&mut self) -> BoxFuture<Result<Vec<u8>>> {
+    fn bytes(&mut self) -> BoxFuture<'_, Result<Vec<u8>>> {
         Box::pin(AsyncResponse::bytes(self))
     }
 
@@ -98,7 +98,7 @@ where
     fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>> {
+    ) -> BoxFuture<'_, BuildClientResult<Box<dyn AnyAsyncClient>>> {
         Box::pin(async {
             super::backend::AsyncBackend::create_async_client(self, options)
                 .await
@@ -119,7 +119,7 @@ where
         Box::new(self.clone())
     }
 
-    fn request(&self, req: Request) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>> {
+    fn request(&self, req: Request) -> BoxFuture<'_, Result<Box<dyn AnyAsyncResponse>>> {
         Box::pin(async {
             self.request(req)
                 .await

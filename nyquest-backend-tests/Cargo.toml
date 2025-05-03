@@ -47,3 +47,6 @@ futures = "0.3"
 nyquest-backend-winrt = { path = "../backends/winrt", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }
 nyquest-backend-nsurlsession = { path = "../backends/nsurlsession", optional = true }
+
+[lints]
+workspace = true

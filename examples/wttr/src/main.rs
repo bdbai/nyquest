@@ -1,3 +1,8 @@
+#![expect(
+    clippy::expect_used,
+    reason = "This is a demo code, so unwrap/expect is used for simplicity"
+)]
+
 use nyquest::blocking::Request;
 
 fn main() {

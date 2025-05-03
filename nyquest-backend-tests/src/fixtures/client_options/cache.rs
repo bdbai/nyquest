@@ -16,7 +16,7 @@ mod tests {
     const RESPONSE_TEXT: &str = "This is a cacheable response";
 
     // Helper function to create a cacheable response handler
-    async fn create_cacheable_handler<'a>(
+    async fn create_cacheable_handler(
         counters: Arc<[AtomicUsize; 2]>,
         req: Request<body::Incoming>,
     ) -> FixtureAssertionResult {

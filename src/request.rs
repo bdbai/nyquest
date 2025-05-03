@@ -24,35 +24,40 @@ impl Method {
     }
 
     /// Constructs a `GET` method.
-    pub fn get() -> Self {
+    #[must_use]
+    pub const fn get() -> Self {
         Self {
             inner: MethodImpl::Get,
         }
     }
 
     /// Constructs a `POST` method.
-    pub fn post() -> Self {
+    #[must_use]
+    pub const fn post() -> Self {
         Self {
             inner: MethodImpl::Post,
         }
     }
 
     /// Constructs a `PUT` method.
-    pub fn put() -> Self {
+    #[must_use]
+    pub const fn put() -> Self {
         Self {
             inner: MethodImpl::Put,
         }
     }
 
     /// Constructs a `DELETE` method.
-    pub fn delete() -> Self {
+    #[must_use]
+    pub const fn delete() -> Self {
         Self {
             inner: MethodImpl::Delete,
         }
     }
 
     /// Constructs a `PATCH` method.
-    pub fn patch() -> Self {
+    #[must_use]
+    pub const fn patch() -> Self {
         Self {
             inner: MethodImpl::Patch,
         }
@@ -111,6 +116,7 @@ impl<S> Request<S> {
     }
 
     /// Attach a request header to the request.
+    #[must_use]
     pub fn with_header(
         mut self,
         name: impl Into<Cow<'static, str>>,
@@ -125,6 +131,7 @@ impl<S> Request<S> {
     /// Set the request body of the request.
     ///
     /// When called multiple times, the last call will override any previous body.
+    #[must_use]
     pub fn with_body(mut self, body: Body<S>) -> Self {
         self.inner.body = Some(body.inner);
         self
