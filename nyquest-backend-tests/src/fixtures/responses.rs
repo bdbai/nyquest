@@ -19,7 +19,7 @@ mod tests {
             (res, (req.method() == Method::GET).then_some(()).ok_or(req))
         });
         let builder = crate::init_builder_blocking().unwrap();
-        let assertions = |(status, content_len, content)| {
+        let assertions = |(status, content_len, content): (u16, Option<u64>, String)| {
             assert_eq!(status, 200);
             assert_eq!(content_len, Some(BODY.len() as u64));
             assert_eq!(content, BODY);

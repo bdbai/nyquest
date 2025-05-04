@@ -42,6 +42,7 @@ form_urlencoded = "1"
 memchr = "2"
 multer = "3"
 futures = "0.3"
+cfg-if.workspace = true
 
 [dependencies]
 nyquest-backend-winrt = { path = "../backends/winrt", optional = true }

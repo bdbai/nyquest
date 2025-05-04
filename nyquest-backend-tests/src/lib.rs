@@ -187,13 +187,39 @@ fn init_builder_blocking() -> io::Result<ClientBuilder> {
     })
 }
 
-fn init_backend() {
-    #[cfg(feature = "curl")]
-    use nyquest_backend_curl as backend;
-    #[cfg(feature = "nsurlsession")]
-    use nyquest_backend_nsurlsession as backend;
-    #[cfg(feature = "winrt")]
-    use nyquest_backend_winrt as backend;
+macro_rules! declare_backends {
+    ($(($feature:expr, $pkg:ident)),* $(,)*) => {
+        cfg_if::cfg_if! {
+            if #[cfg(any())] {
+            } $(
+                else if #[cfg(feature = $feature)] {
+                    use $pkg as backend;
+                }
+            )*
+        }
 
-    backend::register();
+        #[allow(non_upper_case_globals)]
+        let backend_feature_count = || {
+            $(
+                #[cfg(feature = $feature)]
+                const $pkg: u8 = 1;
+                #[cfg(not(feature = $feature))]
+                const $pkg: u8 = 0;
+            )*
+            0 $(+ $pkg)*
+        };
+        match backend_feature_count() {
+            0 => panic!("No backend feature enabled."),
+            1 => backend::register(),
+            _ => panic!("Multiple backend features enabled."),
+        }
+    };
+}
+
+fn init_backend() {
+    declare_backends!(
+        ("curl", nyquest_backend_curl),
+        ("nsurlsession", nyquest_backend_nsurlsession),
+        ("winrt", nyquest_backend_winrt),
+    );
 }

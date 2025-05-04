@@ -541,6 +541,7 @@ dependencies = [
 name = "nyquest-backend-tests"
 version = "0.0.0"
 dependencies = [
+ "cfg-if",
  "form_urlencoded",
  "futures",
  "http-body-util",
