@@ -108,7 +108,7 @@ impl<S> Body<S> {
 #[macro_export]
 macro_rules! body_form {
     ($($key:expr => $value:expr),* $(,)?) => {
-        ::nyquest::__private::Body::form(vec![
+        ::nyquest::Body::form(vec![
             $(
                 (
                     ::std::convert::Into::<::std::borrow::Cow::<'static, str>>::into($key),

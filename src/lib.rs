@@ -129,6 +129,7 @@ pub mod client;
 #[cfg(feature = "blocking")]
 #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
 pub use blocking::client::BlockingClient;
+pub use body::Body;
 #[cfg(feature = "multipart")]
 #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use body::{Part, PartBody};
@@ -139,8 +140,3 @@ pub use error::{Error, Result};
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use r#async::client::AsyncClient;
 pub use request::{Method, Request};
-
-#[doc(hidden)]
-pub mod __private {
-    pub use crate::body::Body;
-}
