@@ -6,7 +6,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 cfg_if::cfg_if! {
-    if #[cfg(target_vendor = "apple")] {
+    if #[cfg(all(target_vendor = "apple", any(feature = "async", feature = "blocking")))] {
         #[cfg(feature = "async")]
         #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
         mod r#async;
