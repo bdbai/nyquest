@@ -5,7 +5,7 @@
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![CI](https://github.com/bdbai/nyquest/actions/workflows/run-tests.yml/badge.svg)](https://github.com/bdbai/nyquest/actions/workflows/run-tests.yml)
 
-A truly native HTTP client library for Rust.
+A truly platform-native HTTP client library for Rust.
 
 ## Why Nyquest?
 

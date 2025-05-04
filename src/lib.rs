@@ -1,4 +1,4 @@
-//! A truly native Rust HTTP client library.
+//! A truly platform-native Rust HTTP client library.
 //!
 //! ## Overview
 //!
