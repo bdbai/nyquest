@@ -27,14 +27,15 @@ pub fn populate_request<S>(
             .into_nyquest_result("set CURLOPT_TIMEOUT")?;
     }
     easy.url(url).into_nyquest_result("set CURLOPT_URL")?;
-    let require_body = match &req.method {
-        Method::Get if req.body.is_none() => easy.get(true).map(|()| false),
-        Method::Get => easy.custom_request("get").map(|()| false),
-        Method::Post => easy.post(true).map(|()| true),
-        Method::Put => easy.put(true).map(|()| true),
-        Method::Delete => easy.custom_request("delete").map(|()| false),
-        Method::Patch => easy.custom_request("patch").map(|()| false),
-        Method::Other(method) => easy.custom_request(method).map(|()| false),
+    match &req.method {
+        Method::Get if req.body.is_none() => easy.get(true),
+        Method::Get => easy.custom_request("get"),
+        Method::Post => easy.post(true),
+        Method::Put if req.body.is_none() => easy.custom_request("PUT"),
+        Method::Put => easy.put(true),
+        Method::Delete => easy.custom_request("delete"),
+        Method::Patch => easy.custom_request("patch"),
+        Method::Other(method) => easy.custom_request(method),
     }
     .into_nyquest_result("set CURLOPT_CUSTOMREQUEST")?;
     let mut headers = List::new();
@@ -115,7 +116,7 @@ pub fn populate_request<S>(
             easy.httppost(form)
                 .into_nyquest_result("set CURLOPT_HTTPPOST")?;
         }
-        None if require_body => {
+        None if req.method == Method::Post || req.method == Method::Put => {
             // Workaround for https://github.com/curl/curl/issues/1625
             easy.post_fields_copy(b"")
                 .into_nyquest_result("set require_body CURLOPT_COPYPOSTFIELDS")?;

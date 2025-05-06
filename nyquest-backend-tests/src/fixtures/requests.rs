@@ -8,6 +8,7 @@ mod tests {
     use futures::StreamExt as _;
     use http_body_util::{BodyExt, BodyStream};
     use hyper::header::{ACCEPT, CONTENT_LANGUAGE, CONTENT_TYPE};
+    use hyper::{Method, StatusCode};
     use memchr::memmem;
     use multer::Multipart;
     #[cfg(feature = "blocking")]
@@ -299,6 +300,38 @@ mod tests {
                 client.request(req_body).await.unwrap();
             });
             assertions(&*received_facts[0].get().unwrap());
+        }
+    }
+
+    #[test]
+    fn test_put_without_body() {
+        const PATH: &str = "requests/put_without_body";
+        let _handle = crate::add_hyper_fixture(PATH, {
+            move |req| async move {
+                let mut res = Response::new(Full::default());
+                if req.method() != Method::PUT {
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                }
+                (res, Ok(()))
+            }
+        });
+
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
+            let response = client.request(NyquestRequest::put(PATH)).unwrap();
+            assert_eq!(response.status(), 200);
+        }
+
+        #[cfg(feature = "async")]
+        {
+            TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder.build_async().await.unwrap();
+                let response = client.request(NyquestRequest::put(PATH)).await.unwrap();
+                assert_eq!(response.status(), 200);
+            });
         }
     }
 }
