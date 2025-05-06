@@ -26,7 +26,7 @@ pub use response::Response;
 ///
 /// See also the methods on the [`Response`] type.
 ///
-/// **Node**: This function creates a new internal [`BlockingClient`] on each call, and so should
+/// **Note**: This function creates a new internal [`BlockingClient`] on each call, and so should
 /// not be used if making many requests. Create a [`BlockingClient`] instead.
 ///
 /// [`BlockingClient`]: crate::BlockingClient

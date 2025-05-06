@@ -23,7 +23,7 @@ pub use response::Response;
 ///
 /// See also the methods on the [`Response`] type.
 ///
-/// **Node**: This function creates a new internal [`AsyncClient`] on each call, and so should not
+/// **Note**: This function creates a new internal [`AsyncClient`] on each call, and so should not
 /// be used if making many requests. Create a [`AsyncClient`] instead.
 ///
 /// [`AsyncClient`]: crate::AsyncClient
