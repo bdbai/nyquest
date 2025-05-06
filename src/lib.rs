@@ -34,7 +34,7 @@
 //! [`nyquest-preset`] by adding it to your dependencies and calling the `register` function at
 //! the beginning of your program. This will automatically select the appropriate backend based on
 //! the target platform. Once registered, any transitive dependencies that use `nyquest` will also
-//! pick up the registered backend given the version contraints of [`nyquest-interface`] are
+//! pick up the registered backend given the version constraints of [`nyquest-interface`] are
 //! compatible.
 //!
 //! You may want to handle the backends individually for more control. Currently, the
