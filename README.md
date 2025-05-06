@@ -94,3 +94,5 @@ Future work may include:
 Licensed under Apache License, Version 2.0 or MIT license, at your option.
 
 Backend implementations and their adapter crates may have different licenses. Please refer to their respective READMEs for details.
+
+A part of the code in this repository is derived from [http-rs](https://github.com/hyperium/http). Refer to their [LICENSE](https://github.com/hyperium/http/blob/master/README.md#license) section for details.
