@@ -27,7 +27,11 @@ mod tests {
         #[cfg(feature = "blocking")]
         {
             let client = builder.clone().build_blocking().unwrap();
-            let res = client.request(NyquestRequest::get(PATH)).unwrap();
+            let res = client
+                .request(NyquestRequest::get(PATH))
+                .unwrap()
+                .with_successful_status()
+                .unwrap();
             let status = res.status();
             let content_len = res.content_length();
             let content = res.text().unwrap();
@@ -37,7 +41,12 @@ mod tests {
         {
             let facts = TOKIO_RT.block_on(async {
                 let client = builder.build_async().await.unwrap();
-                let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
+                let res = client
+                    .request(NyquestRequest::get(PATH))
+                    .await
+                    .unwrap()
+                    .with_successful_status()
+                    .unwrap();
                 let status = res.status();
                 let content_len = res.content_length();
                 (status.into(), content_len, res.text().await.unwrap())

@@ -15,6 +15,18 @@ impl Response {
         self.inner.status().into()
     }
 
+    /// Return the response as-is, or [`crate::Error::NonSuccessfulStatusCode`] if the status code
+    /// does not indicate success.
+    #[inline]
+    pub fn with_successful_status(self) -> crate::Result<Self> {
+        let status = self.status();
+        if status.is_successful() {
+            Ok(self)
+        } else {
+            Err(crate::Error::NonSuccessfulStatusCode(status))
+        }
+    }
+
     /// Get the `content-length` of this response, if known by the backend.
     pub fn content_length(&self) -> Option<u64> {
         self.inner.content_length()

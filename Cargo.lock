@@ -553,6 +553,7 @@ dependencies = [
  "nyquest-backend-curl",
  "nyquest-backend-nsurlsession",
  "nyquest-backend-winrt",
+ "serde",
  "tokio",
 ]
 
