@@ -55,7 +55,7 @@ mod tests {
             (res, (req.method() == Method::GET).then_some(()).ok_or(req))
         });
         let builder = crate::init_builder_blocking().unwrap();
-        let assertions = |(status, content_len, content)| {
+        let assertions = |(status, content_len, content): (u16, Option<u64>, Vec<u8>)| {
             assert_eq!(status, 200);
             assert_eq!(content_len, Some(BODY.len() as u64));
             assert_eq!(content, BODY);
@@ -107,7 +107,7 @@ mod tests {
         let async_client =
             TOKIO_RT.block_on(async move { builder.clone().build_async().await.unwrap() });
         for expected_status_code in STATUS_CODES {
-            let assertions = |actual_status_code| {
+            let assertions = |actual_status_code: u16| {
                 assert_eq!(actual_status_code, expected_status_code);
             };
             let body_text = expected_status_code.to_string();

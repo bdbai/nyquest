@@ -195,7 +195,11 @@ macro_rules! declare_backends {
                 else if #[cfg(feature = $feature)] {
                     use $pkg as backend;
                 }
-            )*
+            )* else {
+                pub mod backend {
+                    pub fn register() { }
+                }
+            }
         }
 
         #[allow(non_upper_case_globals)]
