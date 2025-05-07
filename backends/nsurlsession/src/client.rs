@@ -7,11 +7,14 @@ use nyquest_interface::client::{
 
 use nyquest_interface::{Body, Error as NyquestError, Method, Request, Result as NyquestResult};
 use objc2::rc::Retained;
+use objc2::runtime::ProtocolObject;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
     ns_string, NSCharacterSet, NSData, NSDictionary, NSMutableCharacterSet, NSMutableURLRequest,
     NSString, NSURLRequestCachePolicy, NSUTF8StringEncoding, NSURL,
 };
+
+use crate::challenge::BypassServerVerifyDelegate;
 
 #[derive(Clone)]
 pub struct NSUrlSessionClient {
@@ -55,8 +58,16 @@ impl NSUrlSessionClient {
                     Retained::cast_unchecked::<NSDictionary>(dict).as_ref(),
                 ));
             }
-            // TODO: set options
-            objc2_foundation::NSURLSession::sessionWithConfiguration(&config)
+            if options.ignore_certificate_errors {
+                let delegate = BypassServerVerifyDelegate::new();
+                objc2_foundation::NSURLSession::sessionWithConfiguration_delegate_delegateQueue(
+                    &config,
+                    Some(&ProtocolObject::from_ref(&*delegate)),
+                    None,
+                )
+            } else {
+                objc2_foundation::NSURLSession::sessionWithConfiguration(&config)
+            }
         };
         let base_url = options
             .base_url
@@ -140,6 +151,14 @@ impl NSUrlSessionClient {
                 }
             }
             Ok(self.session.dataTaskWithRequest(&nsreq))
+        }
+    }
+}
+
+impl Drop for NSUrlSessionClient {
+    fn drop(&mut self) {
+        unsafe {
+            self.session.finishTasksAndInvalidate();
         }
     }
 }

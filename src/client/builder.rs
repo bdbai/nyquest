@@ -74,4 +74,17 @@ impl ClientBuilder {
         self.options.request_timeout = Some(timeout);
         self
     }
+
+    /// Allows the client to ignore certificate errors.
+    ///
+    /// # Warning
+    ///
+    /// SSL server certificate errors should only be ignored in advanced scenarios. Disregarding
+    /// server certificate errors may result in the loss of privacy or integrity of the content
+    /// passed over the SSL session.
+    #[inline]
+    pub fn dangerously_ignore_certificate_errors(mut self) -> Self {
+        self.options.ignore_certificate_errors = true;
+        self
+    }
 }

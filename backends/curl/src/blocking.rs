@@ -81,7 +81,7 @@ impl CurlEasyClient {
         };
         let handle = match slot {
             Some(handle) => handle,
-            None => MultiEasy::new(&self.share),
+            None => MultiEasy::new(self.share.clone()),
         };
         EasyHandleGuard {
             slot: &self.slot,

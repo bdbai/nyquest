@@ -88,3 +88,11 @@ impl NSUrlSessionResponse {
         }
     }
 }
+
+impl Drop for NSUrlSessionResponse {
+    fn drop(&mut self) {
+        unsafe {
+            self.task.cancel();
+        }
+    }
+}

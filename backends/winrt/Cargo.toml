@@ -30,6 +30,7 @@ windows-collections = "0.2"
 version = "0.61"
 features = [
     "Foundation_Collections",
+    "Security_Cryptography_Certificates",
     "Storage_Streams",
     "System_Threading",
     "Web_Http_Filters",
