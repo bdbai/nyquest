@@ -63,7 +63,7 @@ impl BypassServerVerifyDelegate {
         let cred: Retained<NSURLCredential> = unsafe {
             msg_send![
                 NSURLCredential::class(),
-                credentialWithTrust: trust_ref
+                credentialForTrust: trust_ref
             ]
         };
         completion_handler.call((
