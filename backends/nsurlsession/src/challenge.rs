@@ -1,22 +1,13 @@
 #![allow(non_snake_case)]
 
-use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use arc_swap::ArcSwapAny;
 use block2::DynBlock;
-use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::rc::Retained;
-use objc2::{define_class, msg_send, AllocAnyThread, ClassType, DefinedClass};
+use objc2::{define_class, msg_send, AllocAnyThread, ClassType};
 use objc2_foundation::{
-    NSCopying, NSData, NSError, NSHTTPURLResponse, NSObject, NSObjectProtocol,
-    NSURLAuthenticationChallenge, NSURLCredential, NSURLResponse, NSURLSession,
-    NSURLSessionAuthChallengeDisposition, NSURLSessionDataDelegate, NSURLSessionDataTask,
-    NSURLSessionDelegate, NSURLSessionResponseDisposition, NSURLSessionTask,
-    NSURLSessionTaskDelegate,
+    NSObject, NSObjectProtocol, NSURLAuthenticationChallenge, NSURLCredential, NSURLSession,
+    NSURLSessionAuthChallengeDisposition, NSURLSessionDelegate,
 };
-
-use crate::error::IntoNyquestResult;
+use objc2_security::sec_trust;
 
 define_class!(
     // SAFETY:
@@ -65,7 +56,7 @@ impl BypassServerVerifyDelegate {
             dyn Fn(NSURLSessionAuthChallengeDisposition, *mut NSURLCredential),
         >,
     ) {
-        let trust_ref: *mut c_void = unsafe {
+        let trust_ref: *mut sec_trust = unsafe {
             let protectionSpace = challenge.protectionSpace();
             msg_send![&protectionSpace, serverTrust]
         };

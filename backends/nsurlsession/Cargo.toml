@@ -51,6 +51,10 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
     "CFString",
 ] }
+objc2-security = { version = "0.3", default-features = false, features = [
+    "objc2",
+    "SecProtocolTypes",
+] }
 futures-util = { version = "0.3", optional = true, default-features = false, features = [
     "std",
 ] }
