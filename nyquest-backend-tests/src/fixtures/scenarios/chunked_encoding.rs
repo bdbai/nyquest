@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use futures::stream::{self};
+    use futures::stream;
     use http_body_util::BodyExt;
     use hyper::{Method, Response};
     use nyquest::Request as NyquestRequest;
