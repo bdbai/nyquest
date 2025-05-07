@@ -8,6 +8,7 @@
 
 use std::fmt;
 use std::future::Future;
+use std::pin::Pin;
 
 use super::Request as AsyncRequest;
 use crate::client::{BuildClientResult, ClientOptions};
@@ -59,7 +60,7 @@ pub trait AsyncBackend: Send + Sync + 'static {
 /// Backend implementors should design their implementations with the understanding that
 /// these methods may be called only once per response instance, even though the signature allows
 /// multiple calls. The nyquest facade enforces this by consuming the response.
-pub trait AsyncResponse: Send + Sync + 'static {
+pub trait AsyncResponse: futures_io::AsyncRead + Send + Sync + 'static {
     /// Provides a textual description of this response.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "AsyncResponse")
@@ -75,8 +76,8 @@ pub trait AsyncResponse: Send + Sync + 'static {
     fn get_header(&self, header: &str) -> Result<Vec<String>>;
 
     /// Reads the response body as text.
-    fn text(&mut self) -> impl Future<Output = Result<String>> + Send;
+    fn text(self: Pin<&mut Self>) -> impl Future<Output = Result<String>> + Send;
 
     /// Reads the response body as bytes.
-    fn bytes(&mut self) -> impl Future<Output = Result<Vec<u8>>> + Send;
+    fn bytes(self: Pin<&mut Self>) -> impl Future<Output = Result<Vec<u8>>> + Send;
 }

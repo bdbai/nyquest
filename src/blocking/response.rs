@@ -76,8 +76,8 @@ impl Response {
         Ok(serde_json::from_slice(&self.bytes()?)?)
     }
 
-    #[doc(hidden)]
-    pub fn into_read(self) -> impl io::Read {
+    /// Turn the response body into a [`std::io::Read`] stream.
+    pub fn into_read(self) -> impl io::Read + Send {
         self.inner
     }
 }
