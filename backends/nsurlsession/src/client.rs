@@ -21,6 +21,7 @@ pub struct NSUrlSessionClient {
     pub(crate) session: Retained<objc2_foundation::NSURLSession>,
     pub(crate) base_url: Option<Retained<NSURL>>,
     pub(crate) max_response_buffer_size: Option<u64>,
+    pub(crate) allow_redirects: bool,
 }
 
 impl NSUrlSessionClient {
@@ -80,6 +81,7 @@ impl NSUrlSessionClient {
             session,
             base_url,
             max_response_buffer_size: options.max_response_buffer_size,
+            allow_redirects: options.follow_redirects,
         })
     }
 

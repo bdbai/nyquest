@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Mutex;
 
 use arc_swap::ArcSwapAny;
@@ -15,6 +15,7 @@ pub(crate) struct DataTaskIvars {
     //     ArcSwapAny<Option<SwappableRcBlock<dyn Fn(NSURLSessionResponseDisposition)>>>,
     pub(super) shared: DataTaskIvarsShared,
     pub(super) max_response_buffer_size: Option<u64>,
+    pub(super) redirects_allowed: AtomicU8,
 }
 
 pub(super) struct DataTaskIvarsShared {

@@ -75,6 +75,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             let delegate = DataTaskDelegate::new(
                 GenericWaker::Async(AsyncWaker::new()),
                 self.inner.max_response_buffer_size,
+                self.inner.allow_redirects,
             );
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
