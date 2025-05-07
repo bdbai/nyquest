@@ -30,6 +30,10 @@ pub fn populate_request<S>(
         easy.ssl_verify_peer(false)
             .into_nyquest_result("set CURLOPT_SSL_VERIFYPEER")?;
     }
+    if options.follow_redirects {
+        easy.follow_location(true)
+            .into_nyquest_result("set CURLOPT_FOLLOWLOCATION")?;
+    }
     easy.url(url).into_nyquest_result("set CURLOPT_URL")?;
     match &req.method {
         Method::Get if req.body.is_none() => easy.get(true),

@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use arc_swap::ArcSwapAny;
@@ -8,9 +9,10 @@ use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
 use objc2_foundation::{
-    NSCopying, NSData, NSError, NSHTTPURLResponse, NSObject, NSObjectProtocol, NSURLResponse,
-    NSURLSession, NSURLSessionDataDelegate, NSURLSessionDataTask, NSURLSessionDelegate,
-    NSURLSessionResponseDisposition, NSURLSessionTask, NSURLSessionTaskDelegate,
+    NSCopying, NSData, NSError, NSHTTPURLResponse, NSObject, NSObjectProtocol, NSURLRequest,
+    NSURLResponse, NSURLSession, NSURLSessionDataDelegate, NSURLSessionDataTask,
+    NSURLSessionDelegate, NSURLSessionResponseDisposition, NSURLSessionTask,
+    NSURLSessionTaskDelegate,
 };
 
 use crate::error::IntoNyquestResult;
@@ -36,6 +38,23 @@ define_class!(
 
     // SAFETY: `NSApplicationDelegate` has no safety requirements.
     unsafe impl NSURLSessionTaskDelegate for DataTaskDelegate {
+        #[unsafe(method(URLSession:task:willPerformHTTPRedirection:newRequest:completionHandler:))]
+        fn URLSession_task_willPerformHTTPRedirection_newRequest_completionHandler(
+            &self,
+            session: &NSURLSession,
+            task: &NSURLSessionTask,
+            response: &NSHTTPURLResponse,
+            request: &NSURLRequest,
+            completion_handler: &DynBlock<dyn Fn(*mut NSURLRequest)>,
+        ) {
+            self.callback_URLSession_task_willPerformHTTPRedirection_newRequest_completionHandler(
+                session,
+                task,
+                response,
+                request,
+                completion_handler,
+            );
+        }
         #[unsafe(method(URLSession:task:didCompleteWithError:))]
         fn URLSession_task_didCompleteWithError(
             &self,
@@ -84,6 +103,7 @@ impl DataTaskDelegate {
     pub(crate) fn new(
         waker: GenericWaker,
         max_response_buffer_size: Option<u64>,
+        allow_redirects: bool,
     ) -> Retained<Self> {
         let this = Self::alloc().set_ivars(DataTaskIvars {
             // continue_response_block: ArcSwapAny::new(None),
@@ -95,6 +115,7 @@ impl DataTaskDelegate {
                 response_buffer: Default::default(),
             },
             max_response_buffer_size,
+            redirects_allowed: if allow_redirects { 30 } else { 0 }.into(),
         });
         // SAFETY: The signature of `NSObject`'s `init` method is correct.
         unsafe { msg_send![super(this), init] }
@@ -118,6 +139,24 @@ impl DataTaskDelegate {
         let ivars = self.ivars();
         ivars.shared.response.store(Some(response.copy().into()));
         ivars.shared.waker.wake();
+    }
+    fn callback_URLSession_task_willPerformHTTPRedirection_newRequest_completionHandler(
+        &self,
+        _session: &NSURLSession,
+        _task: &NSURLSessionTask,
+        _response: &NSHTTPURLResponse,
+        request: &NSURLRequest,
+        completion_handler: &DynBlock<dyn Fn(*mut NSURLRequest)>,
+    ) {
+        let ivars = &self.ivars().redirects_allowed;
+        let allowed = ivars
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
+            .is_ok();
+        if allowed {
+            completion_handler.call((request as *const _ as _,));
+        } else {
+            completion_handler.call((null_mut(),));
+        }
     }
     fn callback_URLSession_task_didCompleteWithError(
         &self,

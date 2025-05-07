@@ -52,6 +52,13 @@ impl ClientBuilder {
         self
     }
 
+    /// Instructs the backend to not follow 3xx redirects.
+    #[inline]
+    pub fn no_redirects(mut self) -> Self {
+        self.options.follow_redirects = false;
+        self
+    }
+
     /// Sets the maximum number of bytes to buffer for a response.
     ///
     /// # Note

@@ -43,6 +43,9 @@ impl WinrtClient {
                 ignorables.Append(ChainValidationResult(i)).ok();
             }
         }
+        if !options.follow_redirects {
+            filter.SetAllowAutoRedirect(false)?;
+        }
         let client = HttpClient::Create(&filter)?;
         if let Some(user_agent) = &options.user_agent {
             client

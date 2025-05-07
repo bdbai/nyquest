@@ -70,6 +70,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
             let delegate = DataTaskDelegate::new(
                 GenericWaker::Blocking(BlockingWaker::new_from_current_thread()),
                 self.inner.max_response_buffer_size,
+                self.inner.allow_redirects,
             );
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
