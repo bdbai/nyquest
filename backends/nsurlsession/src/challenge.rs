@@ -7,7 +7,7 @@ use objc2_foundation::{
     NSObject, NSObjectProtocol, NSURLAuthenticationChallenge, NSURLCredential, NSURLSession,
     NSURLSessionAuthChallengeDisposition, NSURLSessionDelegate,
 };
-use objc2_security::sec_trust;
+use objc2_security::SecTrust;
 
 define_class!(
     // SAFETY:
@@ -56,7 +56,7 @@ impl BypassServerVerifyDelegate {
             dyn Fn(NSURLSessionAuthChallengeDisposition, *mut NSURLCredential),
         >,
     ) {
-        let trust_ref: *mut sec_trust = unsafe {
+        let trust_ref: *mut SecTrust = unsafe {
             let protectionSpace = challenge.protectionSpace();
             msg_send![&protectionSpace, serverTrust]
         };
