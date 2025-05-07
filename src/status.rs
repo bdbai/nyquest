@@ -42,10 +42,10 @@ impl StatusCode {
         400 <= self.0 && self.0 < 500
     }
 
-    /// Check if status is within 500-599 or invalid.
+    /// Check if status is within 500-599.
     #[inline]
     pub const fn is_server_error(&self) -> bool {
-        self.0 >= 500 || self.0 < 100
+        500 <= self.0 && self.0 < 600
     }
 
     /// Check if status is outside the range of 100-599.
@@ -127,7 +127,7 @@ mod tests {
         assert_eq!(status.code(), 600);
         assert!(!status.is_successful());
         assert!(!status.is_client_error());
-        assert!(status.is_server_error());
+        assert!(!status.is_server_error());
         assert!(status.is_invalid());
     }
 
