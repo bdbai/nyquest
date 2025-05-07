@@ -126,6 +126,7 @@ pub mod r#async;
 pub mod blocking;
 pub mod client;
 pub mod header;
+mod status;
 
 #[cfg(feature = "blocking")]
 #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
@@ -141,3 +142,4 @@ pub use error::{Error, Result};
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use r#async::client::AsyncClient;
 pub use request::{Method, Request};
+pub use status::StatusCode;

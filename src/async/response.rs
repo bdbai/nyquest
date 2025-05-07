@@ -2,6 +2,8 @@ use std::fmt::Debug;
 
 use nyquest_interface::r#async::AnyAsyncResponse;
 
+use crate::StatusCode;
+
 /// An async HTTP response.
 pub struct Response {
     inner: Box<dyn AnyAsyncResponse>,
@@ -9,8 +11,20 @@ pub struct Response {
 
 impl Response {
     /// Get the `StatusCode` of this Response.
-    pub fn status(&self) -> u16 {
-        self.inner.status()
+    pub fn status(&self) -> StatusCode {
+        self.inner.status().into()
+    }
+
+    /// Return the response as-is, or [`crate::Error::NonSuccessfulStatusCode`] if the status code
+    /// does not indicate success.
+    #[inline]
+    pub fn with_successful_status(self) -> crate::Result<Self> {
+        let status = self.status();
+        if status.is_successful() {
+            Ok(self)
+        } else {
+            Err(crate::Error::NonSuccessfulStatusCode(status))
+        }
     }
 
     /// Get the `content-length` of this response, if known by the backend.

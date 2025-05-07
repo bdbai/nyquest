@@ -33,7 +33,7 @@ curl = ["dep:nyquest-backend-curl"]
 nsurlsession = ["dep:nyquest-backend-nsurlsession"]
 
 [dev-dependencies]
-nyquest = { path = "../" }
+nyquest = { path = "../", features = ["json"] }
 hyper = { version = "1", features = ["http1", "client"] }
 tokio = { version = "1", features = ["full"] }
 http-body-util = "0.1"
@@ -42,6 +42,7 @@ form_urlencoded = "1"
 memchr = "2"
 multer = "3"
 futures = "0.3"
+serde = { version = "1", features = ["derive"] }
 cfg-if.workspace = true
 
 [dependencies]

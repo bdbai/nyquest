@@ -27,20 +27,29 @@ mod tests {
         #[cfg(feature = "blocking")]
         {
             let client = builder.clone().build_blocking().unwrap();
-            let res = client.request(NyquestRequest::get(PATH)).unwrap();
+            let res = client
+                .request(NyquestRequest::get(PATH))
+                .unwrap()
+                .with_successful_status()
+                .unwrap();
             let status = res.status();
             let content_len = res.content_length();
             let content = res.text().unwrap();
-            assertions((status, content_len, content));
+            assertions((status.into(), content_len, content));
         }
         #[cfg(feature = "async")]
         {
             let facts = TOKIO_RT.block_on(async {
                 let client = builder.build_async().await.unwrap();
-                let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
+                let res = client
+                    .request(NyquestRequest::get(PATH))
+                    .await
+                    .unwrap()
+                    .with_successful_status()
+                    .unwrap();
                 let status = res.status();
                 let content_len = res.content_length();
-                (status, content_len, res.text().await.unwrap())
+                (status.into(), content_len, res.text().await.unwrap())
             });
             assertions(facts);
         }
@@ -67,7 +76,7 @@ mod tests {
             let status = res.status();
             let content_len = res.content_length();
             let content = res.bytes().unwrap();
-            assertions((status, content_len, content));
+            assertions((status.into(), content_len, content));
         }
         #[cfg(feature = "async")]
         {
@@ -76,7 +85,7 @@ mod tests {
                 let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
                 let status = res.status();
                 let content_len = res.content_length();
-                (status, content_len, res.bytes().await.unwrap())
+                (status.into(), content_len, res.bytes().await.unwrap())
             });
             assertions(facts);
         }
@@ -117,7 +126,7 @@ mod tests {
                 let request = NyquestRequest::post(PATH)
                     .with_body(NyquestBlockingBody::text(body_text.clone(), request_mime));
                 let res = blocking_client.request(request).unwrap();
-                let status = res.status();
+                let status = res.status().into();
                 assertions(status);
             }
             #[cfg(feature = "async")]
@@ -127,7 +136,7 @@ mod tests {
                 let status = TOKIO_RT.block_on(async {
                     let res = async_client.request(request).await.unwrap();
                     let status = res.status();
-                    status
+                    status.into()
                 });
                 assertions(status);
             }

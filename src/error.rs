@@ -2,7 +2,10 @@ use thiserror::Error;
 
 use nyquest_interface::Error as ErrorImpl;
 
+use crate::StatusCode;
+
 /// The errors produced by the backend.
+#[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum Error {
     /// The backend does not recognize the input as a valid URL.
@@ -24,6 +27,10 @@ pub enum Error {
     /// [`crate::ClientBuilder::request_timeout`].
     #[error("Request is not finished within timeout")]
     RequestTimeout,
+    /// The response has a non-successful status code and being checked by `with_successful_status`
+    /// method.
+    #[error("Non-successful status code: {0}")]
+    NonSuccessfulStatusCode(StatusCode),
 }
 
 /// A `Result` alias where the `Err` case is [`crate::Error`].
