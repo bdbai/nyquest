@@ -33,7 +33,8 @@ pub struct ClientOptions {
     pub max_response_buffer_size: Option<u64>,
     /// Optional timeout duration for requests.
     pub request_timeout: Option<Duration>,
-    // TODO: ignore TLS validation
+    /// Whether to ignore SSL certificate errors.
+    pub ignore_certificate_errors: bool,
     // TODO: auth
     // TODO: redirects
 }
@@ -50,6 +51,7 @@ impl Default for ClientOptions {
             follow_redirects: true,
             max_response_buffer_size: None,
             request_timeout: None,
+            ignore_certificate_errors: false,
         }
     }
 }

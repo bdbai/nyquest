@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use nyquest_interface::client::{CachingBehavior, ClientOptions};
 use windows::core::{h, HSTRING};
+use windows::Security::Cryptography::Certificates::ChainValidationResult;
 use windows::Web::Http::Filters::{
     HttpBaseProtocolFilter, HttpCacheReadBehavior, HttpCacheWriteBehavior, HttpCookieUsageBehavior,
 };
@@ -34,6 +35,13 @@ impl WinrtClient {
         }
         if !options.use_cookies {
             filter.SetCookieUsageBehavior(HttpCookieUsageBehavior::NoCookies)?;
+        }
+        if options.ignore_certificate_errors {
+            let ignorables = filter.IgnorableServerCertificateErrors()?;
+            ignorables.Clear()?;
+            for i in 1..=13 {
+                ignorables.Append(ChainValidationResult(i)).ok();
+            }
         }
         let client = HttpClient::Create(&filter)?;
         if let Some(user_agent) = &options.user_agent {

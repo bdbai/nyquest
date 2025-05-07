@@ -1,4 +1,5 @@
 mod cache;
+mod certificate_errors;
 mod cookies;
 mod headers;
 mod request_timeout;

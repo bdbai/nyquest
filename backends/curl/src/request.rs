@@ -26,6 +26,10 @@ pub fn populate_request<S>(
         easy.timeout(timeout)
             .into_nyquest_result("set CURLOPT_TIMEOUT")?;
     }
+    if options.ignore_certificate_errors {
+        easy.ssl_verify_peer(false)
+            .into_nyquest_result("set CURLOPT_SSL_VERIFYPEER")?;
+    }
     easy.url(url).into_nyquest_result("set CURLOPT_URL")?;
     match &req.method {
         Method::Get if req.body.is_none() => easy.get(true),

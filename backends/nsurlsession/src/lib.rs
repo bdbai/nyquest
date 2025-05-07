@@ -14,6 +14,7 @@ cfg_if::cfg_if! {
         #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
         mod blocking;
 
+        mod challenge;
         mod client;
         mod datatask;
         mod error;
