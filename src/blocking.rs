@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use nyquest_interface::blocking::BoxedStream;
 
 pub(crate) mod client;
+mod read_stream;
 mod response;
 
 /// The Request Body type for blocking requests.
@@ -20,6 +21,7 @@ pub type Part = crate::body::Part<BoxedStream>;
 /// The multipart form part body type for blocking requests.
 #[cfg(feature = "multipart")]
 pub type PartBody = crate::body::PartBody<BoxedStream>;
+pub use read_stream::ReadStream;
 pub use response::Response;
 
 /// Shortcut method to quickly make a `GET` request.

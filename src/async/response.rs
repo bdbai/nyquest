@@ -1,8 +1,9 @@
 use std::fmt::Debug;
 use std::pin::Pin;
 
-use nyquest_interface::r#async::{futures_io, AnyAsyncResponse};
+use nyquest_interface::r#async::AnyAsyncResponse;
 
+use super::AsyncReadStream;
 use crate::StatusCode;
 
 /// An async HTTP response.
@@ -77,8 +78,8 @@ impl Response {
     }
 
     /// Turn the response body into a [`futures_io::AsyncRead`] stream.
-    pub fn into_async_read(self) -> impl futures_io::AsyncRead + Unpin + Send {
-        self.inner
+    pub fn into_async_read(self) -> AsyncReadStream {
+        AsyncReadStream::new(self.inner)
     }
 }
 
