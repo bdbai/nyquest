@@ -1,6 +1,6 @@
 use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use curl::{
     easy::Easy,
@@ -147,13 +147,11 @@ impl MultiEasy {
 
     fn poll_until(
         &mut self,
-        timeout: Duration,
         mut cb: impl FnMut(&Mutex<MultiEasyState>) -> NyquestResult<ControlFlow<()>>,
     ) -> NyquestResult<()> {
         let easy = self.easy.attach(&mut self.multi)?;
-        let deadline = Instant::now() + timeout;
         // TODO: sigpipe
-        while Instant::now() < deadline {
+        loop {
             let suggested_timeout = self
                 .multi
                 .get_timeout()
@@ -186,12 +184,10 @@ impl MultiEasy {
                 _ => {}
             }
         }
-        Err(curl::Error::new(curl_sys::CURLE_OPERATION_TIMEDOUT))
-            .into_nyquest_result("multi_easy poll_until")
     }
 
-    pub fn poll_until_response_headers(&mut self, timeout: Duration) -> NyquestResult<()> {
-        self.poll_until(timeout, |state| {
+    pub fn poll_until_response_headers(&mut self) -> NyquestResult<()> {
+        self.poll_until(|state| {
             Ok(if state.lock().unwrap().header_finished {
                 ControlFlow::Break(())
             } else {
@@ -229,12 +225,11 @@ impl MultiEasy {
 
     pub fn poll_until_whole_response(
         &mut self,
-        timeout: Duration,
         max_response_buffer_size: Option<u64>,
     ) -> NyquestResult<()> {
-        self.poll_until(timeout, |state| {
+        self.poll_until(|state| {
             let Some(max_response_buffer_size) = max_response_buffer_size else {
-                return Ok(ControlFlow::Continue(()));
+                return Ok(ControlFlow::<()>::Continue(()));
             };
             let received_len = state.lock().unwrap().response_buffer.len();
             if received_len > max_response_buffer_size as usize {
@@ -242,10 +237,26 @@ impl MultiEasy {
             }
             Ok(ControlFlow::Continue(()))
         })
+        .map(|_| ())
+    }
+
+    pub fn poll_until_partial_response(&mut self) -> NyquestResult<()> {
+        self.poll_until(|state| {
+            let is_empty = state.lock().unwrap().response_buffer.is_empty();
+            Ok(if is_empty {
+                ControlFlow::Continue(())
+            } else {
+                ControlFlow::Break(())
+            })
+        })
     }
 
     pub fn take_response_buffer(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.state.lock().unwrap().response_buffer)
+    }
+
+    pub fn with_response_buffer_mut<T>(&mut self, f: impl FnOnce(&mut Vec<u8>) -> T) -> T {
+        f(&mut self.state.lock().unwrap().response_buffer)
     }
 
     pub fn take_response_headers_buffer(&mut self) -> Vec<Vec<u8>> {

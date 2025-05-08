@@ -1,10 +1,9 @@
 use std::io;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use nyquest_interface::blocking::Request;
-use nyquest_interface::Error as NyquestError;
+use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 mod multi_easy;
 
@@ -26,7 +25,7 @@ struct EasyHandleGuard<S: AsRef<Mutex<Option<MultiEasy>>>> {
 
 type OwnedEasyHandleGuard = EasyHandleGuard<Arc<Mutex<Option<MultiEasy>>>>;
 
-pub struct CurlResponse {
+pub struct CurlBlockingResponse {
     status: u16,
     content_length: Option<u64>,
     headers: Vec<(String, String)>,
@@ -90,13 +89,27 @@ impl CurlEasyClient {
     }
 }
 
-impl io::Read for CurlResponse {
-    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-        todo!()
+impl io::Read for CurlBlockingResponse {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let written = self.handle.with_handle(|handle| {
+            handle.poll_until_partial_response()?;
+            let written = handle.with_response_buffer_mut(|response_buf| {
+                let len = response_buf.len().min(buf.len());
+                buf[..len].copy_from_slice(&response_buf[..len]);
+                response_buf.drain(..len);
+                len
+            });
+            NyquestResult::Ok(written)
+        });
+        match written {
+            Ok(written) => Ok(written),
+            Err(NyquestError::Io(e)) => Err(e),
+            Err(e) => unreachable!("Unexpected error: {}", e),
+        }
     }
 }
 
-impl nyquest_interface::blocking::BlockingResponse for CurlResponse {
+impl nyquest_interface::blocking::BlockingResponse for CurlBlockingResponse {
     fn status(&self) -> u16 {
         self.status
     }
@@ -134,9 +147,8 @@ impl nyquest_interface::blocking::BlockingResponse for CurlResponse {
     }
 
     fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
-        // TODO: proper timeouts
         self.handle.with_handle(|handle| {
-            handle.poll_until_whole_response(Duration::from_secs(30), self.max_response_buffer_size)
+            handle.poll_until_whole_response(self.max_response_buffer_size)
         })?;
         let buf = self
             .handle
@@ -153,15 +165,14 @@ impl nyquest_interface::blocking::BlockingResponse for CurlResponse {
 }
 
 impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
-    type Response = CurlResponse;
+    type Response = CurlBlockingResponse;
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
         let mut handle = self.get_or_create_handle();
         // FIXME: properly concat base_url and url
         let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);
         handle.with_handle(|handle| handle.populate_request(&url, req, &self.options))?;
-        // TODO: proper timeouts
-        handle.with_handle(|handle| handle.poll_until_response_headers(Duration::from_secs(30)))?;
+        handle.with_handle(|handle| handle.poll_until_response_headers())?;
         let (status, content_length) = handle.with_handle(|handle| {
             Ok::<_, NyquestError>((handle.status()?, handle.content_length()?))
         })?;
@@ -172,7 +183,7 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
             .filter_map(|line| line.split_once(':'))
             .map(|(k, v)| (k.into(), v.trim_start().into()))
             .collect();
-        Ok(CurlResponse {
+        Ok(CurlBlockingResponse {
             status,
             content_length,
             headers,

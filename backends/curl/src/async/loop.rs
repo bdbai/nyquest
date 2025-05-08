@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::future::poll_fn;
 use std::sync::{Arc, Mutex};
-use std::task::Poll;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use std::{io, thread};
 
@@ -100,30 +100,38 @@ impl RequestHandle {
         res
     }
 
-    pub(super) async fn poll_bytes<T>(
+    pub(super) async fn poll_bytes_async<T>(
         &mut self,
         cb: impl FnOnce(&mut Vec<u8>) -> nyquest_interface::Result<T>,
     ) -> nyquest_interface::Result<Option<T>> {
-        self.manager
-            .dispatch_task(LoopTask::UnpauseHandle(self.shared_context.id));
         let mut cb = Some(cb);
         poll_fn(|cx| {
-            let mut state = self.shared_context.state.lock().unwrap();
-            if !state.response_buffer.is_empty() {
+            self.poll_bytes(cx, |buf| {
                 let cb = cb
                     .take()
                     .expect("poll_bytes callback is called more than once");
-                let res = cb(&mut state.response_buffer);
-                state.response_buffer.clear();
-                return Poll::Ready(res.map(Some));
-            }
-            if let Some(res) = state.result.take() {
-                return Poll::Ready(res.map(|()| None));
-            };
-            self.shared_context.waker.register(cx.waker());
-            Poll::Pending
+                cb(buf)
+            })
         })
         .await
+    }
+    pub(super) fn poll_bytes<T>(
+        &mut self,
+        cx: &mut Context<'_>,
+        mut cb: impl FnMut(&mut Vec<u8>) -> nyquest_interface::Result<T>,
+    ) -> Poll<nyquest_interface::Result<Option<T>>> {
+        let mut state = self.shared_context.state.lock().unwrap();
+        if !state.response_buffer.is_empty() {
+            let res = cb(&mut state.response_buffer);
+            return Poll::Ready(res.map(Some));
+        }
+        if let Some(res) = state.result.take() {
+            return Poll::Ready(res.map(|()| None));
+        };
+        self.manager
+            .dispatch_task(LoopTask::UnpauseHandle(self.shared_context.id));
+        self.shared_context.waker.register(cx.waker());
+        Poll::Pending
     }
 }
 
@@ -353,6 +361,9 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                                 // TODO: handle max response buffer size
                                 state.response_buffer.extend_from_slice(f);
                                 drop(state);
+                                unsafe {
+                                    pause.pause();
+                                }
                                 ctx.waker.wake();
                                 Ok(f.len())
                             }
