@@ -216,11 +216,11 @@ mod tests {
                 .no_caching()
                 .max_response_buffer_size(1);
             let client = builder.build_blocking().unwrap();
-            let res = client.request(NyquestRequest::get(PATH)).unwrap();
-            let mut read = res.into_read();
             blocking_tx
                 .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
                 .unwrap();
+            let res = client.request(NyquestRequest::get(PATH)).unwrap();
+            let mut read = res.into_read();
             let mut buf = [0; 16];
             assert_eq!((read.read(&mut buf).unwrap(), buf[0]), (1, b'1'));
             blocking_tx
@@ -243,11 +243,11 @@ mod tests {
                     .no_caching()
                     .max_response_buffer_size(1);
                 let client = builder.build_async().await.unwrap();
-                let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
-                let mut read = res.into_async_read();
                 async_tx
                     .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
                     .unwrap();
+                let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
+                let mut read = res.into_async_read();
                 let mut buf = [0; 16];
                 assert_eq!((read.read(&mut buf).await.unwrap(), buf[0]), (1, b'1'));
                 async_tx
