@@ -73,8 +73,9 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
     ) -> Poll<futures_io::Result<usize>> {
         let inner = &mut self.inner;
 
+        eprintln!("poll_read");
         let read_len = inner.shared.with_response_buffer_mut(|data| {
-            let read_len = if data.len() > buf.len() {
+            let read_len = if dbg!(data.len()) > dbg!(buf.len()) {
                 unsafe {
                     inner.task.suspend();
                 }
@@ -86,7 +87,7 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
             data.drain(..read_len);
             read_len
         });
-        match read_len {
+        match dbg!(read_len) {
             Ok(read_len @ 1..) => {
                 return Poll::Ready(Ok(read_len));
             }

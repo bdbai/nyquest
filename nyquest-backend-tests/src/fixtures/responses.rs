@@ -206,7 +206,10 @@ mod tests {
         });
         #[cfg(feature = "blocking")]
         {
-            let builder = crate::init_builder_blocking().unwrap().no_caching();
+            let builder = crate::init_builder_blocking()
+                .unwrap()
+                .no_caching()
+                .max_response_buffer_size(1);
             let client = builder.build_blocking().unwrap();
             let res = client.request(NyquestRequest::get(PATH)).unwrap();
             let mut read = res.into_read();
@@ -229,7 +232,11 @@ mod tests {
         #[cfg(feature = "async")]
         {
             TOKIO_RT.block_on(async {
-                let builder = crate::init_builder().await.unwrap().no_caching();
+                let builder = crate::init_builder()
+                    .await
+                    .unwrap()
+                    .no_caching()
+                    .max_response_buffer_size(1);
                 let client = builder.build_async().await.unwrap();
                 let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
                 let mut read = res.into_async_read();
