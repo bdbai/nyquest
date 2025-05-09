@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use std::{io::Read, sync::Arc};
+    #[cfg(feature = "blocking")]
+    use std::io::Read;
+    use std::sync::Arc;
 
     #[cfg(feature = "async")]
     use futures::AsyncReadExt;
@@ -211,12 +213,17 @@ mod tests {
                 .no_caching()
                 .max_response_buffer_size(1);
             let client = builder.build_blocking().unwrap();
-            // Workaround for NSURLSession buffering bytes
+            // Workaround for NSURLSession buffering the first 512 bytes
+            // https://developer.apple.com/forums/thread/64875
             blocking_tx
-                .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
+                .try_send(Ok(Frame::data(Bytes::from_static(&[0; 512]))))
                 .unwrap();
             let res = client.request(NyquestRequest::get(PATH)).unwrap();
             let mut read = res.into_read();
+            read.read_exact(&mut [0; 512]).unwrap();
+            blocking_tx
+                .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
+                .unwrap();
             let mut buf = [0; 16];
             assert_eq!((read.read(&mut buf).unwrap(), buf[0]), (1, b'1'));
             blocking_tx
@@ -240,10 +247,14 @@ mod tests {
                     .max_response_buffer_size(1);
                 let client = builder.build_async().await.unwrap();
                 async_tx
-                    .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
+                    .try_send(Ok(Frame::data(Bytes::from_static(&[0; 512]))))
                     .unwrap();
                 let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
                 let mut read = res.into_async_read();
+                read.read_exact(&mut [0; 512]).await.unwrap();
+                async_tx
+                    .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
+                    .unwrap();
                 let mut buf = [0; 16];
                 assert_eq!((read.read(&mut buf).await.unwrap(), buf[0]), (1, b'1'));
                 async_tx

@@ -161,7 +161,7 @@ impl DataTaskDelegate {
         error: Option<&NSError>,
     ) {
         let ivars = self.ivars();
-        ivars.shared.completed.store(dbg!(true), Ordering::SeqCst);
+        ivars.shared.completed.store(true, Ordering::SeqCst);
         if let Some(error) = error {
             ivars.set_error(error.copy());
         }
@@ -176,11 +176,11 @@ impl DataTaskDelegate {
         let ivars = self.ivars();
         let mut buffer = ivars.shared.response_buffer.lock().unwrap();
         let data = unsafe { data.as_bytes_unchecked() };
-        if dbg!(buffer.len()) + dbg!(data.len())
-            > dbg!(ivars
+        if buffer.len() + data.len()
+            > ivars
                 .shared
                 .max_response_buffer_size
-                .load(Ordering::Acquire) as usize)
+                .load(Ordering::Acquire) as usize
         {
             drop(buffer);
             ivars.set_error(NyquestError::ResponseTooLarge);

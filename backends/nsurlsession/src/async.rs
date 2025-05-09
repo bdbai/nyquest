@@ -1,4 +1,5 @@
 use std::future::poll_fn;
+use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -77,11 +78,10 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
     ) -> Poll<futures_io::Result<usize>> {
         let inner = &mut self.inner;
 
-        eprintln!("poll_read");
         let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
-            let read_len = if dbg!(data.len()) > dbg!(buf.len()) {
+            let read_len = if data.len() > buf.len() {
                 unsafe {
-                    dbg!(inner.task.suspend());
+                    inner.task.suspend();
                 }
                 buf.len()
             } else {
@@ -91,11 +91,14 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
             data.drain(..read_len);
             read_len
         });
-        match dbg!(read_len) {
+        match read_len {
             Ok(read_len @ 1..) => {
                 return Poll::Ready(Ok(read_len));
             }
             Err(NyquestError::Io(e)) => return Poll::Ready(Err(e)),
+            Err(NyquestError::RequestTimeout) => {
+                return Poll::Ready(Err(io::ErrorKind::TimedOut.into()));
+            }
             Err(e) => unreachable!("Unexpected error: {e}"),
             Ok(0) if inner.shared.is_completed() => return Poll::Ready(Ok(0)),
             Ok(0) => {}
@@ -104,7 +107,7 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
         let inner_waker = coerce_waker(inner.shared.waker_ref());
         inner_waker.register(cx);
         unsafe {
-            dbg!(inner.task.resume());
+            inner.task.resume();
         }
         Poll::Pending
     }
@@ -128,7 +131,6 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             DataTaskDelegate::into_shared(delegate)
         };
         let inner_waker = coerce_waker(shared.waker_ref());
-        eprintln!("sending async request");
         // TODO: cancellation
         let response = poll_fn(|cx| {
             if let Some(response) = shared.try_take_response().into_nyquest_result().transpose() {
