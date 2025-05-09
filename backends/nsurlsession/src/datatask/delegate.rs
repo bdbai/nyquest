@@ -190,6 +190,8 @@ impl DataTaskDelegate {
             return;
         }
         buffer.extend_from_slice(data);
+        drop(buffer);
+        ivars.shared.waker.wake();
     }
 }
 
