@@ -1,9 +1,10 @@
 use std::future::poll_fn;
-use std::task::Poll;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use nyquest_interface::client::{BuildClientResult, ClientOptions};
-use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse};
-use nyquest_interface::Result as NyquestResult;
+use nyquest_interface::r#async::{futures_io, AsyncBackend, AsyncClient, AsyncResponse};
+use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::runtime::ProtocolObject;
 use waker::AsyncWaker;
 
@@ -37,29 +38,70 @@ impl AsyncResponse for NSUrlSessionAsyncResponse {
         self.inner.get_header(header)
     }
 
-    async fn text(&mut self) -> NyquestResult<String> {
-        let bytes = self.bytes().await?;
+    async fn text(mut self: Pin<&mut Self>) -> NyquestResult<String> {
+        let bytes = self.as_mut().bytes().await?;
         self.inner.convert_bytes_to_string(bytes)
     }
 
-    async fn bytes(&mut self) -> NyquestResult<Vec<u8>> {
-        let inner_waker = coerce_waker(self.inner.shared.waker_ref());
+    async fn bytes(mut self: Pin<&mut Self>) -> NyquestResult<Vec<u8>> {
+        let inner = &mut self.inner;
+        let inner_waker = coerce_waker(inner.shared.waker_ref());
         unsafe {
-            self.inner.task.resume();
+            inner.task.resume();
         }
         poll_fn(|cx| {
-            if self.inner.shared.is_completed() {
+            if inner.shared.is_completed() {
                 return Poll::Ready(());
             }
             inner_waker.register(cx);
             Poll::Pending
         })
         .await;
-        let res = self.inner.shared.take_response_buffer()?;
+        let res = inner.shared.take_response_buffer()?;
         unsafe {
-            self.inner.task.error().into_nyquest_result()?;
+            inner.task.error().into_nyquest_result()?;
         }
         Ok(res)
+    }
+}
+
+impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<futures_io::Result<usize>> {
+        let inner = &mut self.inner;
+
+        let read_len = inner.shared.with_response_buffer_mut(|data| {
+            let read_len = if data.len() > buf.len() {
+                unsafe {
+                    inner.task.suspend();
+                }
+                buf.len()
+            } else {
+                data.len()
+            };
+            buf[..read_len].copy_from_slice(&data[..read_len]);
+            data.drain(..read_len);
+            read_len
+        });
+        match read_len {
+            Ok(read_len @ 1..) => {
+                return Poll::Ready(Ok(read_len));
+            }
+            Err(NyquestError::Io(e)) => return Poll::Ready(Err(e)),
+            Err(e) => unreachable!("Unexpected error: {e}"),
+            Ok(0) if inner.shared.is_completed() => return Poll::Ready(Ok(0)),
+            Ok(0) => {}
+        }
+
+        let inner_waker = coerce_waker(inner.shared.waker_ref());
+        inner_waker.register(cx);
+        unsafe {
+            inner.task.resume();
+        }
+        Poll::Pending
     }
 }
 

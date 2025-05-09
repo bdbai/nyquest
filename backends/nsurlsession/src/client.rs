@@ -63,7 +63,7 @@ impl NSUrlSessionClient {
                 let delegate = BypassServerVerifyDelegate::new();
                 objc2_foundation::NSURLSession::sessionWithConfiguration_delegate_delegateQueue(
                     &config,
-                    Some(&ProtocolObject::from_ref(&*delegate)),
+                    Some(ProtocolObject::from_ref(&*delegate)),
                     None,
                 )
             } else {

@@ -217,13 +217,20 @@ impl DataTaskSharedContextRetained {
     }
 
     pub(crate) fn take_response_buffer(&self) -> NyquestResult<Vec<u8>> {
+        self.with_response_buffer_mut(std::mem::take)
+    }
+
+    pub(crate) fn with_response_buffer_mut<T>(
+        &self,
+        f: impl FnOnce(&mut Vec<u8>) -> T,
+    ) -> NyquestResult<T> {
         let shared = &self.retained.ivars().shared;
 
         let err = shared.received_error.lock().unwrap().take();
         err.map(Err::<(), _>).transpose().into_nyquest_result()?;
 
         let mut buffer = self.retained.ivars().shared.response_buffer.lock().unwrap();
-        Ok(std::mem::take(&mut *buffer))
+        Ok(f(&mut buffer))
     }
 }
 
