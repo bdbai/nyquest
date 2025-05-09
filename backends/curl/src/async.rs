@@ -1,7 +1,11 @@
-use std::sync::Arc;
+use std::io;
+use std::task::{ready, Poll};
+use std::{pin::Pin, sync::Arc, task::Context};
 
 use curl::easy::Easy;
-use nyquest_interface::{client::BuildClientResult, r#async::AsyncResponse};
+use nyquest_interface::client::BuildClientResult;
+use nyquest_interface::r#async::{futures_io, AsyncResponse};
+use nyquest_interface::Error as NyquestError;
 
 use crate::url::concat_url;
 
@@ -42,7 +46,7 @@ impl AsyncResponse for CurlAsyncResponse {
             .collect())
     }
 
-    async fn text(&mut self) -> nyquest_interface::Result<String> {
+    async fn text(self: Pin<&mut Self>) -> nyquest_interface::Result<String> {
         let buf = self.bytes().await?;
         #[cfg(feature = "charset")]
         if let Some((_, mut charset)) = self
@@ -61,22 +65,46 @@ impl AsyncResponse for CurlAsyncResponse {
         Ok(String::from_utf8_lossy(&buf).into_owned())
     }
 
-    async fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
+    async fn bytes(self: Pin<&mut Self>) -> nyquest_interface::Result<Vec<u8>> {
+        let this = self.get_mut();
         let mut buf = vec![];
-        while let Some(()) = self
+        while let Some(()) = this
             .handle
-            .poll_bytes(|data| {
-                if let Some(max_response_buffer_size) = self.max_response_buffer_size {
+            .poll_bytes_async(|data| {
+                if let Some(max_response_buffer_size) = this.max_response_buffer_size {
                     if buf.len() + data.len() > max_response_buffer_size as usize {
                         return Err(nyquest_interface::Error::ResponseTooLarge);
                     }
                 }
                 buf.extend_from_slice(data);
+                data.clear();
                 Ok(())
             })
             .await?
         {}
         Ok(buf)
+    }
+}
+
+impl futures_io::AsyncRead for CurlAsyncResponse {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let poll_res = ready!(this.handle.poll_bytes(cx, |data| {
+            let read_len = data.len().min(buf.len());
+            buf[..read_len].copy_from_slice(&data[..read_len]);
+            data.drain(..read_len);
+            Ok(read_len)
+        }));
+        Poll::Ready(match poll_res {
+            Ok(None) => Ok(0),
+            Ok(Some(read_len)) => Ok(read_len),
+            Err(NyquestError::Io(e)) => return Poll::Ready(Err(e)),
+            Err(e) => unreachable!("Unexpected error: {}", e),
+        })
     }
 }
 

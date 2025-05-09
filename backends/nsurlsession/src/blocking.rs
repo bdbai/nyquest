@@ -1,5 +1,6 @@
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::{BuildClientResult, ClientOptions};
+use nyquest_interface::Error as NyquestError;
 use objc2::runtime::ProtocolObject;
 use waker::BlockingWaker;
 
@@ -17,11 +18,44 @@ pub struct NSUrlSessionBlockingClient {
 }
 pub struct NSUrlSessionBlockingResponse {
     inner: NSUrlSessionResponse,
+    max_response_buffer_size: u64,
 }
 
 impl std::io::Read for NSUrlSessionBlockingResponse {
-    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-        todo!()
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let inner = &mut self.inner;
+
+        loop {
+            let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
+                let read_len = if data.len() > buf.len() {
+                    unsafe {
+                        inner.task.suspend();
+                    }
+                    buf.len()
+                } else {
+                    data.len()
+                };
+                buf[..read_len].copy_from_slice(&data[..read_len]);
+                data.drain(..read_len);
+                read_len
+            });
+            match read_len {
+                Ok(read_len @ 1..) => {
+                    return Ok(read_len);
+                }
+                Err(NyquestError::Io(e)) => return Err(e),
+                Err(e) => unreachable!("Unexpected error: {e}"),
+                Ok(0) if inner.shared.is_completed() => return Ok(0),
+                Ok(0) => {}
+            }
+
+            let inner_waker = coerce_waker(inner.shared.waker_ref());
+            inner_waker.register_current_thread();
+            unsafe {
+                inner.task.resume();
+            }
+            std::thread::park();
+        }
     }
 }
 
@@ -44,6 +78,9 @@ impl BlockingResponse for NSUrlSessionBlockingResponse {
     }
 
     fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
+        self.inner
+            .shared
+            .set_max_response_buffer_size(self.max_response_buffer_size);
         let inner_waker = coerce_waker(self.inner.shared.waker_ref());
         unsafe {
             self.inner.task.resume();
@@ -69,7 +106,6 @@ impl BlockingClient for NSUrlSessionBlockingClient {
         let shared = unsafe {
             let delegate = DataTaskDelegate::new(
                 GenericWaker::Blocking(BlockingWaker::new_from_current_thread()),
-                self.inner.max_response_buffer_size,
                 self.inner.allow_redirects,
             );
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
@@ -84,6 +120,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
                         task,
                         shared,
                     },
+                    max_response_buffer_size: self.inner.max_response_buffer_size,
                 });
             }
             unsafe {

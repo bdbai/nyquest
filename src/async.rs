@@ -4,6 +4,7 @@ use std::borrow::Cow;
 
 use nyquest_interface::r#async::BoxedStream;
 
+mod async_read_stream;
 pub(crate) mod client;
 mod response;
 
@@ -17,6 +18,7 @@ pub type Part = crate::body::Part<BoxedStream>;
 /// The multipart form part body type for async requests.
 #[cfg(feature = "multipart")]
 pub type PartBody = crate::body::PartBody<BoxedStream>;
+pub use async_read_stream::AsyncReadStream;
 pub use response::Response;
 
 /// Shortcut method to quickly make a `GET` request.

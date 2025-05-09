@@ -66,24 +66,24 @@ The following items are planned in MVP:
   - [x] Async
 - [x] Backend: NSURLSession
 - [x] Client Options
-- [ ] Streaming download
+- [x] Streaming download
 - [x] Test framework for backends
 - [x] Presets
 - [x] Documentation
 
 Future work may include:
 
+- [ ] Streaming upload
+- [ ] Backend: WASM fetch
 - [ ] Backend: reqwest
 - [ ] Cookie management
 - [ ] Progress tracking
-- [ ] Streaming upload
 - [ ] Direct file upload/download support
 - [ ] URL manipulation utilities
 - [ ] Middleware infrastructure
 - [ ] Telemetry
 - [ ] Backend: Plugin FFI via libloading
 - [ ] Backend: Mock
-- [ ] Backend: WASM fetch
 - [ ] Backend: WinHTTP
 - [ ] Backend: libsoup3
 - [ ] Backend: QNetworkAccessManager

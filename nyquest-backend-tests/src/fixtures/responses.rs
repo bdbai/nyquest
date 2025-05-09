@@ -1,7 +1,13 @@
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "blocking")]
+    use std::io::Read;
+    use std::sync::Arc;
+
+    #[cfg(feature = "async")]
+    use futures::AsyncReadExt;
     use http_body_util::BodyExt;
-    use hyper::{Method, StatusCode};
+    use hyper::{body::Frame, Method, StatusCode};
     #[cfg(feature = "blocking")]
     use nyquest::blocking::Body as NyquestBlockingBody;
     #[cfg(feature = "async")]
@@ -174,6 +180,94 @@ mod tests {
                 header_value
             });
             assertions(facts);
+        }
+    }
+
+    #[test]
+    fn test_stream_download() {
+        const PATH: &str = "responses/stream_download";
+
+        let (mut async_tx, async_rx) = futures::channel::mpsc::channel(1);
+        let (mut blocking_tx, blocking_rx) = futures::channel::mpsc::channel(1);
+        let rxs = Arc::new([Mutex::new(Some(async_rx)), Mutex::new(Some(blocking_rx))]);
+
+        let _handle = crate::add_hyper_fixture(PATH, {
+            let rxs = rxs.clone();
+            move |req| {
+                let rxs = rxs.clone();
+                async move {
+                    let is_blocking = req.is_blocking() as usize;
+                    let rx = rxs[is_blocking].lock().unwrap().take().unwrap();
+
+                    let body = http_body_util::StreamBody::new(rx).boxed();
+                    let mut res = Response::new(body);
+
+                    (res, Ok(()))
+                }
+            }
+        });
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking()
+                .unwrap()
+                .no_caching()
+                .max_response_buffer_size(1);
+            let client = builder.build_blocking().unwrap();
+            // Workaround for NSURLSession buffering the first 512 bytes
+            // https://developer.apple.com/forums/thread/64875
+            blocking_tx
+                .try_send(Ok(Frame::data(Bytes::from_static(&[0; 512]))))
+                .unwrap();
+            let res = client.request(NyquestRequest::get(PATH)).unwrap();
+            let mut read = res.into_read();
+            read.read_exact(&mut [0; 512]).unwrap();
+            blocking_tx
+                .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
+                .unwrap();
+            let mut buf = [0; 16];
+            assert_eq!((read.read(&mut buf).unwrap(), buf[0]), (1, b'1'));
+            blocking_tx
+                .try_send(Ok(Frame::data(Bytes::from_static(b"2"))))
+                .unwrap();
+            assert_eq!((read.read(&mut buf).unwrap(), buf[0]), (1, b'2'));
+            blocking_tx
+                .try_send(Ok(Frame::data(Bytes::from_static(b"3"))))
+                .unwrap();
+            assert_eq!((read.read(&mut buf).unwrap(), buf[0]), (1, b'3'));
+            drop(blocking_tx);
+            assert_eq!(read.read(&mut buf).unwrap(), 0);
+        }
+        #[cfg(feature = "async")]
+        {
+            TOKIO_RT.block_on(async {
+                let builder = crate::init_builder()
+                    .await
+                    .unwrap()
+                    .no_caching()
+                    .max_response_buffer_size(1);
+                let client = builder.build_async().await.unwrap();
+                async_tx
+                    .try_send(Ok(Frame::data(Bytes::from_static(&[0; 512]))))
+                    .unwrap();
+                let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
+                let mut read = res.into_async_read();
+                read.read_exact(&mut [0; 512]).await.unwrap();
+                async_tx
+                    .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
+                    .unwrap();
+                let mut buf = [0; 16];
+                assert_eq!((read.read(&mut buf).await.unwrap(), buf[0]), (1, b'1'));
+                async_tx
+                    .try_send(Ok(Frame::data(Bytes::from_static(b"2"))))
+                    .unwrap();
+                assert_eq!((read.read(&mut buf).await.unwrap(), buf[0]), (1, b'2'));
+                async_tx
+                    .try_send(Ok(Frame::data(Bytes::from_static(b"3"))))
+                    .unwrap();
+                assert_eq!((read.read(&mut buf).await.unwrap(), buf[0]), (1, b'3'));
+                drop(async_tx);
+                assert_eq!(read.read(&mut buf).await.unwrap(), 0);
+            });
         }
     }
 }

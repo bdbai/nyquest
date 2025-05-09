@@ -16,6 +16,10 @@ use crate::response::WinrtResponse;
 use crate::response_size_limiter::ResponseSizeLimiter;
 use crate::timer::Timer;
 
+pub struct WinrtBlockingResponse {
+    inner: WinrtResponse,
+}
+
 impl crate::WinrtBackend {
     pub fn create_blocking_client(&self, options: ClientOptions) -> io::Result<WinrtClient> {
         WinrtClient::create(options)
@@ -23,7 +27,7 @@ impl crate::WinrtBackend {
 }
 
 impl WinrtClient {
-    fn send_request(&self, req: Request) -> NyquestResult<WinrtResponse> {
+    fn send_request(&self, req: Request) -> NyquestResult<WinrtBlockingResponse> {
         let req_msg = self.create_request(&req)?;
         // TODO: stream
         if let Some(body) = req.body {
@@ -37,12 +41,14 @@ impl WinrtClient {
             .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)
             .into_nyquest_result()?
             .timeout_by(&mut timer)?;
-        WinrtResponse::new(res, self.max_response_buffer_size, timer).into_nyquest_result()
+        let inner =
+            WinrtResponse::new(res, self.max_response_buffer_size, timer).into_nyquest_result()?;
+        Ok(WinrtBlockingResponse { inner })
     }
 }
 
 impl BlockingClient for WinrtClient {
-    type Response = WinrtResponse;
+    type Response = WinrtBlockingResponse;
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
         self.send_request(req)
     }
@@ -59,29 +65,30 @@ impl BlockingBackend for crate::WinrtBackend {
     }
 }
 
-impl BlockingResponse for WinrtResponse {
+impl BlockingResponse for WinrtBlockingResponse {
     fn status(&self) -> u16 {
-        self.status
+        self.inner.status
     }
 
     fn get_header(&self, header: &str) -> nyquest_interface::Result<Vec<String>> {
-        self.get_header(header).into_nyquest_result()
+        self.inner.get_header(header).into_nyquest_result()
     }
 
     fn content_length(&self) -> Option<u64> {
-        self.content_length
+        self.inner.content_length
     }
 
     fn text(&mut self) -> NyquestResult<String> {
         let task = self
+            .inner
             .content()
             .into_nyquest_result()?
             .ReadAsStringAsync()
             .into_nyquest_result()?;
         let size_limiter =
-            ResponseSizeLimiter::hook_progress(self.max_response_buffer_size, &task)?;
+            ResponseSizeLimiter::hook_progress(self.inner.max_response_buffer_size, &task)?;
         let res = task
-            .timeout_by(&mut self.request_timer)
+            .timeout_by(&mut self.inner.request_timer)
             .map(|r| r.to_string_lossy());
         let content = size_limiter.assert_size(res)?;
         Ok(content)
@@ -89,23 +96,24 @@ impl BlockingResponse for WinrtResponse {
 
     fn bytes(&mut self) -> NyquestResult<Vec<u8>> {
         let task = self
+            .inner
             .content()
             .into_nyquest_result()?
             .ReadAsBufferAsync()
             .into_nyquest_result()?;
         let size_limiter =
-            ResponseSizeLimiter::hook_progress(self.max_response_buffer_size, &task)?;
+            ResponseSizeLimiter::hook_progress(self.inner.max_response_buffer_size, &task)?;
         let res = task
-            .timeout_by(&mut self.request_timer)
+            .timeout_by(&mut self.inner.request_timer)
             .and_then(|b| b.to_vec());
         let arr = size_limiter.assert_size(res)?;
         Ok(arr)
     }
 }
 
-impl io::Read for WinrtResponse {
+impl io::Read for WinrtBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let reader = self.reader_mut()?;
+        let reader = self.inner.reader_mut()?;
 
         let mut size = reader.UnconsumedBufferLength()?;
         if size == 0 {

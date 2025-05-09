@@ -1,12 +1,14 @@
 use std::fmt::Debug;
+use std::pin::Pin;
 
 use nyquest_interface::r#async::AnyAsyncResponse;
 
+use super::AsyncReadStream;
 use crate::StatusCode;
 
 /// An async HTTP response.
 pub struct Response {
-    inner: Box<dyn AnyAsyncResponse>,
+    inner: Pin<Box<dyn AnyAsyncResponse>>,
 }
 
 impl Response {
@@ -50,7 +52,7 @@ impl Response {
     /// receive the response body within the limit, [`crate::Error::ResponseTooLarge`] will be
     /// returned.
     pub async fn text(mut self) -> crate::Result<String> {
-        Ok(self.inner.text().await?)
+        Ok(self.inner.as_mut().text().await?)
     }
 
     /// Get the full response bytes.
@@ -60,7 +62,7 @@ impl Response {
     /// receive the response body within the limit, [`crate::Error::ResponseTooLarge`] will be
     /// returned.
     pub async fn bytes(mut self) -> crate::Result<Vec<u8>> {
-        Ok(self.inner.bytes().await?)
+        Ok(self.inner.as_mut().bytes().await?)
     }
 
     /// Get the full response bytes and deserialize into the given type.
@@ -75,11 +77,14 @@ impl Response {
         Ok(serde_json::from_slice(&self.bytes().await?)?)
     }
 
-    // TODO: stream
+    /// Turn the response body into a [`futures_io::AsyncRead`] stream.
+    pub fn into_async_read(self) -> AsyncReadStream {
+        AsyncReadStream::new(self.inner)
+    }
 }
 
-impl From<Box<dyn AnyAsyncResponse>> for Response {
-    fn from(inner: Box<dyn AnyAsyncResponse>) -> Self {
+impl From<Pin<Box<dyn AnyAsyncResponse>>> for Response {
+    fn from(inner: Pin<Box<dyn AnyAsyncResponse>>) -> Self {
         Self { inner }
     }
 }

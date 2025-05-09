@@ -20,7 +20,7 @@ use crate::challenge::BypassServerVerifyDelegate;
 pub struct NSUrlSessionClient {
     pub(crate) session: Retained<objc2_foundation::NSURLSession>,
     pub(crate) base_url: Option<Retained<NSURL>>,
-    pub(crate) max_response_buffer_size: Option<u64>,
+    pub(crate) max_response_buffer_size: u64,
     pub(crate) allow_redirects: bool,
 }
 
@@ -63,7 +63,7 @@ impl NSUrlSessionClient {
                 let delegate = BypassServerVerifyDelegate::new();
                 objc2_foundation::NSURLSession::sessionWithConfiguration_delegate_delegateQueue(
                     &config,
-                    Some(&ProtocolObject::from_ref(&*delegate)),
+                    Some(ProtocolObject::from_ref(&*delegate)),
                     None,
                 )
             } else {
@@ -80,7 +80,7 @@ impl NSUrlSessionClient {
         Ok(Self {
             session,
             base_url,
-            max_response_buffer_size: options.max_response_buffer_size,
+            max_response_buffer_size: options.max_response_buffer_size.unwrap_or(u64::MAX),
             allow_redirects: options.follow_redirects,
         })
     }

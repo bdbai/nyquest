@@ -1,7 +1,8 @@
-use std::{fmt::Debug, io};
+use std::fmt::Debug;
 
 use nyquest_interface::blocking::AnyBlockingResponse;
 
+use super::ReadStream;
 use crate::StatusCode;
 
 /// A blocking HTTP response.
@@ -76,9 +77,9 @@ impl Response {
         Ok(serde_json::from_slice(&self.bytes()?)?)
     }
 
-    #[doc(hidden)]
-    pub fn into_read(self) -> impl io::Read {
-        self.inner
+    /// Turn the response body into a [`std::io::Read`] stream.
+    pub fn into_read(self) -> ReadStream {
+        ReadStream::new(self.inner)
     }
 }
 

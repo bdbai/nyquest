@@ -9,8 +9,10 @@
 
 use std::any::Any;
 use std::fmt;
+use std::pin::Pin;
 
 use futures_core::future::BoxFuture;
+use futures_io::AsyncRead;
 
 use super::backend::AsyncResponse;
 use super::Request;
@@ -37,13 +39,13 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     /// Creates a cloned boxed version of this client.
     fn clone_boxed(&self) -> Box<dyn AnyAsyncClient>;
     /// Sends an HTTP request and returns the response.
-    fn request(&self, req: Request) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>>;
+    fn request(&self, req: Request) -> BoxFuture<Result<Pin<Box<dyn AnyAsyncResponse>>>>;
 }
 
 /// Trait for type-erased async HTTP responses.
 ///
 /// Automatically implemented for types implementing `AsyncResponse`.
-pub trait AnyAsyncResponse: Any + Send + Sync + 'static {
+pub trait AnyAsyncResponse: AsyncRead + Any + Send + Sync + 'static {
     /// Provides a textual description of this response.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     /// Returns the HTTP status code of this response.
@@ -53,9 +55,9 @@ pub trait AnyAsyncResponse: Any + Send + Sync + 'static {
     /// Gets all values for the specified header.
     fn get_header(&self, header: &str) -> Result<Vec<String>>;
     /// Reads the response body as text.
-    fn text(&mut self) -> BoxFuture<Result<String>>;
+    fn text(self: Pin<&mut Self>) -> BoxFuture<Result<String>>;
     /// Reads the response body as bytes.
-    fn bytes(&mut self) -> BoxFuture<Result<Vec<u8>>>;
+    fn bytes(self: Pin<&mut Self>) -> BoxFuture<Result<Vec<u8>>>;
 }
 
 // These implementations allow backend types implementing the base traits
@@ -77,11 +79,11 @@ where
         AsyncResponse::get_header(self, header)
     }
 
-    fn text(&mut self) -> BoxFuture<Result<String>> {
+    fn text(self: Pin<&mut Self>) -> BoxFuture<Result<String>> {
         Box::pin(AsyncResponse::text(self))
     }
 
-    fn bytes(&mut self) -> BoxFuture<Result<Vec<u8>>> {
+    fn bytes(self: Pin<&mut Self>) -> BoxFuture<Result<Vec<u8>>> {
         Box::pin(AsyncResponse::bytes(self))
     }
 
@@ -119,11 +121,11 @@ where
         Box::new(self.clone())
     }
 
-    fn request(&self, req: Request) -> BoxFuture<Result<Box<dyn AnyAsyncResponse>>> {
+    fn request(&self, req: Request) -> BoxFuture<Result<Pin<Box<dyn AnyAsyncResponse>>>> {
         Box::pin(async {
             self.request(req)
                 .await
-                .map(|res| Box::new(res) as Box<dyn AnyAsyncResponse>)
+                .map(|res| Box::pin(res) as Pin<Box<dyn AnyAsyncResponse>>)
         }) as _
     }
 }
