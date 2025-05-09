@@ -23,6 +23,7 @@ pub struct NSUrlSessionAsyncClient {
 
 pub struct NSUrlSessionAsyncResponse {
     inner: NSUrlSessionResponse,
+    max_response_buffer_size: u64,
 }
 
 impl AsyncResponse for NSUrlSessionAsyncResponse {
@@ -44,6 +45,9 @@ impl AsyncResponse for NSUrlSessionAsyncResponse {
     }
 
     async fn bytes(mut self: Pin<&mut Self>) -> NyquestResult<Vec<u8>> {
+        self.inner
+            .shared
+            .set_max_response_buffer_size(self.max_response_buffer_size);
         let inner = &mut self.inner;
         let inner_waker = coerce_waker(inner.shared.waker_ref());
         unsafe {
@@ -117,7 +121,6 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         let shared = unsafe {
             let delegate = DataTaskDelegate::new(
                 GenericWaker::Async(AsyncWaker::new()),
-                self.inner.max_response_buffer_size,
                 self.inner.allow_redirects,
             );
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
@@ -144,6 +147,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
                 response,
                 shared,
             },
+            max_response_buffer_size: self.inner.max_response_buffer_size,
         })
     }
 }

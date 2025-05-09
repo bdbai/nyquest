@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 
 use arc_swap::ArcSwapAny;
@@ -14,7 +14,6 @@ pub(crate) struct DataTaskIvars {
     // pub(super) continue_response_block:
     //     ArcSwapAny<Option<SwappableRcBlock<dyn Fn(NSURLSessionResponseDisposition)>>>,
     pub(super) shared: DataTaskIvarsShared,
-    pub(super) max_response_buffer_size: Option<u64>,
     pub(super) redirects_allowed: AtomicU8,
 }
 
@@ -23,7 +22,8 @@ pub(super) struct DataTaskIvarsShared {
     pub(super) waker: GenericWaker,
     pub(super) completed: AtomicBool,
     pub(super) received_error: Mutex<Option<NyquestError>>,
-    pub(super) response_buffer: Mutex<(Vec<u8>, bool)>, // (buffer, skip_buffer_size_check)
+    pub(super) max_response_buffer_size: AtomicU64,
+    pub(super) response_buffer: Mutex<Vec<u8>>,
 }
 
 impl DataTaskIvars {

@@ -100,11 +100,7 @@ pub(crate) struct DataTaskSharedContextRetained {
 }
 
 impl DataTaskDelegate {
-    pub(crate) fn new(
-        waker: GenericWaker,
-        max_response_buffer_size: Option<u64>,
-        allow_redirects: bool,
-    ) -> Retained<Self> {
+    pub(crate) fn new(waker: GenericWaker, allow_redirects: bool) -> Retained<Self> {
         let this = Self::alloc().set_ivars(DataTaskIvars {
             // continue_response_block: ArcSwapAny::new(None),
             shared: DataTaskIvarsShared {
@@ -113,8 +109,8 @@ impl DataTaskDelegate {
                 completed: AtomicBool::new(false),
                 received_error: Default::default(),
                 response_buffer: Default::default(),
+                max_response_buffer_size: u64::MAX.into(),
             },
-            max_response_buffer_size,
             redirects_allowed: if allow_redirects { 30 } else { 0 }.into(),
         });
         // SAFETY: The signature of `NSObject`'s `init` method is correct.
@@ -178,21 +174,20 @@ impl DataTaskDelegate {
         data: &NSData,
     ) {
         let ivars = self.ivars();
-        let mut guard = ivars.shared.response_buffer.lock().unwrap();
-        let (buffer, skip_buffer_size_check) = &mut *guard;
+        let mut buffer = ivars.shared.response_buffer.lock().unwrap();
         let data = unsafe { data.as_bytes_unchecked() };
-        if let Some(max_response_buffer_size) = ivars
-            .max_response_buffer_size
-            .filter(|_| !*skip_buffer_size_check)
+        if buffer.len() + data.len()
+            > ivars
+                .shared
+                .max_response_buffer_size
+                .load(Ordering::Acquire) as usize
         {
-            if buffer.len() + data.len() > max_response_buffer_size as usize {
-                drop(guard);
-                ivars.set_error(NyquestError::ResponseTooLarge);
-                unsafe {
-                    data_task.cancel();
-                }
-                return;
+            drop(buffer);
+            ivars.set_error(NyquestError::ResponseTooLarge);
+            unsafe {
+                data_task.cancel();
             }
+            return;
         }
         buffer.extend_from_slice(data);
     }
@@ -233,10 +228,16 @@ impl DataTaskSharedContextRetained {
         let err = shared.received_error.lock().unwrap().take();
         err.map(Err::<(), _>).transpose().into_nyquest_result()?;
 
-        let mut guard = self.retained.ivars().shared.response_buffer.lock().unwrap();
-        let (buffer, skip_buffer_size_check) = &mut *guard;
-        *skip_buffer_size_check = true;
-        Ok(f(buffer))
+        let mut buffer = self.retained.ivars().shared.response_buffer.lock().unwrap();
+        Ok(f(&mut buffer))
+    }
+
+    pub(crate) fn set_max_response_buffer_size(&self, size: u64) {
+        self.retained
+            .ivars()
+            .shared
+            .max_response_buffer_size
+            .store(size, Ordering::Release);
     }
 }
 

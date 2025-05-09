@@ -200,11 +200,6 @@ mod tests {
                     let body = http_body_util::StreamBody::new(rx).boxed();
                     let mut res = Response::new(body);
 
-                    // Workaround for NSURLSession buffering the first 512 bytes
-                    // https://developer.apple.com/forums/thread/64875
-                    res.headers_mut()
-                        .insert("Content-Type", "application/json".parse().unwrap());
-
                     (res, Ok(()))
                 }
             }
@@ -216,12 +211,18 @@ mod tests {
                 .no_caching()
                 .max_response_buffer_size(1);
             let client = builder.build_blocking().unwrap();
+            // Workaround for NSURLSession buffering the first 512 bytes
+            // https://developer.apple.com/forums/thread/64875
             blocking_tx
-                .try_send(Ok(Frame::data(Bytes::from_static(&[b'1'; 512]))))
+                .try_send(Ok(Frame::data(Bytes::from_static(&[0; 512]))))
                 .unwrap();
             let res = client.request(NyquestRequest::get(PATH)).unwrap();
             let mut read = res.into_read();
-            let mut buf = [0; 555];
+            read.read_exact(&mut [0; 512]).unwrap();
+            blocking_tx
+                .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
+                .unwrap();
+            let mut buf = [0; 16];
             assert_eq!((read.read(&mut buf).unwrap(), buf[0]), (1, b'1'));
             blocking_tx
                 .try_send(Ok(Frame::data(Bytes::from_static(b"2"))))
@@ -244,11 +245,15 @@ mod tests {
                     .max_response_buffer_size(1);
                 let client = builder.build_async().await.unwrap();
                 async_tx
-                    .try_send(Ok(Frame::data(Bytes::from_static(&[b'1'; 512]))))
+                    .try_send(Ok(Frame::data(Bytes::from_static(&[0; 512]))))
                     .unwrap();
                 let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
                 let mut read = res.into_async_read();
-                let mut buf = [0; 555];
+                read.read_exact(&mut [0; 512]).await.unwrap();
+                async_tx
+                    .try_send(Ok(Frame::data(Bytes::from_static(b"1"))))
+                    .unwrap();
+                let mut buf = [0; 16];
                 assert_eq!((read.read(&mut buf).await.unwrap(), buf[0]), (1, b'1'));
                 async_tx
                     .try_send(Ok(Frame::data(Bytes::from_static(b"2"))))

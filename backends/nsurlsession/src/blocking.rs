@@ -18,6 +18,7 @@ pub struct NSUrlSessionBlockingClient {
 }
 pub struct NSUrlSessionBlockingResponse {
     inner: NSUrlSessionResponse,
+    max_response_buffer_size: u64,
 }
 
 impl std::io::Read for NSUrlSessionBlockingResponse {
@@ -77,6 +78,9 @@ impl BlockingResponse for NSUrlSessionBlockingResponse {
     }
 
     fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
+        self.inner
+            .shared
+            .set_max_response_buffer_size(self.max_response_buffer_size);
         let inner_waker = coerce_waker(self.inner.shared.waker_ref());
         unsafe {
             self.inner.task.resume();
@@ -102,7 +106,6 @@ impl BlockingClient for NSUrlSessionBlockingClient {
         let shared = unsafe {
             let delegate = DataTaskDelegate::new(
                 GenericWaker::Blocking(BlockingWaker::new_from_current_thread()),
-                self.inner.max_response_buffer_size,
                 self.inner.allow_redirects,
             );
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
@@ -117,6 +120,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
                         task,
                         shared,
                     },
+                    max_response_buffer_size: self.inner.max_response_buffer_size,
                 });
             }
             unsafe {
