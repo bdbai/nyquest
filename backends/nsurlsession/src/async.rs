@@ -81,7 +81,7 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
         let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
             let read_len = if dbg!(data.len()) > dbg!(buf.len()) {
                 unsafe {
-                    inner.task.suspend();
+                    dbg!(inner.task.suspend());
                 }
                 buf.len()
             } else {
@@ -104,7 +104,7 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
         let inner_waker = coerce_waker(inner.shared.waker_ref());
         inner_waker.register(cx);
         unsafe {
-            inner.task.resume();
+            dbg!(inner.task.resume());
         }
         Poll::Pending
     }

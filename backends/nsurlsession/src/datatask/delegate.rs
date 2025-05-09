@@ -161,7 +161,7 @@ impl DataTaskDelegate {
         error: Option<&NSError>,
     ) {
         let ivars = self.ivars();
-        ivars.shared.completed.store(true, Ordering::SeqCst);
+        ivars.shared.completed.store(dbg!(true), Ordering::SeqCst);
         if let Some(error) = error {
             ivars.set_error(error.copy());
         }
@@ -176,11 +176,11 @@ impl DataTaskDelegate {
         let ivars = self.ivars();
         let mut buffer = ivars.shared.response_buffer.lock().unwrap();
         let data = unsafe { data.as_bytes_unchecked() };
-        if buffer.len() + data.len()
-            > ivars
+        if dbg!(buffer.len()) + dbg!(data.len())
+            > dbg!(ivars
                 .shared
                 .max_response_buffer_size
-                .load(Ordering::Acquire) as usize
+                .load(Ordering::Acquire) as usize)
         {
             drop(buffer);
             ivars.set_error(NyquestError::ResponseTooLarge);
@@ -228,7 +228,10 @@ impl DataTaskSharedContextRetained {
         let err = shared.received_error.lock().unwrap().take();
         err.map(Err::<(), _>).transpose().into_nyquest_result()?;
 
-        let mut buffer = self.retained.ivars().shared.response_buffer.lock().unwrap();
+        let mut buffer = shared.response_buffer.lock().unwrap();
+        if buffer.len() > shared.max_response_buffer_size.load(Ordering::Acquire) as usize {
+            return Err(NyquestError::ResponseTooLarge);
+        }
         Ok(f(&mut buffer))
     }
 
