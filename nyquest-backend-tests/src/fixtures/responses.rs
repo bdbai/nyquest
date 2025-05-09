@@ -198,7 +198,12 @@ mod tests {
                     let rx = rxs[is_blocking].lock().unwrap().take().unwrap();
 
                     let body = http_body_util::StreamBody::new(rx).boxed();
-                    let res = Response::new(body);
+                    let mut res = Response::new(body);
+
+                    // Workaround for NSURLSession buffering the first 512 bytes
+                    // https://developer.apple.com/forums/thread/64875
+                    res.headers_mut()
+                        .insert("Content-Type", "application/octet-stream".parse().unwrap());
 
                     (res, Ok(()))
                 }

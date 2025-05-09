@@ -178,11 +178,15 @@ impl DataTaskDelegate {
         data: &NSData,
     ) {
         let ivars = self.ivars();
-        let mut buffer = ivars.shared.response_buffer.lock().unwrap();
+        let mut guard = ivars.shared.response_buffer.lock().unwrap();
+        let (buffer, skip_buffer_size_check) = &mut *guard;
         let data = unsafe { data.as_bytes_unchecked() };
-        if let Some(max_response_buffer_size) = ivars.max_response_buffer_size {
+        if let Some(max_response_buffer_size) = ivars
+            .max_response_buffer_size
+            .filter(|_| !*skip_buffer_size_check)
+        {
             if buffer.len() + data.len() > max_response_buffer_size as usize {
-                drop(buffer);
+                drop(guard);
                 ivars.set_error(NyquestError::ResponseTooLarge);
                 unsafe {
                     data_task.cancel();
@@ -217,10 +221,10 @@ impl DataTaskSharedContextRetained {
     }
 
     pub(crate) fn take_response_buffer(&self) -> NyquestResult<Vec<u8>> {
-        self.with_response_buffer_mut(std::mem::take)
+        self.with_response_buffer_for_stream_mut(std::mem::take)
     }
 
-    pub(crate) fn with_response_buffer_mut<T>(
+    pub(crate) fn with_response_buffer_for_stream_mut<T>(
         &self,
         f: impl FnOnce(&mut Vec<u8>) -> T,
     ) -> NyquestResult<T> {
@@ -229,8 +233,10 @@ impl DataTaskSharedContextRetained {
         let err = shared.received_error.lock().unwrap().take();
         err.map(Err::<(), _>).transpose().into_nyquest_result()?;
 
-        let mut buffer = self.retained.ivars().shared.response_buffer.lock().unwrap();
-        Ok(f(&mut buffer))
+        let mut guard = self.retained.ivars().shared.response_buffer.lock().unwrap();
+        let (buffer, skip_buffer_size_check) = &mut *guard;
+        *skip_buffer_size_check = true;
+        Ok(f(buffer))
     }
 }
 

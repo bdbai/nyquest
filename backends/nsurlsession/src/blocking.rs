@@ -25,7 +25,7 @@ impl std::io::Read for NSUrlSessionBlockingResponse {
         let inner = &mut self.inner;
 
         loop {
-            let read_len = inner.shared.with_response_buffer_mut(|data| {
+            let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
                 let read_len = if data.len() > buf.len() {
                     unsafe {
                         inner.task.suspend();

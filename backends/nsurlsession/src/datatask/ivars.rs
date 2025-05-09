@@ -23,7 +23,7 @@ pub(super) struct DataTaskIvarsShared {
     pub(super) waker: GenericWaker,
     pub(super) completed: AtomicBool,
     pub(super) received_error: Mutex<Option<NyquestError>>,
-    pub(super) response_buffer: Mutex<Vec<u8>>,
+    pub(super) response_buffer: Mutex<(Vec<u8>, bool)>, // (buffer, skip_buffer_size_check)
 }
 
 impl DataTaskIvars {
