@@ -125,6 +125,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             DataTaskDelegate::into_shared(delegate)
         };
         let inner_waker = coerce_waker(shared.waker_ref());
+        eprintln!("sending async request");
         // TODO: cancellation
         let response = poll_fn(|cx| {
             if let Some(response) = shared.try_take_response().into_nyquest_result().transpose() {

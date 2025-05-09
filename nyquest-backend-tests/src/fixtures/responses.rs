@@ -203,7 +203,7 @@ mod tests {
                     // Workaround for NSURLSession buffering the first 512 bytes
                     // https://developer.apple.com/forums/thread/64875
                     res.headers_mut()
-                        .insert("Content-Type", "application/octet-stream".parse().unwrap());
+                        .insert("Content-Type", "application/json".parse().unwrap());
 
                     (res, Ok(()))
                 }
