@@ -36,7 +36,7 @@ pub fn get(uri: impl Into<Cow<'static, str>>) -> crate::Result<Response> {
     let client = crate::client::ClientBuilder::default()
         .build_blocking()
         .map_err(|e| match e {
-            crate::client::BuildClientError::NoBackend => Err(e).unwrap(),
+            crate::client::BuildClientError::NoBackend => panic!("{:?}", e),
             crate::client::BuildClientError::BackendError(e) => e,
         })?;
     client.request(Request::get(uri))

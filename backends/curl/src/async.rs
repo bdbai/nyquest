@@ -46,8 +46,8 @@ impl AsyncResponse for CurlAsyncResponse {
             .collect())
     }
 
-    async fn text(self: Pin<&mut Self>) -> nyquest_interface::Result<String> {
-        let buf = self.bytes().await?;
+    async fn text(mut self: Pin<&mut Self>) -> nyquest_interface::Result<String> {
+        let buf = self.as_mut().bytes().await?;
         #[cfg(feature = "charset")]
         if let Some((_, mut charset)) = self
             .get_header("content-type")?

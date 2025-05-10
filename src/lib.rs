@@ -98,11 +98,11 @@
 //! ## Features
 //!
 //! - `async`: Enable async support. The registered backend must implement the async interface
-//! to compile.
+//!   to compile.
 //! - `blocking`: Enable blocking support. The registered backend must implement the blocking
-//! interface to compile.
+//!   interface to compile.
 //! - `multipart`: Enable multipart form support. The registered backend must implement the
-//! multipart interface to compile.
+//!   multipart interface to compile.
 //! - `json`: Enable JSON request/response shorthand methods.
 //!
 //! [^1]: Subject to the backend's capability.
