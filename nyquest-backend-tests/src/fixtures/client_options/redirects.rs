@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn test_follow_redirects() {
         const PATH: &str = "client_options/follow_redirects";
-        let _handle = crate::add_hyper_fixture(PATH, |req| redirect_handler(req));
+        let _handle = crate::add_hyper_fixture(PATH, redirect_handler);
 
         let assertions = |status: u16, body: String| {
             assert_eq!(status, 200);
@@ -58,7 +58,7 @@ mod tests {
     fn test_no_redirects() {
         const PATH: &str = "client_options/no_redirects";
 
-        let _handle = crate::add_hyper_fixture(PATH, |req| redirect_handler(req));
+        let _handle = crate::add_hyper_fixture(PATH, redirect_handler);
 
         let assertions = |status: u16, body: String| {
             assert_eq!(status, 302);

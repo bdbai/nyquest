@@ -67,14 +67,13 @@ impl From<Response<BoxedBody>> for ResponseWrapper {
     }
 }
 
+type HyperServiceFixtureCallback = Box<
+    dyn Fn(Request<body::Incoming>) -> Pin<Box<dyn Future<Output = FixtureAssertionResult> + Send>>
+        + Send
+        + Sync,
+>;
 struct HyperServiceFixture {
-    svc: Box<
-        dyn Fn(
-                Request<body::Incoming>,
-            ) -> Pin<Box<dyn Future<Output = FixtureAssertionResult> + Send>>
-            + Send
-            + Sync,
-    >,
+    svc: HyperServiceFixtureCallback,
     assertion_failed_request: Option<Request<body::Incoming>>,
 }
 
@@ -171,12 +170,10 @@ async fn init_builder() -> io::Result<ClientBuilder> {
     BACKEND_INIT.call_once(init_backend);
 
     static HYPER_SERVICE_INIT: OnceCell<io::Result<String>> = OnceCell::const_new();
-    let res = match HYPER_SERVICE_INIT.get_or_init(setup_hyper_impl).await {
+    match HYPER_SERVICE_INIT.get_or_init(setup_hyper_impl).await {
         Ok(url) => Ok(ClientBuilder::default().base_url(url.clone())),
         Err(err) => Err(io::Error::new(err.kind(), err.to_string())),
-    };
-
-    res
+    }
 }
 
 fn init_builder_blocking() -> io::Result<ClientBuilder> {

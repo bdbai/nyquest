@@ -176,8 +176,7 @@ mod tests {
             let facts = TOKIO_RT.block_on(async {
                 let client = builder.build_async().await.unwrap();
                 let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
-                let header_value = res.get_header(HEADER_NAME).unwrap().pop();
-                header_value
+                res.get_header(HEADER_NAME).unwrap().pop()
             });
             assertions(facts);
         }
@@ -200,7 +199,7 @@ mod tests {
                     let rx = rxs[is_blocking].lock().unwrap().take().unwrap();
 
                     let body = http_body_util::StreamBody::new(rx).boxed();
-                    let mut res = Response::new(body);
+                    let res = Response::new(body);
 
                     (res, Ok(()))
                 }

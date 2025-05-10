@@ -95,7 +95,7 @@ mod tests {
 
         let assertions = |header_values: String| {
             let values: Vec<&str> = header_values.split('|').collect();
-            assert_eq!(values.get(0).copied().unwrap_or_default(), ACCEPT_VALUE);
+            assert_eq!(values.first().copied().unwrap_or_default(), ACCEPT_VALUE);
             assert_eq!(
                 values.get(1).copied().unwrap_or_default(),
                 CONTENT_LANGUAGE_VALUE

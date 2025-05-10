@@ -122,7 +122,7 @@ mod tests {
         let builder = crate::init_builder_blocking().unwrap();
 
         let assertions = |status_code: u16| {
-            assert!(status_code >= 200 && status_code < 300);
+            assert!((200..300).contains(&status_code));
         };
 
         #[cfg(feature = "blocking")]

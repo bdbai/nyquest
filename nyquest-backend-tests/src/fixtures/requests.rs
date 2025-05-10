@@ -51,7 +51,7 @@ mod tests {
 
         let assertions = |header_values: String| {
             let values: Vec<&str> = header_values.split('|').collect();
-            assert_eq!(values.get(0).copied().unwrap_or_default(), ACCEPT_VALUE);
+            assert_eq!(values.first().copied().unwrap_or_default(), ACCEPT_VALUE);
             assert_eq!(
                 values.get(1).copied().unwrap_or_default(),
                 CONTENT_LANGUAGE_VALUE
@@ -97,9 +97,9 @@ mod tests {
         }
     }
 
-    fn double_deref<'a, A: ?Sized, B: ?Sized>(
-        t: &'a Option<(impl Deref<Target = A>, impl Deref<Target = B>)>,
-    ) -> Option<(&'a A, &'a B)> {
+    fn double_deref<A: ?Sized, B: ?Sized>(
+        t: &Option<(impl Deref<Target = A>, impl Deref<Target = B>)>,
+    ) -> Option<(&A, &B)> {
         t.as_ref().map(|(a, b)| (&**a, &**b))
     }
     #[test]
@@ -133,13 +133,13 @@ mod tests {
                 content_type.as_deref(),
                 Some("application/x-www-form-urlencoded")
             );
-            let mut form = form_urlencoded::parse(&bytes);
+            let mut form = form_urlencoded::parse(bytes);
             assert_eq!(double_deref(&form.next()), Some(("key1", VALUE1)));
             assert_eq!(double_deref(&form.next()), Some(("key2", VALUE2)));
             assert_eq!(double_deref(&form.next()), Some(("key3", VALUE3)));
             assert_eq!(form.next().as_ref().map(|kv| &*kv.0), Some("key 4"));
             assert!(form.next().is_none());
-            assert!(memmem::find(&bytes, b"valu+e1").is_some());
+            assert!(memmem::find(bytes, b"valu+e1").is_some());
         };
         #[cfg(feature = "blocking")]
         {
@@ -154,7 +154,7 @@ mod tests {
             client
                 .request(NyquestRequest::post(PATH).with_body(req_body))
                 .unwrap();
-            assertions(&*received_facts[1].get().unwrap());
+            assertions(received_facts[1].get().unwrap());
         }
         #[cfg(feature = "async")]
         {
@@ -172,7 +172,7 @@ mod tests {
                     .await
                     .unwrap();
             });
-            assertions(&*received_facts[0].get().unwrap());
+            assertions(received_facts[0].get().unwrap());
         }
     }
 
@@ -283,7 +283,7 @@ mod tests {
             ]));
             let client = builder.build_blocking().unwrap();
             client.request(req_body).unwrap();
-            assertions(&*received_facts[1].get().unwrap());
+            assertions(received_facts[1].get().unwrap());
         }
         #[cfg(feature = "async")]
         {
@@ -299,7 +299,7 @@ mod tests {
                 let client = builder.build_async().await.unwrap();
                 client.request(req_body).await.unwrap();
             });
-            assertions(&*received_facts[0].get().unwrap());
+            assertions(received_facts[0].get().unwrap());
         }
     }
 
