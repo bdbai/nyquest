@@ -22,14 +22,15 @@ cfg_if::cfg_if! {
         #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
         mod multipart;
         mod response;
-
-        /// Registers [`NSUrlSessionBackend`] as global default.
-        pub fn register() {
-            nyquest_interface::register_backend(NSUrlSessionBackend);
-        }
     }
 }
 
 /// The backend implementation using `NSURLSession`.
 #[derive(Clone)]
 pub struct NSUrlSessionBackend;
+
+#[cfg(target_vendor = "apple")]
+/// Registers [`NSUrlSessionBackend`] as global default.
+pub fn register() {
+    nyquest_interface::register_backend(NSUrlSessionBackend);
+}
