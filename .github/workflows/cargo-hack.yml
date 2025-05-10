@@ -1,0 +1,46 @@
+name: Cargo Hack
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  feature-powerset:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: cargo-hack-x86_64-unknown-linux-gnu.tar.gz
+            extract: tar xzf
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: cargo-hack-x86_64-pc-windows-msvc.zip
+            extract: unzip
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary: cargo-hack-aarch64-apple-darwin.tar.gz
+            extract: tar xzf
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install cargo-hack
+      shell: bash
+      run: |
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          curl -LsSf https://github.com/taiki-e/cargo-hack/releases/latest/download/${{ matrix.binary }} -o cargo-hack.zip
+          unzip cargo-hack.zip -d ~/.cargo/bin
+        else
+          curl -LsSf https://github.com/taiki-e/cargo-hack/releases/latest/download/${{ matrix.binary }} | ${{ matrix.extract }} - -C ~/.cargo/bin
+        fi
+        
+    - name: Cargo hack check
+      run: cargo hack check --feature-powerset --no-dev-deps
