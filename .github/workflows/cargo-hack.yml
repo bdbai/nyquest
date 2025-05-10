@@ -43,4 +43,4 @@ jobs:
         fi
         
     - name: Cargo hack check
-      run: cargo hack check --feature-powerset --no-dev-deps
+      run: cargo hack check --feature-powerset --no-dev-deps --ignore-private
