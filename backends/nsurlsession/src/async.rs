@@ -3,7 +3,7 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use nyquest_interface::client::{BuildClientResult, ClientOptions};
+use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{futures_io, AsyncBackend, AsyncClient, AsyncResponse};
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::runtime::ProtocolObject;
@@ -160,7 +160,7 @@ impl AsyncBackend for NSUrlSessionBackend {
     async fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> BuildClientResult<Self::AsyncClient> {
+    ) -> NyquestResult<Self::AsyncClient> {
         Ok(NSUrlSessionAsyncClient {
             inner: NSUrlSessionClient::create(options)?,
         })

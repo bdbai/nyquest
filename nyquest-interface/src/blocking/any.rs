@@ -12,17 +12,15 @@ use std::{any::Any, io};
 
 use super::backend::BlockingResponse;
 use super::Request;
-use crate::client::{BuildClientResult, ClientOptions};
+use crate::client::ClientOptions;
+use crate::Result;
 
 /// Trait for type-erased blocking backend implementations.
 ///
 /// Automatically implemented for types implementing `BlockingBackend`.
 pub trait AnyBlockingBackend: Send + Sync + 'static {
     /// Creates a new blocking client with the given options.
-    fn create_blocking_client(
-        &self,
-        options: ClientOptions,
-    ) -> BuildClientResult<Box<dyn AnyBlockingClient>>;
+    fn create_blocking_client(&self, options: ClientOptions) -> Result<Box<dyn AnyBlockingClient>>;
 }
 
 /// Trait for type-erased blocking HTTP clients.
@@ -63,10 +61,7 @@ impl<B> AnyBlockingBackend for B
 where
     B: super::backend::BlockingBackend,
 {
-    fn create_blocking_client(
-        &self,
-        options: ClientOptions,
-    ) -> BuildClientResult<Box<dyn AnyBlockingClient>> {
+    fn create_blocking_client(&self, options: ClientOptions) -> Result<Box<dyn AnyBlockingClient>> {
         Ok(Box::new(self.create_blocking_client(options)?))
     }
 }

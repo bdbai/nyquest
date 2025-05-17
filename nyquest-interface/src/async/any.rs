@@ -16,7 +16,7 @@ use futures_io::AsyncRead;
 
 use super::backend::AsyncResponse;
 use super::Request;
-use crate::client::{BuildClientResult, ClientOptions};
+use crate::client::ClientOptions;
 use crate::Result;
 
 /// Trait for type-erased async backend implementations.
@@ -27,7 +27,7 @@ pub trait AnyAsyncBackend: Send + Sync + 'static {
     fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>>;
+    ) -> BoxFuture<Result<Box<dyn AnyAsyncClient>>>;
 }
 
 /// Trait for type-erased async HTTP clients.
@@ -100,7 +100,7 @@ where
     fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> BoxFuture<BuildClientResult<Box<dyn AnyAsyncClient>>> {
+    ) -> BoxFuture<Result<Box<dyn AnyAsyncClient>>> {
         Box::pin(async {
             super::backend::AsyncBackend::create_async_client(self, options)
                 .await

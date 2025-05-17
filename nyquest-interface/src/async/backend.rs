@@ -11,7 +11,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::Request as AsyncRequest;
-use crate::client::{BuildClientResult, ClientOptions};
+use crate::client::ClientOptions;
 use crate::Result;
 
 /// Trait for asynchronous HTTP clients.
@@ -44,7 +44,7 @@ pub trait AsyncBackend: Send + Sync + 'static {
     fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> impl Future<Output = BuildClientResult<Self::AsyncClient>> + Send;
+    ) -> impl Future<Output = Result<Self::AsyncClient>> + Send;
 }
 
 /// Trait for asynchronous HTTP responses.

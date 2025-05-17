@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use nyquest_interface::{blocking::AnyBlockingClient, register::BACKEND};
 
 use super::{response::Response, Request};
-use crate::client::{BuildClientError, BuildClientResult, ClientBuilder};
+use crate::client::ClientBuilder;
 
 /// A blocking HTTP client to make Requests with.
 ///
@@ -25,11 +25,11 @@ pub struct BlockingClient {
 
 impl ClientBuilder {
     /// Build a new blocking client with the given options.
-    pub fn build_blocking(self) -> BuildClientResult<BlockingClient> {
+    pub fn build_blocking(self) -> crate::Result<BlockingClient> {
         Ok(BlockingClient {
             client: BACKEND
                 .get()
-                .ok_or(BuildClientError::NoBackend)?
+                .expect("No backend registered. Please find a backend crate (e.g. nyquest-preset) and call the `register` method at program startup.")
                 .create_blocking_client(self.options)?,
         })
     }

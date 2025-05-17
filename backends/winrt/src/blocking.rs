@@ -1,7 +1,7 @@
 use std::io;
 
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
-use nyquest_interface::client::{BuildClientResult, ClientOptions};
+use nyquest_interface::client::ClientOptions;
 use nyquest_interface::Result as NyquestResult;
 use timer_ext::BlockingTimeoutExt;
 use windows::Web::Http::HttpCompletionOption;
@@ -60,7 +60,7 @@ impl BlockingBackend for crate::WinrtBackend {
     fn create_blocking_client(
         &self,
         options: ClientOptions,
-    ) -> BuildClientResult<Self::BlockingClient> {
+    ) -> NyquestResult<Self::BlockingClient> {
         Ok(self.create_blocking_client(options).into_nyquest_result()?)
     }
 }

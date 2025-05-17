@@ -199,7 +199,7 @@ impl nyquest_interface::blocking::BlockingBackend for crate::CurlBackend {
     fn create_blocking_client(
         &self,
         options: nyquest_interface::client::ClientOptions,
-    ) -> nyquest_interface::client::BuildClientResult<Self::BlockingClient> {
+    ) -> NyquestResult<Self::BlockingClient> {
         Ok(CurlEasyClient::new(options))
     }
 }

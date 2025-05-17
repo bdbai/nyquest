@@ -1,5 +1,5 @@
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
-use nyquest_interface::client::{BuildClientResult, ClientOptions};
+use nyquest_interface::client::ClientOptions;
 use nyquest_interface::Error as NyquestError;
 use objc2::runtime::ProtocolObject;
 use waker::BlockingWaker;
@@ -137,7 +137,7 @@ impl BlockingBackend for NSUrlSessionBackend {
     fn create_blocking_client(
         &self,
         options: ClientOptions,
-    ) -> BuildClientResult<Self::BlockingClient> {
+    ) -> NyquestResult<Self::BlockingClient> {
         Ok(NSUrlSessionBlockingClient {
             inner: NSUrlSessionClient::create(options)?,
         })
