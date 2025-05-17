@@ -150,7 +150,7 @@ impl AsyncBackend for crate::WinrtBackend {
     async fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> nyquest_interface::client::BuildClientResult<Self::AsyncClient> {
+    ) -> NyquestResult<Self::AsyncClient> {
         Ok(self.create_async_client(options).into_nyquest_result()?)
     }
 }

@@ -3,7 +3,6 @@ use std::task::{ready, Poll};
 use std::{pin::Pin, sync::Arc, task::Context};
 
 use curl::easy::Easy;
-use nyquest_interface::client::BuildClientResult;
 use nyquest_interface::r#async::{futures_io, AsyncResponse};
 use nyquest_interface::Error as NyquestError;
 
@@ -73,7 +72,7 @@ impl AsyncResponse for CurlAsyncResponse {
             .poll_bytes_async(|data| {
                 if let Some(max_response_buffer_size) = this.max_response_buffer_size {
                     if buf.len() + data.len() > max_response_buffer_size as usize {
-                        return Err(nyquest_interface::Error::ResponseTooLarge);
+                        return Err(NyquestError::ResponseTooLarge);
                     }
                 }
                 buf.extend_from_slice(data);
@@ -139,7 +138,7 @@ impl nyquest_interface::r#async::AsyncBackend for crate::CurlBackend {
     async fn create_async_client(
         &self,
         options: nyquest_interface::client::ClientOptions,
-    ) -> BuildClientResult<Self::AsyncClient> {
+    ) -> Result<Self::AsyncClient, NyquestError> {
         Ok(CurlMultiClient {
             inner: Arc::new(CurlMultiClientInner {
                 options,

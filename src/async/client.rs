@@ -3,10 +3,7 @@ use std::fmt::Debug;
 use nyquest_interface::{r#async::AnyAsyncClient, register::BACKEND};
 
 use super::response::Response;
-use crate::{
-    client::{BuildClientError, BuildClientResult},
-    ClientBuilder,
-};
+use crate::ClientBuilder;
 
 /// A async HTTP client to make Requests with.
 ///
@@ -21,13 +18,17 @@ pub struct AsyncClient {
 
 impl ClientBuilder {
     /// Build a new async client with the given options.
-    pub async fn build_async(self) -> BuildClientResult<AsyncClient> {
+    ///
+    /// # Panic
+    ///
+    /// Panics if no backend is registered.
+    pub async fn build_async(self) -> crate::Result<AsyncClient> {
         Ok(AsyncClient {
             client: BACKEND
                 .get()
-                .ok_or(BuildClientError::NoBackend)?
+                .expect("No backend registered. Please find a backend crate (e.g. nyquest-preset) and call the `register` method at program startup.")
                 .create_async_client(self.options)
-                .await?,
+                .await?
         })
     }
 }

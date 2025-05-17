@@ -9,7 +9,8 @@
 use std::{fmt, io};
 
 use super::Request;
-use crate::client::{BuildClientResult, ClientOptions};
+use crate::client::ClientOptions;
+use crate::Result;
 
 /// Trait for blocking HTTP clients.
 ///
@@ -36,10 +37,7 @@ pub trait BlockingBackend: Send + Sync + 'static {
     type BlockingClient: BlockingClient;
 
     /// Creates a new blocking client with the given options.
-    fn create_blocking_client(
-        &self,
-        options: ClientOptions,
-    ) -> BuildClientResult<Self::BlockingClient>;
+    fn create_blocking_client(&self, options: ClientOptions) -> Result<Self::BlockingClient>;
 }
 
 /// Trait for blocking HTTP responses.
