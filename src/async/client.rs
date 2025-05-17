@@ -18,6 +18,10 @@ pub struct AsyncClient {
 
 impl ClientBuilder {
     /// Build a new async client with the given options.
+    ///
+    /// # Panic
+    ///
+    /// Panics if no backend is registered.
     pub async fn build_async(self) -> crate::Result<AsyncClient> {
         Ok(AsyncClient {
             client: BACKEND

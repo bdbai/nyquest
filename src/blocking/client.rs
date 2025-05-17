@@ -25,6 +25,10 @@ pub struct BlockingClient {
 
 impl ClientBuilder {
     /// Build a new blocking client with the given options.
+    ///
+    /// # Panic
+    ///
+    /// Panics if no backend is registered.
     pub fn build_blocking(self) -> crate::Result<BlockingClient> {
         Ok(BlockingClient {
             client: BACKEND

@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 use std::pin::Pin;
 
+#[cfg(doc)]
+use nyquest_interface::r#async::futures_io;
 use nyquest_interface::r#async::AnyAsyncResponse;
 
 use super::AsyncReadStream;
