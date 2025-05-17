@@ -1,6 +1,6 @@
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::ClientOptions;
-use nyquest_interface::Error as NyquestError;
+use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::runtime::ProtocolObject;
 use waker::BlockingWaker;
 
