@@ -1,10 +1,7 @@
 use std::borrow::Cow;
 use std::sync::LazyLock;
 
-use nyquest_interface::client::{
-    BuildClientError, BuildClientResult, CachingBehavior, ClientOptions,
-};
-
+use nyquest_interface::client::{CachingBehavior, ClientOptions};
 use nyquest_interface::{Body, Error as NyquestError, Method, Request, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -25,7 +22,7 @@ pub struct NSUrlSessionClient {
 }
 
 impl NSUrlSessionClient {
-    pub(crate) fn create(options: ClientOptions) -> BuildClientResult<Self> {
+    pub(crate) fn create(options: ClientOptions) -> NyquestResult<Self> {
         let session = unsafe {
             let config = objc2_foundation::NSURLSessionConfiguration::defaultSessionConfiguration();
             if options.caching_behavior == CachingBehavior::Disabled {
@@ -73,8 +70,7 @@ impl NSUrlSessionClient {
         let base_url = options
             .base_url
             .map(|url| unsafe {
-                NSURL::URLWithString(&NSString::from_str(&url))
-                    .ok_or(BuildClientError::BackendError(NyquestError::InvalidUrl))
+                NSURL::URLWithString(&NSString::from_str(&url)).ok_or(NyquestError::InvalidUrl)
             })
             .transpose()?;
         Ok(Self {
