@@ -81,7 +81,7 @@
 //! ```no_run
 //! use nyquest::{body_form, ClientBuilder};
 //! use nyquest::r#async::Request;
-//! # async fn run() -> Result<(), nyquest::client::BuildClientError> {
+//! # async fn run() -> Result<(), nyquest::Error> {
 //! let client = ClientBuilder::default().build_async().await?;
 //! let body = Request::post("http://httpbin.org/post").with_body(body_form! {
 //!     "key1" => "value1",
