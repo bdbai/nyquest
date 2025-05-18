@@ -40,6 +40,6 @@ pub async fn get(uri: impl Into<Cow<'static, str>>) -> crate::Result<Response> {
 
 impl<S: BodyStream> IntoStream<BoxedStream> for S {
     fn into_stream(self) -> BoxedStream {
-        Box::new(self) as _
+        Box::pin(self) as _
     }
 }

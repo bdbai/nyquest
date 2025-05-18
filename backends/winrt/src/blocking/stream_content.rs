@@ -1,7 +1,5 @@
-use std::{
-    io,
-    sync::{Arc, Mutex},
-};
+use std::io;
+use std::sync::Mutex;
 
 use nyquest_interface::blocking::BoxedStream;
 use windows::{
@@ -10,12 +8,12 @@ use windows::{
     Web::Http::{HttpStreamContent, IHttpContent},
     Win32::{Foundation::ERROR_CANCELLED, System::WinRT::IBufferByteAccess},
 };
-use windows_core::{implement, AgileReference, Interface};
+use windows_core::{implement, AgileReference, IUnknownImpl, Interface};
 use windows_future::IAsyncOperationWithProgress;
 
 #[implement(IInputStream)]
 struct BlockingReadInputStream {
-    stream: Arc<Mutex<Option<BoxedStream>>>,
+    stream: Mutex<Option<BoxedStream>>,
 }
 
 // TODO: do work on caller thread
@@ -26,13 +24,13 @@ impl IInputStream_Impl for BlockingReadInputStream_Impl {
         count: u32,
         options: InputStreamOptions,
     ) -> windows_core::Result<IAsyncOperationWithProgress<IBuffer, u32>> {
-        let stream = self.stream.clone();
+        let this = self.to_object();
         let Some(buffer) = buffer.as_ref() else {
             return Err(windows_core::Error::empty());
         };
         let buffer = AgileReference::new(buffer)?;
         Ok(IAsyncOperationWithProgress::spawn(move || {
-            let Ok(mut stream) = stream.lock() else {
+            let Ok(mut stream) = this.stream.lock() else {
                 return Err(windows_core::Error::new(
                     ERROR_CANCELLED.into(),
                     "poisoned mutex",
@@ -80,7 +78,7 @@ impl IClosable_Impl for BlockingReadInputStream_Impl {
 pub(super) fn transform_stream(stream: BoxedStream) -> io::Result<IHttpContent> {
     let content =
         HttpStreamContent::CreateFromInputStream(&IInputStream::from(BlockingReadInputStream {
-            stream: Arc::new(Mutex::new(Some(stream))),
+            stream: Mutex::new(Some(stream)),
         }))?
         .cast()?;
     Ok(content)
