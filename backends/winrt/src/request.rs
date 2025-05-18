@@ -143,6 +143,19 @@ pub(crate) fn create_body<S>(
             }
             content.cast()?
         }
-        Body::Stream(stream) => map_stream(stream.stream)?,
+        Body::Stream {
+            stream,
+            content_type,
+        } => {
+            let content = map_stream(stream.stream)?;
+            let headers = content.Headers()?;
+            let content_type = HttpMediaTypeHeaderValue::Create(&HSTRING::from(&*content_type))?;
+            headers.SetContentType(&content_type)?;
+            if let Some(len) = stream.content_length {
+                let len = PropertyValue::CreateUInt64(len)?;
+                headers.SetContentLength(&len.cast::<IReference<u64>>()?)?;
+            }
+            content.cast()?
+        }
     })
 }

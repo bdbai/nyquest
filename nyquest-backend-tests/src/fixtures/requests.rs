@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use std::{
+        io::Cursor,
         ops::Deref,
         sync::{Arc, OnceLock},
     };
@@ -330,6 +331,69 @@ mod tests {
                 let builder = crate::init_builder().await.unwrap();
                 let client = builder.build_async().await.unwrap();
                 let response = client.request(NyquestRequest::put(PATH)).await.unwrap();
+                assert_eq!(response.status(), 200);
+            });
+        }
+    }
+
+    #[test]
+    fn test_stream_upload() {
+        const PATH: &str = "requests/stream_upload";
+        const CONTENT_TYPE: &str = "text/plain";
+        const CONTENTS: &str = "1234567890";
+
+        let _handle = crate::add_hyper_fixture(PATH, {
+            move |req| async move {
+                let content_type = req
+                    .headers()
+                    .get("content-type")
+                    .map(|v| v.to_str().unwrap_or_default().to_owned())
+                    .unwrap_or_default();
+                let content_length = req
+                    .headers()
+                    .get("content-length")
+                    .map(|v| v.to_str().unwrap_or_default().to_owned())
+                    .unwrap_or_default();
+                let mut res = Response::new(Full::default());
+                if content_type != CONTENT_TYPE {
+                    *res.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+                }
+                if content_length != "10" {
+                    *res.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
+                }
+                let body = req.into_body().collect().await.unwrap().to_bytes();
+                if body != CONTENTS.as_bytes() {
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                }
+                (res, Ok(()))
+            }
+        });
+
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
+            let body = NyquestBlockingBody::stream(Cursor::new(CONTENTS), CONTENT_TYPE, 10);
+            let response = client
+                .request(NyquestRequest::put(PATH).with_body(body))
+                .unwrap();
+            assert_eq!(response.status(), 200);
+        }
+
+        #[cfg(feature = "async")]
+        {
+            TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder.build_async().await.unwrap();
+                let body = NyquestAsyncBody::stream(
+                    futures_util::io::Cursor::new(CONTENTS),
+                    CONTENT_TYPE,
+                    10,
+                );
+                let response = client
+                    .request(NyquestRequest::put(PATH).with_body(body))
+                    .await
+                    .unwrap();
                 assert_eq!(response.status(), 200);
             });
         }

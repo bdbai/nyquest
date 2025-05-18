@@ -59,21 +59,17 @@ The following items are planned in MVP:
 - [x] Nyquest blocking API
 - [x] Nyquest async API
 - [x] Backend: WinRT HttpClient
-  - [x] Blocking
-  - [x] Async
 - [x] Backend: libcurl
-  - [x] Blocking
-  - [x] Async
 - [x] Backend: NSURLSession
 - [x] Client Options
 - [x] Streaming download
+- [x] Streaming upload (WIP)
 - [x] Test framework for backends
 - [x] Presets
 - [x] Documentation
 
 Future work may include:
 
-- [ ] Streaming upload
 - [ ] Backend: WASM fetch
 - [ ] Backend: reqwest
 - [ ] Cookie management

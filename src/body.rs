@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use nyquest_interface::Body as BodyImpl;
 #[cfg(feature = "multipart")]
-use nyquest_interface::{Part as PartImpl, PartBody as PartBodyImpl, StreamReader};
+use nyquest_interface::{Part as PartImpl, PartBody as PartBodyImpl, SizedStream};
 
 /// A request body generic over async or blocking stream.
 pub struct Body<S> {
@@ -88,6 +88,23 @@ impl<S> Body<S> {
             },
         }
     }
+
+    /// Constructs a streaming body from the given stream and content type.
+    pub fn stream(
+        stream: impl private::IntoStream<S>,
+        content_type: impl Into<Cow<'static, str>>,
+        content_length: impl Into<Option<u64>>,
+    ) -> Self {
+        Self {
+            inner: BodyImpl::Stream {
+                stream: SizedStream {
+                    stream: stream.into_stream(),
+                    content_length: content_length.into(),
+                },
+                content_type: content_type.into(),
+            },
+        }
+    }
 }
 
 /// Constructs a form body from a predefined set of fields.
@@ -160,6 +177,12 @@ impl<S> Part<S> {
     }
 }
 
+pub(crate) mod private {
+    pub trait IntoStream<B> {
+        fn into_stream(self) -> B;
+    }
+}
+
 #[cfg(feature = "multipart")]
 impl<S> PartBody<S> {
     /// Constructs a part body from a string.
@@ -183,12 +206,15 @@ impl<S> PartBody<S> {
         }
     }
 
-    #[doc(hidden)]
-    pub fn stream(stream: S, content_length: Option<u64>) -> Self {
+    /// Constructs a part body from a stream.
+    pub fn stream(
+        stream: impl private::IntoStream<S>,
+        content_length: impl Into<Option<u64>>,
+    ) -> Self {
         Self {
-            inner: PartBodyImpl::Stream(StreamReader {
-                stream,
-                content_length,
+            inner: PartBodyImpl::Stream(SizedStream {
+                stream: stream.into_stream(),
+                content_length: content_length.into(),
             }),
         }
     }

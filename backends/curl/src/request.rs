@@ -68,7 +68,7 @@ pub fn populate_request<S>(
             easy.post_fields_copy(content)
                 .into_nyquest_result("set CURLOPT_COPYPOSTFIELDS")?;
         }
-        Some(Body::Stream(_)) => unimplemented!(),
+        Some(Body::Stream { .. }) => unimplemented!(),
         Some(Body::Form { fields }) => {
             let mut buf =
                 Vec::with_capacity(fields.iter().map(|(k, v)| k.len() + v.len() + 2).sum());
