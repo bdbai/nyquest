@@ -528,7 +528,6 @@ dependencies = [
  "futures-util",
  "iconv-native",
  "memchr",
- "mio",
  "nyquest-interface",
  "slab",
 ]

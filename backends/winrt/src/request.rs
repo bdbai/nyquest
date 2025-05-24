@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::io;
 
-use nyquest_interface::{Body, Method, Request, Result as NyquestResult};
+use nyquest_interface::{Body, Method, Request, Result as NyquestResult, SizedStream};
 use windows::Foundation::{IReference, PropertyValue};
 use windows::Storage::Streams::IBuffer;
 use windows::Web::Http::Headers::HttpMediaTypeHeaderValue;
@@ -90,7 +90,7 @@ fn create_content_from_bytes(
 
 pub(crate) fn create_body<S>(
     body: Body<S>,
-    map_stream: &mut impl FnMut(S) -> io::Result<IHttpContent>,
+    map_stream: &mut impl FnMut(SizedStream<S>) -> io::Result<IHttpContent>,
 ) -> io::Result<IHttpContent> {
     Ok(match body {
         Body::Bytes {
@@ -120,7 +120,14 @@ pub(crate) fn create_body<S>(
                     PartBody::Bytes { content } => {
                         create_content_from_bytes(content, part.content_type)?
                     }
-                    PartBody::Stream(stream) => map_stream(stream.stream)?,
+                    PartBody::Stream(stream) => {
+                        let content = map_stream(stream)?;
+                        let content_type =
+                            HttpMediaTypeHeaderValue::Create(&HSTRING::from(&*part.content_type))?;
+                        let headers = content.Headers()?;
+                        headers.SetContentType(&content_type)?;
+                        content
+                    }
                 };
                 let headers = part_content.Headers()?;
                 for (name, value) in part.headers {
@@ -147,11 +154,12 @@ pub(crate) fn create_body<S>(
             stream,
             content_type,
         } => {
-            let content = map_stream(stream.stream)?;
+            let content_length = stream.content_length;
+            let content = map_stream(stream)?;
             let headers = content.Headers()?;
             let content_type = HttpMediaTypeHeaderValue::Create(&HSTRING::from(&*content_type))?;
             headers.SetContentType(&content_type)?;
-            if let Some(len) = stream.content_length {
+            if let Some(len) = content_length {
                 let len = PropertyValue::CreateUInt64(len)?;
                 headers.SetContentLength(&len.cast::<IReference<u64>>()?)?;
             }
