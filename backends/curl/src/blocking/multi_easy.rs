@@ -93,7 +93,7 @@ impl MaybeAttachedEasy {
 impl MultiEasy {
     pub fn new(share: Share) -> Self {
         let state = Arc::new(Mutex::new(MultiEasyState::default()));
-        let mut easy = Easy::new(super::handler::BlockingHandler::new(state.clone()));
+        let easy = Easy::new(super::handler::BlockingHandler::new(state.clone()));
         let mut multi = Multi::new();
         multi.set_max_connects(5).expect("set max connects"); // Default of easy is 5
         MultiEasy {

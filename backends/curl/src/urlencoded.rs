@@ -1,12 +1,8 @@
 use std::ffi::c_char;
 
-use curl::easy::{Easy, Easy2, Handler};
+use curl::easy::{Easy2, Handler};
 use curl_sys::curl_free;
 use memchr::memmem;
-
-pub fn curl_escape(easy: &Easy, str: impl AsRef<[u8]>) -> Vec<u8> {
-    curl_escape_raw(easy.raw(), str)
-}
 
 pub fn curl_escape_easy2<H: Handler>(easy: &Easy2<H>, str: impl AsRef<[u8]>) -> Vec<u8> {
     curl_escape_raw(easy.raw(), str)

@@ -5,9 +5,8 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use std::{io, thread};
 
-use curl::easy::Easy;
-use curl::multi::{EasyHandle, Multi, MultiWaker};
-use curl_sys::{CURLPAUSE_RECV, CURLPAUSE_RECV_CONT, CURLPAUSE_SEND, CURLPAUSE_SEND_CONT};
+use curl::multi::{Multi, MultiWaker};
+use curl_sys::{CURLPAUSE_RECV_CONT, CURLPAUSE_SEND_CONT};
 use futures_channel::oneshot;
 use futures_util::lock::Mutex as FuturesMutex;
 use futures_util::task::AtomicWaker;
@@ -17,8 +16,10 @@ use slab::Slab;
 use crate::error::IntoNyquestResult;
 use crate::share::{Share, ShareHandle};
 
+type Easy2 = curl::easy::Easy2<super::handler::AsyncHandler>;
+type Easy2Handle = curl::multi::Easy2Handle<super::handler::AsyncHandler>;
+
 pub const CURLPAUSE_CONT: i32 = CURLPAUSE_RECV_CONT | CURLPAUSE_SEND_CONT;
-pub const CURLPAUSE_ALL: i32 = CURLPAUSE_RECV | CURLPAUSE_SEND;
 
 pub(super) struct RequestHandle {
     shared_context: Arc<SharedRequestContext>,
@@ -52,7 +53,7 @@ impl SharedRequestContext {
 
 enum LoopTask {
     ConstructHandle(
-        Easy,
+        Easy2,
         oneshot::Sender<NyquestResult<Arc<SharedRequestContext>>>,
     ),
     QueryHandleResponse(
@@ -155,7 +156,6 @@ struct LoopManagerShared {
 pub(super) struct LoopManager {
     inner: FuturesMutex<Option<LoopManagerShared>>,
     share: Share,
-    pub(super) options: nyquest_interface::client::ClientOptions,
 }
 
 impl LoopManagerShared {
@@ -177,8 +177,8 @@ impl LoopManagerShared {
     }
     async fn start_request(
         self,
-        easy: Easy,
-    ) -> NyquestResult<Result<RequestHandle, (Option<Easy>, Self)>> {
+        easy: Easy2,
+    ) -> NyquestResult<Result<RequestHandle, (Option<Easy2>, Self)>> {
         let (tx, rx) = oneshot::channel();
         {
             let mut inner = self.inner.lock().unwrap();
@@ -215,20 +215,19 @@ pub(super) enum MaybeStartedRequest {
 }
 
 impl LoopManager {
-    pub(super) fn new(options: nyquest_interface::client::ClientOptions) -> Self {
+    pub(super) fn new() -> Self {
         Self {
             inner: FuturesMutex::new(None),
             share: Share::new(),
-            options,
         }
     }
     pub(super) async fn start_request(
         &self,
-        req: &nyquest_interface::r#async::Request,
+        mut easy: Easy2,
     ) -> nyquest_interface::Result<MaybeStartedRequest> {
         unsafe {
             self.share
-                .bind_easy(&mut easy)
+                .bind_easy2(&mut easy)
                 .expect("failed to bind easy handle to share");
         }
         loop {
@@ -267,26 +266,6 @@ impl Drop for LoopManager {
     }
 }
 
-#[derive(Clone, Copy)]
-pub(super) struct EasyPause(*mut curl_sys::CURL);
-
-impl EasyPause {
-    pub(super) fn new(handle: *mut curl_sys::CURL) -> Self {
-        Self(handle)
-    }
-
-    /// ## Safety
-    /// The caller must ensure:
-    /// 1. The handle is a valid CURL handle.
-    /// 2. The handle is either within the same thread or we are in a callback.
-    pub(super) unsafe fn pause(&self) {
-        curl_sys::curl_easy_pause(self.0, CURLPAUSE_ALL);
-    }
-}
-
-// Safety: Nothing can happen when the handle is moved between threads without "unsafe"
-unsafe impl Send for EasyPause {}
-
 fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
     let multi = Multi::new();
     let request_manager = LoopManagerShared {
@@ -299,7 +278,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
         return;
     }
     // TODO: store ctx in Easy2Handle
-    let mut slab = Slab::<(EasyHandle, Arc<SharedRequestContext>)>::new();
+    let mut slab = Slab::<(Easy2Handle, Arc<SharedRequestContext>)>::new();
     let mut tasks = Default::default();
     let mut last_call = false;
     loop {
@@ -312,66 +291,10 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                         let slab_entry = slab.vacant_entry();
                         let id = slab_entry.key();
                         let ctx = Arc::new(SharedRequestContext::new(id));
-                        let pause = EasyPause::new(easy.raw());
-                        easy.header_function({
-                            let ctx = ctx.clone();
-                            move |h| {
-                                let mut state = ctx.state.lock().unwrap();
-                                if h == b"\r\n" {
-                                    let is_redirect =
-                                        [301, 302, 303, 307, 308].contains(&state.temp_status_code);
-                                    // TODO: handle direct
-                                    if !is_redirect && !state.is_established {
-                                        state.header_finished = true;
-                                        unsafe {
-                                            pause.pause();
-                                        }
-                                    }
-                                } else if h.contains(&b':') {
-                                    state
-                                        .response_headers_buffer
-                                        .push(h.strip_suffix(b"\r\n").unwrap_or(h).into());
-                                } else {
-                                    let mut status_components =
-                                        h.splitn(3, u8::is_ascii_whitespace).skip(1);
-
-                                    if let Some(status) = status_components
-                                        .next()
-                                        .and_then(|s| std::str::from_utf8(s).ok())
-                                        .and_then(|s| s.parse().ok())
-                                    {
-                                        state.temp_status_code = status;
-                                    }
-                                    state.is_established = status_components
-                                        .next()
-                                        .map(|s| {
-                                            s.eq_ignore_ascii_case(b"connection established\r\n")
-                                        })
-                                        .unwrap_or(false);
-                                }
-                                drop(state);
-                                ctx.waker.wake();
-                                true
-                            }
-                        })
-                        .expect("set curl header function");
-                        easy.write_function({
-                            let ctx = ctx.clone();
-                            move |f| {
-                                let mut state = ctx.state.lock().unwrap();
-                                state.header_finished = true;
-                                // TODO: handle max response buffer size
-                                state.response_buffer.extend_from_slice(f);
-                                drop(state);
-                                unsafe {
-                                    pause.pause();
-                                }
-                                ctx.waker.wake();
-                                Ok(f.len())
-                            }
-                        })
-                        .expect("set curl write function");
-                        let handle = multi.add(easy).into_nyquest_result("curl_multi_add_handle");
+                        easy.get_mut().ctx = Some(ctx.clone());
+                        let handle = multi
+                            .add2(easy)
+                            .into_nyquest_result("curl_multi_add_handle");
                         let send_res = match handle {
                             Ok(mut handle) => {
                                 handle
@@ -430,7 +353,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     }
                     LoopTask::DropHandle(id) => {
                         let (handle, _) = slab.remove(id);
-                        let _ = multi.remove(handle);
+                        let _ = multi.remove2(handle);
                     }
                     LoopTask::Shutdown => {
                         // TODO: handle shutdown
@@ -455,7 +378,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                             state.result = Some(Err(err.clone()).into_nyquest_result(err_ctx));
                         }
                     }
-                    multi.remove(handle).ok();
+                    multi.remove2(handle).ok();
                 }
                 break;
             }
@@ -469,7 +392,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             let Ok(mut shared_state) = ctx.state.lock() else {
                 return;
             };
-            if let Some(res) = msg.result_for(handle) {
+            if let Some(res) = msg.result_for2(handle) {
                 shared_state.result = Some(res.into_nyquest_result("curl_multi_info_read cb"));
             }
             drop(shared_state);

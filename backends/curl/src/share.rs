@@ -4,7 +4,7 @@ use std::{
 };
 
 use curl::{
-    easy::{Easy, Easy2, Handler},
+    easy::{Easy2, Handler},
     ShareError,
 };
 use curl_sys::{
@@ -64,20 +64,6 @@ impl Share {
         ShareHandle {
             _share: self.raw.clone(),
         }
-    }
-
-    /// # Safety
-    ///
-    /// Callers ensure that the ShareHandle should not be dropped earlier than the easy handle.
-    pub unsafe fn bind_easy(&self, easy: &mut Easy) -> NyquestResult<()> {
-        unsafe {
-            let res = curl_easy_setopt(easy.raw(), CURLOPT_SHARE, self.raw.raw);
-            if res != CURLE_OK {
-                let err = curl::Error::new(res);
-                return Err(err).into_nyquest_result("blocking bind_easy");
-            }
-        }
-        Ok(())
     }
 
     /// # Safety
