@@ -9,6 +9,6 @@ mod body;
 
 pub use any::{AnyBlockingBackend, AnyBlockingClient, AnyBlockingResponse};
 pub use backend::{BlockingBackend, BlockingClient, BlockingResponse};
-pub use body::{Body, BoxedStream};
+pub use body::{Body, BodyStream, BoxedStream};
 /// Type alias for blocking HTTP requests.
 pub type Request = crate::Request<body::BoxedStream>;

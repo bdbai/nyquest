@@ -33,7 +33,7 @@ mod error;
 pub mod register;
 mod request;
 
-pub use body::{Body, StreamReader};
+pub use body::{Body, SizedStream};
 #[cfg(feature = "multipart")]
 #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use body::{Part, PartBody};

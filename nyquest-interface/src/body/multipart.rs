@@ -5,7 +5,7 @@
 
 use std::{borrow::Cow, fmt::Debug};
 
-use super::StreamReader;
+use super::SizedStream;
 
 /// Represents a part in a multipart form.
 ///
@@ -33,9 +33,8 @@ pub enum PartBody<S> {
         /// The bytes that make up this part's content.
         content: Cow<'static, [u8]>,
     },
-    /// Streaming content for larger part bodies.
-    #[doc(hidden)]
-    Stream(StreamReader<S>),
+    /// Streaming part data.
+    Stream(SizedStream<S>),
 }
 
 impl<S> Debug for Part<S>

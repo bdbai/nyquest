@@ -13,8 +13,7 @@ mod multipart;
 pub use multipart::{Part, PartBody};
 
 /// A wrapper for streaming request body data.
-#[doc(hidden)]
-pub struct StreamReader<S> {
+pub struct SizedStream<S> {
     /// The underlying stream that provides the body data.
     pub stream: S,
     /// Optional content length of the stream, if known in advance.
@@ -45,11 +44,15 @@ pub enum Body<S> {
         parts: Vec<Part<S>>,
     },
     /// Streaming body data.
-    #[doc(hidden)]
-    Stream(StreamReader<S>),
+    Stream {
+        /// The underlying stream that provides the body data.
+        stream: SizedStream<S>,
+        /// The MIME content type for the stream.
+        content_type: Cow<'static, str>,
+    },
 }
 
-impl<S> Debug for StreamReader<S>
+impl<S> Debug for SizedStream<S>
 where
     S: Debug,
 {
@@ -84,9 +87,13 @@ where
                 .debug_struct("Body::Multipart")
                 .field("parts", parts)
                 .finish(),
-            Body::Stream(stream) => f
+            Body::Stream {
+                stream: reader,
+                content_type,
+            } => f
                 .debug_struct("Body::Stream")
-                .field("stream", stream)
+                .field("reader", reader)
+                .field("content_type", content_type)
                 .finish(),
         }
     }
@@ -112,12 +119,18 @@ where
             Body::Multipart { parts } => Body::Multipart {
                 parts: parts.clone(),
             },
-            Body::Stream(stream) => Body::Stream(stream.clone()),
+            Body::Stream {
+                stream: reader,
+                content_type,
+            } => Body::Stream {
+                stream: reader.clone(),
+                content_type: content_type.clone(),
+            },
         }
     }
 }
 
-impl<S> Clone for StreamReader<S>
+impl<S> Clone for SizedStream<S>
 where
     S: Clone,
 {
