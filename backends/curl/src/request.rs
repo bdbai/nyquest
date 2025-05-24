@@ -1,15 +1,16 @@
 use std::io::ErrorKind;
 
 use curl::easy::{Easy2, Handler, List};
-use nyquest_interface::{Body, Method, Request};
+use nyquest_interface::{Body, Method, Request, SizedStream};
 
-use crate::{error::IntoNyquestResult, urlencoded::curl_escape_easy2};
+use crate::error::IntoNyquestResult;
 
 pub fn populate_request<S, H: Handler>(
     url: &str,
-    req: &Request<S>,
+    req: Request<S>,
     options: &nyquest_interface::client::ClientOptions,
     easy: &mut Easy2<H>,
+    populate_stream: impl FnOnce(&mut Easy2<H>, SizedStream<S>) -> nyquest_interface::Result<()>,
 ) -> nyquest_interface::Result<()> {
     if !options.use_default_proxy {
         easy.noproxy("*")
@@ -58,7 +59,7 @@ pub fn populate_request<S, H: Handler>(
             .append(&format!("{}: {}", name, value))
             .into_nyquest_result("additional_headers curl_slist_append")?;
     }
-    match &req.body {
+    match req.body {
         Some(Body::Bytes {
             content,
             content_type,
@@ -66,21 +67,32 @@ pub fn populate_request<S, H: Handler>(
             headers
                 .append(&format!("content-type: {}", content_type))
                 .into_nyquest_result("set content-type curl_slist_append")?;
-            easy.post_fields_copy(content)
+            easy.post_fields_copy(&content)
                 .into_nyquest_result("set CURLOPT_COPYPOSTFIELDS")?;
         }
-        Some(Body::Stream { .. }) => unimplemented!(),
+        Some(Body::Stream {
+            stream,
+            content_type,
+        }) => {
+            headers
+                .append(&format!("content-type: {}", content_type))
+                .into_nyquest_result("set content-type curl_slist_append")?;
+            if let Some(len) = stream.content_length {
+                easy.post_field_size(len as u64)
+                    .into_nyquest_result("set CURLOPT_POSTFIELDSIZE")?;
+            }
+            populate_stream(easy, stream)?;
+        }
         Some(Body::Form { fields }) => {
             let mut buf =
-                Vec::with_capacity(fields.iter().map(|(k, v)| k.len() + v.len() + 2).sum());
+                String::with_capacity(fields.iter().map(|(k, v)| k.len() + v.len() + 2).sum());
             for (name, value) in fields {
-                buf.extend_from_slice(&curl_escape_easy2(easy, &**name));
-                buf.push(b'=');
-                buf.extend_from_slice(&curl_escape_easy2(easy, &**value));
-                buf.push(b'&');
+                buf.push_str(&easy.url_encode(name.as_bytes()));
+                buf.push('=');
+                buf.push_str(&easy.url_encode(value.as_bytes()));
+                buf.push('&');
             }
-            buf.pop();
-            easy.post_fields_copy(&buf)
+            easy.post_fields_copy(buf.replace("%20", "+").as_bytes())
                 .into_nyquest_result("set CURLOPT_COPYPOSTFIELDS")?;
         }
         #[cfg(feature = "multipart")]

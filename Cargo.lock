@@ -527,7 +527,6 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "iconv-native",
- "memchr",
  "nyquest-interface",
  "slab",
 ]

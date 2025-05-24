@@ -42,4 +42,3 @@ futures-util = { version = "0.3", optional = true, default-features = false, fea
     "std",
 ] }
 slab = { version = "0.4", optional = true, default-features = false }
-memchr = "2"

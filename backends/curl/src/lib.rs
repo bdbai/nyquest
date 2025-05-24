@@ -16,7 +16,6 @@ mod request;
 mod share;
 mod state;
 mod url;
-mod urlencoded;
 
 /// The backend implementation using libcurl.
 pub struct CurlBackend;

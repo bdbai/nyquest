@@ -1,12 +1,12 @@
 use std::collections::VecDeque;
 use std::future::poll_fn;
-use std::sync::{Arc, Mutex};
+use std::mem::ManuallyDrop;
+use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use std::{io, thread};
 
 use curl::multi::{Multi, MultiWaker};
-use curl_sys::{CURLPAUSE_RECV_CONT, CURLPAUSE_SEND_CONT};
 use futures_channel::oneshot;
 use futures_util::lock::Mutex as FuturesMutex;
 use futures_util::task::AtomicWaker;
@@ -19,8 +19,6 @@ use crate::state::RequestState;
 
 type Easy2 = curl::easy::Easy2<super::handler::AsyncHandler>;
 type Easy2Handle = curl::multi::Easy2Handle<super::handler::AsyncHandler>;
-
-pub const CURLPAUSE_CONT: i32 = CURLPAUSE_RECV_CONT | CURLPAUSE_SEND_CONT;
 
 pub(super) struct RequestHandle {
     shared_context: Arc<SharedRequestContext>,
@@ -46,16 +44,37 @@ impl SharedRequestContext {
 enum LoopTask {
     ConstructHandle(
         Easy2,
-        oneshot::Sender<NyquestResult<Arc<SharedRequestContext>>>,
+        oneshot::Sender<Result<NyquestResult<Arc<SharedRequestContext>>, Easy2>>,
     ),
     QueryHandleResponse(
         usize,
         RequestHandle,
         oneshot::Sender<NyquestResult<super::CurlAsyncResponse>>,
     ),
-    UnpauseHandle(usize),
+    UnpauseRecvHandle(usize),
+    UnpauseSendHandle(usize),
     DropHandle(usize),
     Shutdown,
+}
+
+struct LoopTaskWrapper(ManuallyDrop<LoopTask>);
+
+impl From<LoopTask> for LoopTaskWrapper {
+    fn from(task: LoopTask) -> Self {
+        Self(ManuallyDrop::new(task))
+    }
+}
+
+impl Drop for LoopTaskWrapper {
+    fn drop(&mut self) {
+        let task = unsafe { ManuallyDrop::take(&mut self.0) };
+        match task {
+            LoopTask::ConstructHandle(handle, tx) => {
+                tx.send(Err(handle)).ok();
+            }
+            _ => {}
+        }
+    }
 }
 
 impl RequestHandle {
@@ -122,7 +141,7 @@ impl RequestHandle {
             return Poll::Ready(res.map(|()| None));
         };
         self.manager
-            .dispatch_task(LoopTask::UnpauseHandle(self.shared_context.id));
+            .dispatch_task(LoopTask::UnpauseRecvHandle(self.shared_context.id));
         self.shared_context.waker.register(cx.waker());
         Poll::Pending
     }
@@ -136,13 +155,13 @@ impl Drop for RequestHandle {
 }
 
 struct LoopManagerInner {
-    tasks: VecDeque<LoopTask>,
+    tasks: VecDeque<LoopTaskWrapper>,
     multi_waker: MultiWaker,
 }
 
 #[derive(Clone)]
 struct LoopManagerShared {
-    inner: Arc<Mutex<LoopManagerInner>>,
+    inner: Weak<Mutex<LoopManagerInner>>,
 }
 
 pub(super) struct LoopManager {
@@ -162,29 +181,37 @@ impl LoopManagerShared {
             .expect("failed to spawn curl multi loop");
         multi_waker_rx.await.expect("not receiving request manager")
     }
-    fn dispatch_task(&self, task: LoopTask) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.tasks.push_back(task);
+    fn dispatch_task(&self, task: LoopTask) -> Result<(), LoopTask> {
+        let Some(inner) = self.inner.upgrade() else {
+            return Err(task);
+        };
+        let mut inner = inner.lock().unwrap();
+        inner.tasks.push_back(task.into());
         inner.multi_waker.wakeup().ok();
+        Ok(())
     }
     async fn start_request(
         self,
         easy: Easy2,
-    ) -> NyquestResult<Result<RequestHandle, (Option<Easy2>, Self)>> {
+    ) -> NyquestResult<Result<RequestHandle, (Easy2, Self)>> {
         let (tx, rx) = oneshot::channel();
         {
-            let mut inner = self.inner.lock().unwrap();
+            let Some(inner) = self.inner.upgrade() else {
+                return Ok(Err((easy, self)));
+            };
+            let mut inner = inner.lock().unwrap();
             if inner.multi_waker.wakeup().is_err() {
                 drop(inner);
-                return Ok(Err((Some(easy), self)));
+                return Ok(Err((easy, self)));
             }
             let request = LoopTask::ConstructHandle(easy, tx);
-            inner.tasks.push_back(request);
+            inner.tasks.push_back(request.into());
         }
         let shared_context = match rx.await {
-            Ok(Ok(ctx)) => ctx,
-            Ok(Err(e)) => return Err(e),
-            Err(_) => return Ok(Err((None, self))),
+            Ok(Ok(Ok(ctx))) => ctx,
+            Ok(Ok(Err(e))) => return Err(e),
+            Ok(Err(e)) => return Ok(Err((e, self))),
+            Err(_) => unreachable!("Easy2 handle got lost"),
         };
         Ok(Ok(RequestHandle {
             shared_context,
@@ -195,16 +222,11 @@ impl LoopManagerShared {
 
 impl PartialEq for LoopManagerShared {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
+        Weak::ptr_eq(&self.inner, &other.inner)
     }
 }
 
 impl Eq for LoopManagerShared {}
-
-pub(super) enum MaybeStartedRequest {
-    Started(RequestHandle),
-    Gone,
-}
 
 impl LoopManager {
     pub(super) fn new() -> Self {
@@ -216,7 +238,7 @@ impl LoopManager {
     pub(super) async fn start_request(
         &self,
         mut easy: Easy2,
-    ) -> nyquest_interface::Result<MaybeStartedRequest> {
+    ) -> nyquest_interface::Result<RequestHandle> {
         unsafe {
             self.share
                 .bind_easy2(&mut easy)
@@ -230,7 +252,7 @@ impl LoopManager {
                     .clone(),
             };
             let (backup_easy, inner) = match inner.start_request(easy).await? {
-                Ok(res) => return Ok(MaybeStartedRequest::Started(res)),
+                Ok(res) => return Ok(res),
                 Err(res) => res,
             };
             {
@@ -240,12 +262,7 @@ impl LoopManager {
                         Some(LoopManagerShared::start_loop(self.share.get_handle()).await);
                 }
             }
-            match backup_easy {
-                Some(e) => easy = e,
-                None => {
-                    return Ok(MaybeStartedRequest::Gone);
-                }
-            }
+            easy = backup_easy;
         }
     }
 }
@@ -260,13 +277,16 @@ impl Drop for LoopManager {
 
 fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
     let multi = Multi::new();
-    let request_manager = LoopManagerShared {
-        inner: Arc::new(Mutex::new(LoopManagerInner {
-            tasks: Default::default(),
-            multi_waker: multi.waker(),
-        })),
-    };
-    if multl_waker_tx.send(request_manager.clone()).is_err() {
+    let request_manager = Arc::new(Mutex::new(LoopManagerInner {
+        tasks: Default::default(),
+        multi_waker: multi.waker(),
+    }));
+    if multl_waker_tx
+        .send(LoopManagerShared {
+            inner: Arc::downgrade(&request_manager),
+        })
+        .is_err()
+    {
         return;
     }
     // TODO: store ctx in Easy2Handle
@@ -275,8 +295,10 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
     let mut last_call = false;
     loop {
         let poll_res = multi.poll(&mut [], Duration::from_secs(120));
-        std::mem::swap(&mut request_manager.inner.lock().unwrap().tasks, &mut tasks);
-        for mut task in tasks.drain(..) {
+        std::mem::swap(&mut request_manager.lock().unwrap().tasks, &mut tasks);
+        for task in tasks.drain(..) {
+            let mut task = ManuallyDrop::new(task);
+            let mut task = unsafe { ManuallyDrop::take(&mut task.0) };
             loop {
                 match task {
                     LoopTask::ConstructHandle(mut easy, tx) => {
@@ -293,14 +315,14 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                                     .set_token(id)
                                     .expect("failed to set token on easy handle");
                                 slab_entry.insert((handle, ctx.clone()));
-                                tx.send(Ok(ctx))
+                                tx.send(Ok(Ok(ctx)))
                             }
                             Err(e) => {
-                                tx.send(Err(e)).ok();
+                                tx.send(Ok(Err(e))).ok();
                                 break;
                             }
                         };
-                        if let Err(Ok(ctx)) = send_res {
+                        if let Err(Ok(Ok(ctx))) = send_res {
                             task = LoopTask::DropHandle(ctx.id);
                             continue;
                         }
@@ -335,13 +357,17 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                             .ok();
                         break;
                     }
-                    LoopTask::UnpauseHandle(id) => {
+                    LoopTask::UnpauseRecvHandle(id) => {
                         if let Some((handle, _)) = slab.get(id) {
-                            unsafe {
-                                let _res = curl_sys::curl_easy_pause(handle.raw(), CURLPAUSE_CONT);
-                                // Ignore the error. Also see
-                                // https://github.com/sagebind/isahc/blob/9d1edd475231ad5cfd5842d939db1382dc3a88f5/src/agent/mod.rs#L432
-                            }
+                            // Ignore the error. Also see
+                            // https://github.com/sagebind/isahc/blob/9d1edd475231ad5cfd5842d939db1382dc3a88f5/src/agent/mod.rs#L432
+                            handle.unpause_read().ok();
+                        }
+                    }
+                    LoopTask::UnpauseSendHandle(id) => {
+                        if let Some((handle, _)) = slab.get(id) {
+                            // Ignore the error. Also see
+                            handle.unpause_write().ok();
                         }
                     }
                     LoopTask::DropHandle(id) => {

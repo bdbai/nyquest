@@ -14,8 +14,8 @@ impl EasyPause {
     /// The caller must ensure:
     /// 1. The handle is a valid CURL handle.
     /// 2. The handle is either within the same thread or we are in a callback.
-    pub(super) unsafe fn pause(&self) {
-        curl_sys::curl_easy_pause(self.0, CURLPAUSE_ALL);
+    pub(super) unsafe fn pause_recv(&self) {
+        curl_sys::curl_easy_pause(self.0, CURLPAUSE_RECV);
     }
 }
 

@@ -38,7 +38,7 @@ impl Handler for AsyncHandler {
             state.write_data(data);
         }
         unsafe {
-            inner.pause.pause();
+            inner.pause.pause_recv();
         }
         inner.ctx.waker.wake();
         Ok(data.len())
@@ -54,7 +54,7 @@ impl Handler for AsyncHandler {
             let state = &mut state.0;
             if state.push_header_data(data) {
                 unsafe {
-                    inner.pause.pause();
+                    inner.pause.pause_recv();
                 }
             }
         }
