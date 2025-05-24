@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use nyquest_interface::Body as BodyImpl;
+use nyquest_interface::{Body as BodyImpl, SizedStream};
 #[cfg(feature = "multipart")]
-use nyquest_interface::{Part as PartImpl, PartBody as PartBodyImpl, SizedStream};
+use nyquest_interface::{Part as PartImpl, PartBody as PartBodyImpl};
 
 /// A request body generic over async or blocking stream.
 pub struct Body<S> {

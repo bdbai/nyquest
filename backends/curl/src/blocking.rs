@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use nyquest_interface::blocking::Request;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
+mod handler;
 mod multi_easy;
 
 use crate::share::Share;

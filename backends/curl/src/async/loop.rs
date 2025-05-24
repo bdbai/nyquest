@@ -26,18 +26,18 @@ pub(super) struct RequestHandle {
 }
 
 #[derive(Debug, Default)]
-struct SharedRequestContextState {
-    result: Option<NyquestResult<()>>,
-    temp_status_code: u16,
-    is_established: bool,
-    header_finished: bool,
-    response_headers_buffer: Vec<Vec<u8>>,
-    response_buffer: Vec<u8>,
+pub(super) struct SharedRequestContextState {
+    pub(super) result: Option<NyquestResult<()>>,
+    pub(super) temp_status_code: u16,
+    pub(super) is_established: bool,
+    pub(super) header_finished: bool,
+    pub(super) response_headers_buffer: Vec<Vec<u8>>,
+    pub(super) response_buffer: Vec<u8>,
 }
-struct SharedRequestContext {
-    id: usize,
-    waker: AtomicWaker,
-    state: Mutex<SharedRequestContextState>,
+pub(super) struct SharedRequestContext {
+    pub(super) id: usize,
+    pub(super) waker: AtomicWaker,
+    pub(super) state: Mutex<SharedRequestContextState>,
 }
 
 impl SharedRequestContext {
@@ -155,6 +155,7 @@ struct LoopManagerShared {
 pub(super) struct LoopManager {
     inner: FuturesMutex<Option<LoopManagerShared>>,
     share: Share,
+    pub(super) options: nyquest_interface::client::ClientOptions,
 }
 
 impl LoopManagerShared {
@@ -214,15 +215,16 @@ pub(super) enum MaybeStartedRequest {
 }
 
 impl LoopManager {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(options: nyquest_interface::client::ClientOptions) -> Self {
         Self {
             inner: FuturesMutex::new(None),
             share: Share::new(),
+            options,
         }
     }
     pub(super) async fn start_request(
         &self,
-        mut easy: Easy,
+        req: &nyquest_interface::r#async::Request,
     ) -> nyquest_interface::Result<MaybeStartedRequest> {
         unsafe {
             self.share
@@ -266,10 +268,10 @@ impl Drop for LoopManager {
 }
 
 #[derive(Clone, Copy)]
-struct EasyPause(*mut curl_sys::CURL);
+pub(super) struct EasyPause(*mut curl_sys::CURL);
 
 impl EasyPause {
-    fn new(handle: *mut curl_sys::CURL) -> Self {
+    pub(super) fn new(handle: *mut curl_sys::CURL) -> Self {
         Self(handle)
     }
 
@@ -277,7 +279,7 @@ impl EasyPause {
     /// The caller must ensure:
     /// 1. The handle is a valid CURL handle.
     /// 2. The handle is either within the same thread or we are in a callback.
-    unsafe fn pause(&self) {
+    pub(super) unsafe fn pause(&self) {
         curl_sys::curl_easy_pause(self.0, CURLPAUSE_ALL);
     }
 }

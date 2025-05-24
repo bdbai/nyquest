@@ -1,22 +1,23 @@
 use std::io::ErrorKind;
 
-use curl::easy::{Easy, List};
+use curl::easy::{Easy2, Handler, List};
 use nyquest_interface::{Body, Method, Request};
 
-use crate::{error::IntoNyquestResult, urlencoded::curl_escape};
+use crate::{error::IntoNyquestResult, urlencoded::curl_escape_easy2};
 
-pub fn populate_request<S>(
+pub fn populate_request<S, H: Handler>(
     url: &str,
     req: &Request<S>,
     options: &nyquest_interface::client::ClientOptions,
-    easy: &mut Easy,
+    easy: &mut Easy2<H>,
 ) -> nyquest_interface::Result<()> {
     if !options.use_default_proxy {
         easy.noproxy("*")
             .into_nyquest_result("set CURLOPT_NOPROXY")?;
     }
     if let Some(user_agent) = options.user_agent.as_deref() {
-        easy.useragent(user_agent).expect("set curl user agent");
+        easy.useragent(user_agent)
+            .into_nyquest_result("set CURLOPT_USERAGENT")?;
     }
     if options.use_cookies {
         easy.cookie_file("")
@@ -73,9 +74,9 @@ pub fn populate_request<S>(
             let mut buf =
                 Vec::with_capacity(fields.iter().map(|(k, v)| k.len() + v.len() + 2).sum());
             for (name, value) in fields {
-                buf.extend_from_slice(&curl_escape(easy, &**name));
+                buf.extend_from_slice(&curl_escape_easy2(easy, &**name));
                 buf.push(b'=');
-                buf.extend_from_slice(&curl_escape(easy, &**value));
+                buf.extend_from_slice(&curl_escape_easy2(easy, &**value));
                 buf.push(b'&');
             }
             buf.pop();

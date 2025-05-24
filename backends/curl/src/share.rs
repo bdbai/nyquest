@@ -3,7 +3,10 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use curl::{easy::Easy, ShareError};
+use curl::{
+    easy::{Easy, Easy2, Handler},
+    ShareError,
+};
 use curl_sys::{
     curl_easy_setopt, curl_lock_access, curl_lock_data, curl_lock_function, curl_unlock_function,
     CURL, CURLE_OK, CURLOPT_SHARE, CURLSHE_OK, CURLSHOPT_LOCKFUNC, CURLSHOPT_SHARE,
@@ -72,6 +75,20 @@ impl Share {
             if res != CURLE_OK {
                 let err = curl::Error::new(res);
                 return Err(err).into_nyquest_result("blocking bind_easy");
+            }
+        }
+        Ok(())
+    }
+
+    /// # Safety
+    ///
+    /// Callers ensure that the ShareHandle should not be dropped earlier than the easy handle.
+    pub unsafe fn bind_easy2<H: Handler>(&self, easy: &mut Easy2<H>) -> NyquestResult<()> {
+        unsafe {
+            let res = curl_easy_setopt(easy.raw(), CURLOPT_SHARE, self.raw.raw);
+            if res != CURLE_OK {
+                let err = curl::Error::new(res);
+                return Err(err).into_nyquest_result("blocking bind_easy2");
             }
         }
         Ok(())
