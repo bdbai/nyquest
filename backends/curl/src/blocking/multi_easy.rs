@@ -8,6 +8,7 @@ use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 use crate::error::IntoNyquestResult;
 use crate::share::Share;
+use crate::state::RequestState;
 
 type Easy = curl::easy::Easy2<super::handler::BlockingHandler>;
 type EasyHandle = curl::multi::Easy2Handle<super::handler::BlockingHandler>;
@@ -19,18 +20,10 @@ enum MaybeAttachedEasy {
 }
 
 pub(crate) struct MultiEasy {
-    state: Arc<Mutex<MultiEasyState>>,
+    state: Arc<Mutex<RequestState>>,
     easy: MaybeAttachedEasy,
     multi: Multi,
     share: Share, // Drop later than easy
-}
-
-#[derive(Default)]
-pub(super) struct MultiEasyState {
-    pub(super) temp_status_code: u16,
-    pub(super) header_finished: bool,
-    pub(super) response_headers_buffer: Vec<Vec<u8>>,
-    pub(super) response_buffer: Vec<u8>,
 }
 
 impl MaybeAttachedEasy {
@@ -92,7 +85,7 @@ impl MaybeAttachedEasy {
 
 impl MultiEasy {
     pub fn new(share: Share) -> Self {
-        let state = Arc::new(Mutex::new(MultiEasyState::default()));
+        let state = Arc::new(Mutex::new(Default::default()));
         let easy = Easy::new(super::handler::BlockingHandler::new(state.clone()));
         let mut multi = Multi::new();
         multi.set_max_connects(5).expect("set max connects"); // Default of easy is 5
@@ -110,7 +103,7 @@ impl MultiEasy {
 
     fn poll_until(
         &mut self,
-        mut cb: impl FnMut(&Mutex<MultiEasyState>) -> NyquestResult<ControlFlow<()>>,
+        mut cb: impl FnMut(&Mutex<RequestState>) -> NyquestResult<ControlFlow<()>>,
     ) -> NyquestResult<()> {
         let easy = self.easy.attach(&mut self.multi)?;
         // TODO: sigpipe
@@ -233,4 +226,4 @@ impl MultiEasy {
 // However, `MultiEasy` can be `Send` because it bundles both `Easy` and `Multi` handles together,
 // ensuring that they are dropped on the same thread. Moreover, we intentionally do not expose
 // `&mut Easy` or `&mut Multi` to the user, so the user cannot move them to another thread.
-unsafe impl Send for MultiEasy where Arc<MultiEasyState>: Send {}
+unsafe impl Send for MultiEasy where Arc<RequestState>: Send {}

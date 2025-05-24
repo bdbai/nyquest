@@ -15,6 +15,7 @@ use slab::Slab;
 
 use crate::error::IntoNyquestResult;
 use crate::share::{Share, ShareHandle};
+use crate::state::RequestState;
 
 type Easy2 = curl::easy::Easy2<super::handler::AsyncHandler>;
 type Easy2Handle = curl::multi::Easy2Handle<super::handler::AsyncHandler>;
@@ -26,19 +27,10 @@ pub(super) struct RequestHandle {
     manager: LoopManagerShared,
 }
 
-#[derive(Debug, Default)]
-pub(super) struct SharedRequestContextState {
-    pub(super) result: Option<NyquestResult<()>>,
-    pub(super) temp_status_code: u16,
-    pub(super) is_established: bool,
-    pub(super) header_finished: bool,
-    pub(super) response_headers_buffer: Vec<Vec<u8>>,
-    pub(super) response_buffer: Vec<u8>,
-}
 pub(super) struct SharedRequestContext {
     pub(super) id: usize,
     pub(super) waker: AtomicWaker,
-    pub(super) state: Mutex<SharedRequestContextState>,
+    pub(super) state: Mutex<(RequestState, Option<NyquestResult<()>>)>,
 }
 
 impl SharedRequestContext {
@@ -72,11 +64,11 @@ impl RequestHandle {
     ) -> nyquest_interface::Result<super::CurlAsyncResponse> {
         poll_fn(|cx| {
             let mut state = self.shared_context.state.lock().unwrap();
-            if let Some(err_res) = state.result.take_if(|r| r.is_err()) {
+            if let Some(err_res) = state.1.take_if(|r| r.is_err()) {
                 return Poll::Ready(err_res);
             }
             // Do not take out result if it is a success
-            if state.result.is_some() || state.header_finished {
+            if state.1.is_some() || state.0.header_finished {
                 return Poll::Ready(Ok(()));
             }
             // Register the waker while holding the lock to avoid missing the wake-up signal
@@ -122,11 +114,11 @@ impl RequestHandle {
         mut cb: impl FnMut(&mut Vec<u8>) -> nyquest_interface::Result<T>,
     ) -> Poll<nyquest_interface::Result<Option<T>>> {
         let mut state = self.shared_context.state.lock().unwrap();
-        if !state.response_buffer.is_empty() {
-            let res = cb(&mut state.response_buffer);
+        if !state.0.response_buffer.is_empty() {
+            let res = cb(&mut state.0.response_buffer);
             return Poll::Ready(res.map(Some));
         }
-        if let Some(res) = state.result.take() {
+        if let Some(res) = state.1.take() {
             return Poll::Ready(res.map(|()| None));
         };
         self.manager
@@ -329,6 +321,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                                     .ok()
                                     .map(|l| l as _),
                                 headers: state
+                                    .0
                                     .response_headers_buffer
                                     .iter_mut()
                                     .filter_map(|line| std::str::from_utf8_mut(&mut *line).ok())
@@ -374,8 +367,8 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             Err((err, err_ctx)) => {
                 for (_, (handle, ctx)) in slab {
                     if let Ok(mut state) = ctx.state.lock() {
-                        if state.result.is_none() {
-                            state.result = Some(Err(err.clone()).into_nyquest_result(err_ctx));
+                        if state.1.is_none() {
+                            state.1 = Some(Err(err.clone()).into_nyquest_result(err_ctx));
                         }
                     }
                     multi.remove2(handle).ok();
@@ -393,7 +386,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                 return;
             };
             if let Some(res) = msg.result_for2(handle) {
-                shared_state.result = Some(res.into_nyquest_result("curl_multi_info_read cb"));
+                shared_state.1 = Some(res.into_nyquest_result("curl_multi_info_read cb"));
             }
             drop(shared_state);
             ctx.waker.wake();
