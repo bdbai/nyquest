@@ -1,3 +1,6 @@
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+
 use std::future::Future;
 use std::io::{self, SeekFrom};
 use std::pin::Pin;
@@ -5,8 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
 
+use futures_util::AsyncRead as _;
 use nyquest_interface::r#async::BoxedStream;
-use nyquest_interface::SizedStream;
 use windows::{
     Foundation::IClosable_Impl,
     Storage::Streams::{
@@ -19,23 +22,35 @@ use windows::{
         System::WinRT::IBufferByteAccess,
     },
 };
-use windows_core::{implement, AgileReference, ComObject, ComObjectInner, IUnknownImpl, Interface};
+use windows_core::*;
 use windows_future::{
     AsyncOperationProgressHandler, AsyncOperationWithProgressCompletedHandler, AsyncStatus,
     IAsyncInfo_Impl, IAsyncOperation, IAsyncOperationWithProgress,
     IAsyncOperationWithProgress_Impl,
 };
 
-#[implement(IInputStream, IRandomAccessStream)]
-struct AsyncReadInputStream {
-    stream: Mutex<Option<(SizedStream<BoxedStream>, bool)>>,
+#[interface("8ec308ec-a6ab-44c2-bff4-ed275ae0af68")]
+unsafe trait IAsyncReadStreamBaseAccess: IUnknown {
+    unsafe fn StreamBase(&self) -> *const AsyncReadStreamBase;
+}
+
+struct AsyncReadStreamBase {
+    stream: Mutex<Option<(BoxedStream, bool)>>,
     task_collection: Weak<Mutex<StreamReadTaskCollectionInner>>,
     pos: AtomicU64,
 }
 
+#[implement(IAsyncReadStreamBaseAccess, IInputStream)]
+struct AsyncReadInputStream(AsyncReadStreamBase);
+
+#[implement(IAsyncReadStreamBaseAccess, IInputStream, IRandomAccessStream)]
+struct AsyncReadRandomAccessStream(AsyncReadStreamBase);
+
+unsafe impl Send for IAsyncReadStreamBaseAccess {}
+
 #[implement(IAsyncOperationWithProgress<IBuffer, u32>)]
 struct AsyncReadInputStreamReadTask {
-    parent: ComObject<AsyncReadInputStream>,
+    base_accessor: IAsyncReadStreamBaseAccess,
     read_count: u32,
     options: InputStreamOptions,
     buffer: AgileReference<IBuffer>,
@@ -44,19 +59,19 @@ struct AsyncReadInputStreamReadTask {
 }
 
 struct AsyncReadInputStreamReadTaskInner {
-    status: Result<bool, windows_core::Error>,
+    status: Result<bool>,
     // progress: Option<AsyncOperationProgressHandler<IBuffer, u32>>,
     completed: Option<AgileReference<AsyncOperationWithProgressCompletedHandler<IBuffer, u32>>>,
 }
 
-impl IInputStream_Impl for AsyncReadInputStream_Impl {
-    fn ReadAsync(
+impl AsyncReadStreamBase {
+    fn read_async(
         &self,
+        base_accessor: IAsyncReadStreamBaseAccess,
         buffer: windows_core::Ref<'_, IBuffer>,
         count: u32,
         options: InputStreamOptions,
     ) -> windows_core::Result<IAsyncOperationWithProgress<IBuffer, u32>> {
-        let this = self.to_object();
         let Some(buffer) = buffer.as_ref() else {
             return Err(windows_core::Error::empty());
         };
@@ -74,7 +89,7 @@ impl IInputStream_Impl for AsyncReadInputStream_Impl {
         };
         let buffer = AgileReference::new(buffer)?;
         let task = AsyncReadInputStreamReadTask {
-            parent: this,
+            base_accessor,
             read_count: count,
             options,
             buffer: buffer.clone(),
@@ -90,9 +105,52 @@ impl IInputStream_Impl for AsyncReadInputStream_Impl {
         }
         Ok(task.into_interface())
     }
+
+    fn close(&self) -> windows_core::Result<()> {
+        if let Ok(mut stream) = self.stream.lock() {
+            *stream = None;
+        }
+        Ok(())
+    }
 }
 
-impl IOutputStream_Impl for AsyncReadInputStream_Impl {
+impl IAsyncReadStreamBaseAccess_Impl for AsyncReadInputStream_Impl {
+    unsafe fn StreamBase(&self) -> *const AsyncReadStreamBase {
+        &self.0
+    }
+}
+
+impl IInputStream_Impl for AsyncReadInputStream_Impl {
+    fn ReadAsync(
+        &self,
+        buffer: windows_core::Ref<'_, IBuffer>,
+        count: u32,
+        options: InputStreamOptions,
+    ) -> windows_core::Result<IAsyncOperationWithProgress<IBuffer, u32>> {
+        let base_accessor = self.to_interface();
+        self.0.read_async(base_accessor, buffer, count, options)
+    }
+}
+
+impl IAsyncReadStreamBaseAccess_Impl for AsyncReadRandomAccessStream_Impl {
+    unsafe fn StreamBase(&self) -> *const AsyncReadStreamBase {
+        &self.0
+    }
+}
+
+impl IInputStream_Impl for AsyncReadRandomAccessStream_Impl {
+    fn ReadAsync(
+        &self,
+        buffer: windows_core::Ref<'_, IBuffer>,
+        count: u32,
+        options: InputStreamOptions,
+    ) -> windows_core::Result<IAsyncOperationWithProgress<IBuffer, u32>> {
+        let base_accessor = self.to_interface();
+        self.0.read_async(base_accessor, buffer, count, options)
+    }
+}
+
+impl IOutputStream_Impl for AsyncReadRandomAccessStream_Impl {
     fn WriteAsync(
         &self,
         _buffer: windows_core::Ref<'_, IBuffer>,
@@ -105,23 +163,16 @@ impl IOutputStream_Impl for AsyncReadInputStream_Impl {
     }
 }
 
-impl IRandomAccessStream_Impl for AsyncReadInputStream_Impl {
+impl IRandomAccessStream_Impl for AsyncReadRandomAccessStream_Impl {
     fn Size(&self) -> windows_core::Result<u64> {
         let stream = self
+            .0
             .stream
             .lock()
             .map_err(|_| windows_core::Error::new(ERROR_CANCELLED.into(), "poisoned mutex"))?;
-        if let Some((
-            SizedStream {
-                content_length: Some(len),
-                ..
-            },
-            _,
-        )) = &*stream
-        {
-            Ok(*len)
-        } else {
-            Ok(0)
+        match stream.as_ref().map(|s| &s.0) {
+            Some(BoxedStream::Sized { content_length, .. }) => Ok(*content_length),
+            _ => Err(E_NOTIMPL.into()),
         }
     }
 
@@ -141,7 +192,7 @@ impl IRandomAccessStream_Impl for AsyncReadInputStream_Impl {
     }
 
     fn Position(&self) -> windows_core::Result<u64> {
-        let pos = self.pos.load(Ordering::Relaxed);
+        let pos = self.0.pos.load(Ordering::Relaxed);
         Ok(pos)
     }
 
@@ -149,7 +200,7 @@ impl IRandomAccessStream_Impl for AsyncReadInputStream_Impl {
         if position != 0 {
             return Err(windows_core::Error::from_hresult(E_NOTIMPL));
         }
-        let Ok(mut stream) = self.stream.lock() else {
+        let Ok(mut stream) = self.0.stream.lock() else {
             return Err(windows_core::Error::new(
                 ERROR_CANCELLED.into(),
                 "poisoned mutex",
@@ -159,7 +210,7 @@ impl IRandomAccessStream_Impl for AsyncReadInputStream_Impl {
             return Ok(());
         };
         *need_rewind = true;
-        self.pos.store(0, Ordering::Relaxed);
+        self.0.pos.store(0, Ordering::Relaxed);
         Ok(())
     }
 
@@ -168,14 +219,14 @@ impl IRandomAccessStream_Impl for AsyncReadInputStream_Impl {
     }
 
     fn CanRead(&self) -> windows_core::Result<bool> {
-        let Ok(stream) = self.stream.lock() else {
+        let Ok(stream) = self.0.stream.lock() else {
             return Ok(false);
         };
-        let Some((SizedStream { content_length, .. }, _)) = &*stream else {
+        let Some((stream, _)) = &*stream else {
             return Ok(false);
         };
-        if let Some(len) = content_length {
-            if self.pos.load(Ordering::Relaxed) >= *len {
+        if let BoxedStream::Sized { content_length, .. } = stream {
+            if self.0.pos.load(Ordering::Relaxed) >= *content_length {
                 return Ok(false);
             }
         }
@@ -189,10 +240,13 @@ impl IRandomAccessStream_Impl for AsyncReadInputStream_Impl {
 
 impl IClosable_Impl for AsyncReadInputStream_Impl {
     fn Close(&self) -> windows_core::Result<()> {
-        if let Ok(mut stream) = self.stream.lock() {
-            *stream = None;
-        }
-        Ok(())
+        self.0.close()
+    }
+}
+
+impl IClosable_Impl for AsyncReadRandomAccessStream_Impl {
+    fn Close(&self) -> windows_core::Result<()> {
+        self.0.close()
     }
 }
 
@@ -274,7 +328,8 @@ impl IAsyncInfo_Impl for AsyncReadInputStreamReadTask_Impl {
     }
 
     fn Cancel(&self) -> windows_core::Result<()> {
-        let Some(task_collection) = self.parent.task_collection.upgrade() else {
+        let base = unsafe { &*self.base_accessor.StreamBase() };
+        let Some(task_collection) = base.task_collection.upgrade() else {
             return Ok(());
         };
         let Ok(mut task_collection) = task_collection.lock() else {
@@ -291,7 +346,8 @@ impl IAsyncInfo_Impl for AsyncReadInputStreamReadTask_Impl {
 
     fn Close(&self) -> windows_core::Result<()> {
         {
-            let Ok(mut stream) = self.parent.stream.lock() else {
+            let base = unsafe { &*self.base_accessor.StreamBase() };
+            let Ok(mut stream) = base.stream.lock() else {
                 return Ok(());
             };
             *stream = None;
@@ -361,23 +417,25 @@ fn poll_retain_read_task(
     task: &ComObject<AsyncReadInputStreamReadTask>,
     cx: &mut Context<'_>,
 ) -> windows_core::Result<bool> {
-    let mut stream = task.parent.stream.lock().unwrap();
+    let base = unsafe { &*task.base_accessor.StreamBase() };
+    let mut stream = base.stream.lock().unwrap();
     let Some((stream, need_rewind)) = &mut *stream else {
         return Err(windows_core::Error::new(
             ERROR_CANCELLED.into(),
             "stream closed",
         ));
     };
-    if *need_rewind {
-        if stream
-            .stream
-            .as_mut()
-            .poll_seek(cx, SeekFrom::Start(0))?
-            .is_pending()
-        {
-            return Ok(true);
-        } else {
-            *need_rewind = false;
+    if let BoxedStream::Sized { stream, .. } = stream {
+        if *need_rewind {
+            if stream
+                .as_mut()
+                .poll_seek(cx, SeekFrom::Start(0))?
+                .is_pending()
+            {
+                return Ok(true);
+            } else {
+                *need_rewind = false;
+            }
         }
     }
     let buffer = AgileReference::resolve(&task.buffer)?;
@@ -386,14 +444,11 @@ fn poll_retain_read_task(
     } else {
         task.read_count.min(buffer.Capacity()?)
     } as usize;
-    let offset = buffer.Length()? as usize;
     let iba = buffer.cast::<IBufferByteAccess>()?;
     unsafe {
-        let buf = iba.Buffer()?.add(offset);
+        let buf = iba.Buffer()?;
         let buf = std::slice::from_raw_parts_mut(buf, to_read);
-        let read_res = stream
-            .stream
-            .as_mut()
+        let read_res = Pin::new(stream)
             .poll_read(cx, buf)
             .map_err(windows_core::Error::from)?;
         match read_res {
@@ -401,11 +456,11 @@ fn poll_retain_read_task(
             Poll::Ready(read_len)
                 if task.options == InputStreamOptions::None && read_len < to_read =>
             {
-                buffer.SetLength((offset + read_len) as u32)?;
+                buffer.SetLength(read_len as u32)?;
                 Ok(true)
             }
             Poll::Ready(read_len) => {
-                buffer.SetLength((offset + read_len) as u32)?;
+                buffer.SetLength(read_len as u32)?;
                 Ok(false)
             }
         }
@@ -413,20 +468,29 @@ fn poll_retain_read_task(
 }
 
 pub(super) fn transform_stream(
-    stream: SizedStream<BoxedStream>,
+    stream: BoxedStream,
     task_collection: &mut StreamReadTaskCollection,
 ) -> io::Result<IHttpContent> {
     let task_collection = match &mut task_collection.inner {
         Some(task_collection) => task_collection,
         None => task_collection.inner.insert(Default::default()),
     };
-    let stream = AsyncReadInputStream {
+    let is_sized = match &stream {
+        BoxedStream::Unsized { .. } => false,
+        BoxedStream::Sized { .. } => true,
+    };
+    let base = AsyncReadStreamBase {
         stream: Mutex::new(Some((stream, false))),
         task_collection: Arc::downgrade(task_collection),
         pos: AtomicU64::new(0),
-    }
-    .into_object();
-    let content =
-        HttpStreamContent::CreateFromInputStream(&stream.to_interface::<IInputStream>())?.cast()?;
+    };
+    let stream: IInputStream = if is_sized {
+        AsyncReadRandomAccessStream(base)
+            .into_object()
+            .into_interface()
+    } else {
+        AsyncReadInputStream(base).into_object().into_interface()
+    };
+    let content = HttpStreamContent::CreateFromInputStream(&stream)?.cast()?;
     Ok(content)
 }

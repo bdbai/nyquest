@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use nyquest_interface::{Body as BodyImpl, SizedStream};
+use nyquest_interface::Body as BodyImpl;
 #[cfg(feature = "multipart")]
 use nyquest_interface::{Part as PartImpl, PartBody as PartBodyImpl};
 
@@ -89,18 +89,32 @@ impl<S> Body<S> {
         }
     }
 
-    /// Constructs a streaming body from the given stream and content type.
+    /// Constructs a streaming body from the given seekable stream, content
+    /// length and content type.
     pub fn stream(
-        stream: impl private::IntoStream<S>,
+        stream: impl private::IntoSizedStream<S>,
         content_type: impl Into<Cow<'static, str>>,
-        content_length: impl Into<Option<u64>>,
+        content_length: u64,
     ) -> Self {
         Self {
             inner: BodyImpl::Stream {
-                stream: SizedStream {
-                    stream: stream.into_stream(),
-                    content_length: content_length.into(),
-                },
+                stream: stream.into_stream(content_length),
+                content_type: content_type.into(),
+            },
+        }
+    }
+
+    /// Constructs a streaming non-seekable body from the given stream and
+    /// content type.
+    ///
+    /// This enables chunked transfer encoding.
+    pub fn stream_unsized(
+        stream: impl private::IntoUnsizedStream<S>,
+        content_type: impl Into<Cow<'static, str>>,
+    ) -> Self {
+        Self {
+            inner: BodyImpl::Stream {
+                stream: stream.into_stream(),
                 content_type: content_type.into(),
             },
         }
@@ -178,7 +192,10 @@ impl<S> Part<S> {
 }
 
 pub(crate) mod private {
-    pub trait IntoStream<B> {
+    pub trait IntoSizedStream<B> {
+        fn into_stream(self, size: u64) -> B;
+    }
+    pub trait IntoUnsizedStream<B> {
         fn into_stream(self) -> B;
     }
 }
@@ -206,16 +223,20 @@ impl<S> PartBody<S> {
         }
     }
 
-    /// Constructs a part body from a stream.
-    pub fn stream(
-        stream: impl private::IntoStream<S>,
-        content_length: impl Into<Option<u64>>,
-    ) -> Self {
+    /// Constructs a part body from a seekable stream with a specified content
+    /// length.
+    pub fn stream(stream: impl private::IntoSizedStream<S>, content_length: u64) -> Self {
         Self {
-            inner: PartBodyImpl::Stream(SizedStream {
-                stream: stream.into_stream(),
-                content_length: content_length.into(),
-            }),
+            inner: PartBodyImpl::Stream(stream.into_stream(content_length)),
+        }
+    }
+
+    /// Constructs a part body from a non-seekable stream.
+    ///
+    /// This enables chunked transfer encoding for the whole request body.
+    pub fn stream_unsized(stream: impl private::IntoUnsizedStream<S>) -> Self {
+        Self {
+            inner: PartBodyImpl::Stream(stream.into_stream()),
         }
     }
 }

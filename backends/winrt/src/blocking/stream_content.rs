@@ -1,9 +1,12 @@
-use std::io::SeekFrom;
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+
+use std::io::{Read as _, SeekFrom};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::{io, sync::atomic::AtomicU64};
 
-use nyquest_interface::{blocking::BoxedStream, SizedStream};
+use nyquest_interface::blocking::BoxedStream;
 use windows::{
     Foundation::IClosable_Impl,
     Storage::Streams::{
@@ -16,36 +19,49 @@ use windows::{
         System::WinRT::IBufferByteAccess,
     },
 };
-use windows_core::{implement, AgileReference, IUnknownImpl, Interface};
+use windows_core::*;
 use windows_future::{IAsyncOperation, IAsyncOperationWithProgress};
 
-#[implement(IInputStream, IRandomAccessStream)]
-struct BlockingReadInputStream {
-    stream: Mutex<Option<SizedStream<BoxedStream>>>,
+#[interface("39aaaac2-7495-4cd4-9929-1d9e01d59934")]
+unsafe trait IBlockingReadStreamBaseAccess: IUnknown {
+    unsafe fn StreamBase(&self) -> *const BlockingReadStreamBase;
+}
+
+struct BlockingReadStreamBase {
+    stream: Mutex<Option<BoxedStream>>,
     pos: AtomicU64,
 }
 
-// TODO: do work on caller thread
-impl IInputStream_Impl for BlockingReadInputStream_Impl {
-    fn ReadAsync(
+#[implement(IBlockingReadStreamBaseAccess, IInputStream)]
+struct BlockingReadInputStream(BlockingReadStreamBase);
+
+#[implement(IBlockingReadStreamBaseAccess, IInputStream, IRandomAccessStream)]
+struct BlockingReadRandomAccessStream(BlockingReadStreamBase);
+
+unsafe impl Send for IBlockingReadStreamBaseAccess {}
+
+impl BlockingReadStreamBase {
+    // TODO: do work on caller thread
+    fn read_async(
         &self,
+        base_accessor: IBlockingReadStreamBaseAccess,
         buffer: windows_core::Ref<'_, IBuffer>,
         count: u32,
         options: InputStreamOptions,
     ) -> windows_core::Result<IAsyncOperationWithProgress<IBuffer, u32>> {
-        let this = self.to_object();
         let Some(buffer) = buffer.as_ref() else {
             return Err(windows_core::Error::empty());
         };
         let buffer = AgileReference::new(buffer)?;
         Ok(IAsyncOperationWithProgress::spawn(move || {
-            let Ok(mut stream) = this.stream.lock() else {
+            let base = unsafe { &*base_accessor.StreamBase() };
+            let Ok(mut stream) = base.stream.lock() else {
                 return Err(windows_core::Error::new(
                     ERROR_CANCELLED.into(),
                     "poisoned mutex",
                 ));
             };
-            let Some(SizedStream { stream, .. }) = &mut *stream else {
+            let Some(stream) = &mut *stream else {
                 return Err(windows_core::Error::new(
                     ERROR_CANCELLED.into(),
                     "stream is None",
@@ -67,15 +83,58 @@ impl IInputStream_Impl for BlockingReadInputStream_Impl {
                 } else {
                     stream.read(buf).map_err(windows_core::Error::from)?
                 };
-                this.pos.fetch_add(read_len as u64, Ordering::Relaxed);
+                base.pos.fetch_add(read_len as u64, Ordering::Relaxed);
                 buffer.SetLength(read_len as u32)?;
             }
             Ok(buffer)
         }))
     }
+
+    fn close(&self) -> windows_core::Result<()> {
+        if let Ok(mut stream) = self.stream.lock() {
+            *stream = None;
+        }
+        Ok(())
+    }
 }
 
-impl IOutputStream_Impl for BlockingReadInputStream_Impl {
+impl IBlockingReadStreamBaseAccess_Impl for BlockingReadInputStream_Impl {
+    unsafe fn StreamBase(&self) -> *const BlockingReadStreamBase {
+        &self.0
+    }
+}
+
+impl IInputStream_Impl for BlockingReadInputStream_Impl {
+    fn ReadAsync(
+        &self,
+        buffer: windows_core::Ref<'_, IBuffer>,
+        count: u32,
+        options: InputStreamOptions,
+    ) -> windows_core::Result<IAsyncOperationWithProgress<IBuffer, u32>> {
+        let base_accessor = self.to_interface();
+        self.0.read_async(base_accessor, buffer, count, options)
+    }
+}
+
+impl IBlockingReadStreamBaseAccess_Impl for BlockingReadRandomAccessStream_Impl {
+    unsafe fn StreamBase(&self) -> *const BlockingReadStreamBase {
+        &self.0
+    }
+}
+
+impl IInputStream_Impl for BlockingReadRandomAccessStream_Impl {
+    fn ReadAsync(
+        &self,
+        buffer: windows_core::Ref<'_, IBuffer>,
+        count: u32,
+        options: InputStreamOptions,
+    ) -> windows_core::Result<IAsyncOperationWithProgress<IBuffer, u32>> {
+        let base_accessor = self.to_interface();
+        self.0.read_async(base_accessor, buffer, count, options)
+    }
+}
+
+impl IOutputStream_Impl for BlockingReadRandomAccessStream_Impl {
     fn WriteAsync(
         &self,
         _buffer: windows_core::Ref<'_, IBuffer>,
@@ -88,20 +147,16 @@ impl IOutputStream_Impl for BlockingReadInputStream_Impl {
     }
 }
 
-impl IRandomAccessStream_Impl for BlockingReadInputStream_Impl {
+impl IRandomAccessStream_Impl for BlockingReadRandomAccessStream_Impl {
     fn Size(&self) -> windows_core::Result<u64> {
         let stream = self
+            .0
             .stream
             .lock()
             .map_err(|_| windows_core::Error::new(ERROR_CANCELLED.into(), "poisoned mutex"))?;
-        if let Some(SizedStream {
-            content_length: Some(len),
-            ..
-        }) = &*stream
-        {
-            Ok(*len)
-        } else {
-            Ok(0)
+        match &*stream {
+            Some(BoxedStream::Sized { content_length, .. }) => Ok(*content_length),
+            _ => Err(E_NOTIMPL.into()),
         }
     }
 
@@ -121,7 +176,7 @@ impl IRandomAccessStream_Impl for BlockingReadInputStream_Impl {
     }
 
     fn Position(&self) -> windows_core::Result<u64> {
-        let pos = self.pos.load(Ordering::Relaxed);
+        let pos = self.0.pos.load(Ordering::Relaxed);
         Ok(pos)
     }
 
@@ -129,19 +184,19 @@ impl IRandomAccessStream_Impl for BlockingReadInputStream_Impl {
         if position != 0 {
             return Err(windows_core::Error::from_hresult(E_NOTIMPL));
         }
-        let Ok(mut stream) = self.stream.lock() else {
+        let Ok(mut stream) = self.0.stream.lock() else {
             return Err(windows_core::Error::new(
                 ERROR_CANCELLED.into(),
                 "poisoned mutex",
             ));
         };
-        let Some(SizedStream { stream, .. }) = &mut *stream else {
+        let Some(BoxedStream::Sized { stream, .. }) = &mut *stream else {
             return Ok(());
         };
         stream
             .seek(SeekFrom::Start(0))
             .map_err(windows_core::Error::from)?;
-        self.pos.store(0, Ordering::Relaxed);
+        self.0.pos.store(0, Ordering::Relaxed);
         Ok(())
     }
 
@@ -150,14 +205,14 @@ impl IRandomAccessStream_Impl for BlockingReadInputStream_Impl {
     }
 
     fn CanRead(&self) -> windows_core::Result<bool> {
-        let Ok(stream) = self.stream.lock() else {
+        let Ok(stream) = self.0.stream.lock() else {
             return Ok(false);
         };
-        let Some(SizedStream { content_length, .. }) = &*stream else {
+        let Some(stream) = &*stream else {
             return Ok(false);
         };
-        if let Some(len) = content_length {
-            if self.pos.load(Ordering::Relaxed) >= *len {
+        if let BoxedStream::Sized { content_length, .. } = stream {
+            if self.0.pos.load(Ordering::Relaxed) >= *content_length {
                 return Ok(false);
             }
         }
@@ -171,19 +226,32 @@ impl IRandomAccessStream_Impl for BlockingReadInputStream_Impl {
 
 impl IClosable_Impl for BlockingReadInputStream_Impl {
     fn Close(&self) -> windows_core::Result<()> {
-        if let Ok(mut stream) = self.stream.lock() {
-            *stream = None;
-        }
-        Ok(())
+        self.0.close()
     }
 }
 
-pub(super) fn transform_stream(stream: SizedStream<BoxedStream>) -> io::Result<IHttpContent> {
-    let content =
-        HttpStreamContent::CreateFromInputStream(&IInputStream::from(BlockingReadInputStream {
-            stream: Mutex::new(Some(stream)),
-            pos: AtomicU64::new(0),
-        }))?
-        .cast()?;
+impl IClosable_Impl for BlockingReadRandomAccessStream_Impl {
+    fn Close(&self) -> windows_core::Result<()> {
+        self.0.close()
+    }
+}
+
+pub(super) fn transform_stream(stream: BoxedStream) -> io::Result<IHttpContent> {
+    let is_sized = match &stream {
+        BoxedStream::Sized { .. } => true,
+        BoxedStream::Unsized { .. } => false,
+    };
+    let base = BlockingReadStreamBase {
+        stream: Mutex::new(Some(stream)),
+        pos: AtomicU64::new(0),
+    };
+    let stream: IInputStream = if is_sized {
+        BlockingReadRandomAccessStream(base)
+            .into_object()
+            .into_interface()
+    } else {
+        BlockingReadInputStream(base).into_object().into_interface()
+    };
+    let content = HttpStreamContent::CreateFromInputStream(&stream)?.cast()?;
     Ok(content)
 }

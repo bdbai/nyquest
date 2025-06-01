@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use nyquest_interface::r#async::{BodyStream, BoxedStream};
+use nyquest_interface::r#async::{BoxedStream, SizedBodyStream, UnsizedBodyStream};
 
 mod async_read_stream;
 pub(crate) mod client;
@@ -21,7 +21,7 @@ pub type PartBody = crate::body::PartBody<BoxedStream>;
 pub use async_read_stream::AsyncReadStream;
 pub use response::Response;
 
-use crate::body::private::IntoStream;
+use crate::body::private::{IntoSizedStream, IntoUnsizedStream};
 
 /// Shortcut method to quickly make a `GET` request.
 ///
@@ -38,8 +38,19 @@ pub async fn get(uri: impl Into<Cow<'static, str>>) -> crate::Result<Response> {
     client.request(Request::get(uri)).await
 }
 
-impl<S: BodyStream> IntoStream<BoxedStream> for S {
+impl<S: SizedBodyStream> IntoSizedStream<BoxedStream> for S {
+    fn into_stream(self, size: u64) -> BoxedStream {
+        BoxedStream::Sized {
+            stream: Box::pin(self),
+            content_length: size,
+        }
+    }
+}
+
+impl<S: UnsizedBodyStream> IntoUnsizedStream<BoxedStream> for S {
     fn into_stream(self) -> BoxedStream {
-        Box::pin(self) as _
+        BoxedStream::Unsized {
+            stream: Box::pin(self),
+        }
     }
 }

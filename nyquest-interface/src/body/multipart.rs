@@ -5,8 +5,6 @@
 
 use std::{borrow::Cow, fmt::Debug};
 
-use super::SizedStream;
-
 /// Represents a part in a multipart form.
 ///
 /// Each part has a name, optional filename, content type, and a body,
@@ -34,7 +32,7 @@ pub enum PartBody<S> {
         content: Cow<'static, [u8]>,
     },
     /// Streaming part data.
-    Stream(SizedStream<S>),
+    Stream(S),
 }
 
 impl<S> Debug for Part<S>
@@ -66,33 +64,6 @@ where
                 .debug_struct("PartBody::Stream")
                 .field("stream", stream)
                 .finish(),
-        }
-    }
-}
-impl<S> Clone for Part<S>
-where
-    S: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            headers: self.headers.clone(),
-            name: self.name.clone(),
-            filename: self.filename.clone(),
-            content_type: self.content_type.clone(),
-            body: self.body.clone(),
-        }
-    }
-}
-impl<S> Clone for PartBody<S>
-where
-    S: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            PartBody::Bytes { content } => PartBody::Bytes {
-                content: content.clone(),
-            },
-            PartBody::Stream(stream) => PartBody::Stream(stream.clone()),
         }
     }
 }
