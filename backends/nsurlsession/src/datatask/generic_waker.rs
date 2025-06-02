@@ -1,13 +1,16 @@
+use std::sync::Arc;
+
 #[cfg(feature = "async")]
 type AsyncWaker = crate::r#async::waker::AsyncWaker;
 #[cfg(feature = "blocking")]
 type BlockingWaker = crate::blocking::waker::BlockingWaker;
 
+#[derive(Clone)]
 pub(crate) enum GenericWaker {
     #[cfg(feature = "async")]
-    Async(AsyncWaker),
+    Async(Arc<AsyncWaker>),
     #[cfg(feature = "blocking")]
-    Blocking(BlockingWaker),
+    Blocking(Arc<BlockingWaker>),
 }
 
 impl GenericWaker {

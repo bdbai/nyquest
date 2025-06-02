@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
@@ -102,12 +104,10 @@ impl BlockingClient for NSUrlSessionBlockingClient {
     type Response = NSUrlSessionBlockingResponse;
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
+        let waker = GenericWaker::Blocking(Arc::new(BlockingWaker::new_from_current_thread()));
         let task = self.inner.build_data_task(req, |_| todo!())?;
         let shared = unsafe {
-            let delegate = DataTaskDelegate::new(
-                GenericWaker::Blocking(BlockingWaker::new_from_current_thread()),
-                self.inner.allow_redirects,
-            );
+            let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
             DataTaskDelegate::into_shared(delegate)

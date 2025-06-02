@@ -1,20 +1,37 @@
 #![allow(non_snake_case)]
 
+use std::io::{self, Cursor};
+use std::ops::ControlFlow;
+use std::ptr::NonNull;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+
 use arc_swap::ArcSwapAny;
+use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass, Message as _};
+use objc2::runtime::{AnyObject, ProtocolObject, Sel};
+use objc2::{define_class, msg_send, sel, AllocAnyThread, ClassType, DefinedClass, Message as _};
 use objc2_foundation::{
-    NSError, NSInputStream, NSObjectProtocol, NSRunLoop, NSRunLoopMode, NSStreamDelegate,
-    NSStreamPropertyKey, NSStreamStatus,
+    NSArray, NSError, NSInputStream, NSInteger, NSObjectNSDelayedPerforming, NSObjectProtocol,
+    NSRunLoop, NSRunLoopMode, NSStreamDelegate, NSStreamEvent, NSStreamPropertyKey, NSStreamStatus,
+    NSString, NSUInteger,
 };
 
+use crate::datatask::GenericWaker;
 use crate::retained_ext::SwappableRetained;
 
+#[cfg(target_os = "macos")]
+const STREAM_BUFFER_SIZE: usize = 1024 * 64;
+#[cfg(not(target_os = "macos"))]
+const STREAM_BUFFER_SIZE: usize = 1024 * 16;
+
 pub(crate) struct InputStreamIvars {
+    waker: GenericWaker,
     delegate: ArcSwapAny<Option<SwappableRetained<ProtocolObject<dyn NSStreamDelegate>>>>,
     run_loop: ArcSwapAny<Option<SwappableRetained<NSRunLoop>>>,
     run_loop_mode: ArcSwapAny<Option<SwappableRetained<NSRunLoopMode>>>,
+    stream_buffer: Mutex<Result<Cursor<Vec<u8>>, Retained<NSError>>>,
+    eof: AtomicBool,
 }
 
 define_class!(
@@ -32,7 +49,9 @@ define_class!(
 
     impl InputStream {
         #[unsafe(method(open))]
-        fn __open(&self) { }
+        fn __open(&self) {
+            todo!("open")
+        }
 
         #[unsafe(method(close))]
         fn __close(&self) {
@@ -86,30 +105,102 @@ define_class!(
 
         #[unsafe(method(streamError))]
         fn streamError(&self) -> *mut NSError {
-            todo!("streamError")
+            self.callback_streamError()
         }
 
         #[unsafe(method(read:maxLength:))]
-        fn __read(&self, buffer: *mut u8, max_len: usize) -> isize {
-            todo!("read")
+        fn read_maxLength(&self, buffer: NonNull<u8>, len: NSUInteger) -> NSInteger {
+            self.callback_read_maxLength(buffer, len)
         }
 
         #[unsafe(method(hasBytesAvailable))]
         fn hasBytesAvailable(&self) -> bool {
-            todo!("hasBytesAvailable")
+            self.callback_hasBytesAvailable()
         }
     }
 );
 
 impl InputStream {
-    pub(crate) fn new() -> Retained<Self> {
+    pub(crate) fn new(waker: GenericWaker) -> Retained<Self> {
         let this = Self::alloc().set_ivars(InputStreamIvars {
+            waker,
             delegate: ArcSwapAny::new(None),
             run_loop: ArcSwapAny::new(None),
             run_loop_mode: ArcSwapAny::new(None),
+            stream_buffer: Mutex::new(Ok(Cursor::new(vec![0; STREAM_BUFFER_SIZE]))),
+            eof: AtomicBool::new(false),
         });
 
         unsafe { msg_send![super(this), init] }
+    }
+    pub(crate) fn update_buffer<C>(
+        &self,
+        cb: impl FnOnce(&mut [u8]) -> ControlFlow<C, io::Result<usize>>,
+    ) -> Option<C> {
+        let ivars = self.ivars();
+        let mut stream_buffer = ivars.stream_buffer.lock().unwrap();
+        let Ok(cursor) = &mut *stream_buffer else {
+            return None;
+        };
+
+        let pos = cursor.position() as usize;
+        let buffer = &mut cursor.get_mut()[pos..];
+        if !buffer.is_empty() {
+            let read_res = cb(buffer);
+            match read_res {
+                ControlFlow::Break(c) => {
+                    return Some(c);
+                }
+                ControlFlow::Continue(Ok(0)) => {
+                    ivars.eof.store(true, Ordering::SeqCst);
+                    if pos == 0 {
+                        self.notify_stream_state(NSStreamEvent::EndEncountered);
+                        return None;
+                    }
+                }
+                ControlFlow::Continue(Ok(read_len)) => {
+                    cursor.set_position((pos + read_len) as u64);
+                }
+                ControlFlow::Continue(Err(e)) => {
+                    let ns_err = NSError::new(
+                        e.raw_os_error().unwrap_or_default() as _,
+                        &NSString::from_str(&e.to_string()),
+                    );
+                    *stream_buffer = Err(ns_err);
+                    self.notify_stream_state(NSStreamEvent::ErrorOccurred);
+                    return None;
+                }
+            }
+        }
+
+        if cursor.position() > 0 {
+            drop(stream_buffer);
+            self.notify_stream_state(NSStreamEvent::HasBytesAvailable);
+        }
+        None
+    }
+
+    fn notify_stream_state(&self, event: NSStreamEvent) {
+        let ivars = self.ivars();
+        let Some(delegate) = ivars.delegate.load_full() else {
+            return;
+        };
+        let Some(run_loop) = ivars.run_loop.load_full() else {
+            return;
+        };
+        let Some(run_loop_mode) = ivars.run_loop_mode.load_full() else {
+            return;
+        };
+        unsafe {
+            let stream = self.as_super().retain();
+            run_loop.performInModes_block(
+                &NSArray::from_retained_slice(&[run_loop_mode.retain()]),
+                &RcBlock::new(move || {
+                    let delegate: &ProtocolObject<dyn NSStreamDelegate> = &*delegate;
+                    delegate.stream_handleEvent(&stream, event);
+                }),
+            );
+        }
     }
 
     fn callback_setDelegate(&self, delegate: Option<&ProtocolObject<dyn NSStreamDelegate>>) {
@@ -122,6 +213,56 @@ impl InputStream {
         ivars.run_loop_mode.store(Some(mode.retain().into()));
     }
     fn callback_streamStatus(&self) -> NSStreamStatus {
-        NSStreamStatus::NotOpen
+        let ivars = self.ivars();
+        let stream_buffer = ivars.stream_buffer.lock().unwrap();
+        match &*stream_buffer {
+            // The initial status should be NotOpen, otherwise we will be in a infinite loop?
+            Ok(cursor) if cursor.position() > 0 => NSStreamStatus::Open,
+            Ok(_) if ivars.eof.load(Ordering::SeqCst) => NSStreamStatus::AtEnd,
+            Ok(_) => NSStreamStatus::Open,
+            Err(_) => NSStreamStatus::Error,
+        }
+    }
+    fn callback_streamError(&self) -> *mut NSError {
+        let ivars = self.ivars();
+        let stream_buffer = ivars.stream_buffer.lock().unwrap();
+        match &*stream_buffer {
+            Ok(_) => std::ptr::null_mut(),
+            Err(error) => Retained::into_raw(error.clone()),
+        }
+    }
+    fn callback_read_maxLength(&self, buffer: NonNull<u8>, len: NSUInteger) -> NSInteger {
+        let ivars = self.ivars();
+        let mut stream_buffer = ivars.stream_buffer.lock().unwrap();
+
+        match &mut *stream_buffer {
+            Ok(cursor) => {
+                let read_len = (cursor.position() as usize).min(len);
+                if read_len == 0 {
+                    return 0;
+                }
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        cursor.get_ref().as_ptr(),
+                        buffer.as_ptr(),
+                        read_len,
+                    );
+                }
+                cursor.get_mut().drain(..read_len);
+                cursor.set_position(cursor.position() - read_len as u64);
+                ivars.waker.wake();
+                read_len as NSInteger
+            }
+            Err(_) => -1,
+        }
+    }
+    fn callback_hasBytesAvailable(&self) -> bool {
+        let ivars = self.ivars();
+        let stream_buffer = ivars.stream_buffer.lock().unwrap();
+        matches!(&*stream_buffer, Ok(cursor) if cursor.position() > 0)
     }
 }
+
+// Safety: ivars are protected by ArcSwapAny Retained and Mutex
+unsafe impl Send for InputStream {}
+unsafe impl Sync for InputStream {}
