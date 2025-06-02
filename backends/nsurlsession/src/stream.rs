@@ -6,7 +6,7 @@ use objc2::rc::Retained;
 use objc2::{define_class, msg_send, AllocAnyThread};
 use objc2_foundation::{NSError, NSInputStream, NSObjectProtocol, NSStreamStatus};
 
-struct InputStreamIvars {}
+pub(crate) struct InputStreamIvars {}
 
 define_class!(
     // SAFETY:
