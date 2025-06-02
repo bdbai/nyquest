@@ -102,7 +102,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
     type Response = NSUrlSessionBlockingResponse;
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
-        let task = self.inner.build_data_task(req)?;
+        let task = self.inner.build_data_task(req, |_| todo!())?;
         let shared = unsafe {
             let delegate = DataTaskDelegate::new(
                 GenericWaker::Blocking(BlockingWaker::new_from_current_thread()),

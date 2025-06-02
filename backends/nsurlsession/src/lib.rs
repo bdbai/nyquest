@@ -22,6 +22,7 @@ cfg_if::cfg_if! {
         #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
         mod multipart;
         mod response;
+        mod stream;
     }
 }
 

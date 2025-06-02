@@ -15,6 +15,7 @@ use crate::client::NSUrlSessionClient;
 use crate::datatask::{DataTaskDelegate, GenericWaker};
 use crate::error::IntoNyquestResult;
 use crate::response::NSUrlSessionResponse;
+use crate::stream::InputStream;
 use crate::NSUrlSessionBackend;
 
 #[derive(Clone)]
@@ -120,7 +121,9 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         &self,
         req: nyquest_interface::r#async::Request,
     ) -> NyquestResult<Self::Response> {
-        let task = self.inner.build_data_task(req)?;
+        let task = self
+            .inner
+            .build_data_task(req, |stream| Ok(InputStream::new().into_super()))?;
         let shared = unsafe {
             let delegate = DataTaskDelegate::new(
                 GenericWaker::Async(AsyncWaker::new()),
