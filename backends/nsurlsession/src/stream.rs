@@ -1,12 +1,19 @@
 #![allow(non_snake_case)]
 
-use std::ffi::c_void;
-
+use arc_swap::ArcSwapAny;
 use objc2::rc::Retained;
-use objc2::{define_class, msg_send, AllocAnyThread};
-use objc2_foundation::{NSError, NSInputStream, NSObjectProtocol, NSStreamStatus};
+use objc2::runtime::{AnyObject, ProtocolObject};
+use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass, Message as _};
+use objc2_foundation::{
+    NSError, NSInputStream, NSObjectProtocol, NSRunLoop, NSRunLoopMode, NSStreamDelegate,
+    NSStreamPropertyKey, NSStreamStatus,
+};
 
-pub(crate) struct InputStreamIvars {}
+use crate::retained_ext::SwappableRetained;
+
+pub(crate) struct InputStreamIvars {
+    delegate: ArcSwapAny<Option<SwappableRetained<ProtocolObject<dyn NSStreamDelegate>>>>,
+}
 
 define_class!(
     // SAFETY:
@@ -23,60 +30,89 @@ define_class!(
 
     impl InputStream {
         #[unsafe(method(open))]
-        fn __open(&self) {
-            todo!()
-        }
+        fn __open(&self) { }
 
         #[unsafe(method(close))]
         fn __close(&self) {
-            todo!()
+            todo!("close")
+        }
+
+        #[unsafe(method(setDelegate:))]
+        fn setDelegate(&self, delegate: Option<&ProtocolObject<dyn NSStreamDelegate>>) {
+            todo!("setDelegate")
+        }
+
+        #[unsafe(method(propertyForKey:))]
+        fn propertyForKey(
+            &self,
+            key: &NSStreamPropertyKey,
+        ) -> *mut AnyObject {
+            todo!("propertyForKey")
+        }
+
+        #[unsafe(method(setProperty:forKey:))]
+        fn setProperty_forKey(
+            &self,
+            property: Option<&AnyObject>,
+            key: &NSStreamPropertyKey,
+        ) -> bool {
+            todo!("setProperty_forKey")
+        }
+
+        #[unsafe(method(scheduleInRunLoop:forMode:))]
+        fn scheduleInRunLoop_forMode(
+            &self,
+            a_run_loop: &NSRunLoop,
+            mode: &NSRunLoopMode,
+        ) {
+            todo!("scheduleInRunLoop_forMode")
+        }
+
+        #[unsafe(method(removeFromRunLoop:forMode:))]
+        fn removeFromRunLoop_forMode(
+            &self,
+            a_run_loop: &NSRunLoop,
+            mode: &NSRunLoopMode,
+        ) {
+            todo!("removeFromRunLoop_forMode")
+        }
+
+        #[unsafe(method(streamStatus))]
+        fn streamStatus(&self) -> NSStreamStatus {
+            self.callback_streamStatus()
+        }
+
+        #[unsafe(method(streamError))]
+        fn streamError(&self) -> *mut NSError {
+            todo!("streamError")
         }
 
         #[unsafe(method(read:maxLength:))]
         fn __read(&self, buffer: *mut u8, max_len: usize) -> isize {
-            todo!()
+            todo!("read")
         }
 
         #[unsafe(method(hasBytesAvailable))]
-        fn __has_bytes_available(&self) -> bool {
-            todo!()
-        }
-
-        #[unsafe(method(streamStatus))]
-        fn __stream_status(&self) -> NSStreamStatus {
-            todo!()
-        }
-
-        #[unsafe(method(streamError))]
-        fn __stream_error(&self) -> *mut NSError {
-            todo!()
-        }
-
-        // Private methods required by NSInputStream
-        #[unsafe(method(_scheduleInCFRunLoop:forMode:))]
-        fn __schedule_in_cf_runloop(&self, _runloop: *const c_void, _mode: *const c_void) {
-            todo!()
-        }
-        #[unsafe(method(_unscheduleFromCFRunLoop:forMode:))]
-        fn __unschedule_from_cf_runloop(&self, _runloop: *const c_void, _mode: *const c_void) {
-            todo!()
-        }
-        #[unsafe(method(_setCFClientFlags:callback:context:))]
-        fn __set_cf_client_flags(
-            &self,
-            _flags: u32,
-            _callback: *const c_void,
-            _context: *const c_void,
-        ) -> bool {
-            todo!()
+        fn hasBytesAvailable(&self) -> bool {
+            todo!("hasBytesAvailable")
         }
     }
 );
 
 impl InputStream {
     pub(crate) fn new() -> Retained<Self> {
-        let this = Self::alloc().set_ivars(InputStreamIvars {});
+        let this = Self::alloc().set_ivars(InputStreamIvars {
+            delegate: ArcSwapAny::new(None),
+        });
 
         unsafe { msg_send![super(this), init] }
+    }
+
+    fn callback_setDelegate(&self, delegate: Option<&ProtocolObject<dyn NSStreamDelegate>>) {
+        let delegate = delegate.map(|d| d.retain().into());
+        self.ivars().delegate.store(delegate);
+    }
+    fn callback_streamStatus(&self) -> NSStreamStatus {
+        NSStreamStatus::NotOpen
     }
 }

@@ -47,6 +47,8 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSURLResponse",
     "NSURLSession",
     "NSStream",
+    "NSObjCRuntime",
+    "NSRunLoop",
     "NSOperation",
 ] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
