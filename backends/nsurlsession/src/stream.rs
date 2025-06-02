@@ -13,6 +13,8 @@ use crate::retained_ext::SwappableRetained;
 
 pub(crate) struct InputStreamIvars {
     delegate: ArcSwapAny<Option<SwappableRetained<ProtocolObject<dyn NSStreamDelegate>>>>,
+    run_loop: ArcSwapAny<Option<SwappableRetained<NSRunLoop>>>,
+    run_loop_mode: ArcSwapAny<Option<SwappableRetained<NSRunLoopMode>>>,
 }
 
 define_class!(
@@ -39,7 +41,7 @@ define_class!(
 
         #[unsafe(method(setDelegate:))]
         fn setDelegate(&self, delegate: Option<&ProtocolObject<dyn NSStreamDelegate>>) {
-            todo!("setDelegate")
+            self.callback_setDelegate(delegate);
         }
 
         #[unsafe(method(propertyForKey:))]
@@ -65,7 +67,7 @@ define_class!(
             a_run_loop: &NSRunLoop,
             mode: &NSRunLoopMode,
         ) {
-            todo!("scheduleInRunLoop_forMode")
+            self.callback_scheduleInRunLoop_forMode(a_run_loop, mode);
         }
 
         #[unsafe(method(removeFromRunLoop:forMode:))]
@@ -103,6 +105,8 @@ impl InputStream {
     pub(crate) fn new() -> Retained<Self> {
         let this = Self::alloc().set_ivars(InputStreamIvars {
             delegate: ArcSwapAny::new(None),
+            run_loop: ArcSwapAny::new(None),
+            run_loop_mode: ArcSwapAny::new(None),
         });
 
         unsafe { msg_send![super(this), init] }
@@ -111,6 +115,11 @@ impl InputStream {
     fn callback_setDelegate(&self, delegate: Option<&ProtocolObject<dyn NSStreamDelegate>>) {
         let delegate = delegate.map(|d| d.retain().into());
         self.ivars().delegate.store(delegate);
+    }
+    fn callback_scheduleInRunLoop_forMode(&self, a_run_loop: &NSRunLoop, mode: &NSRunLoopMode) {
+        let ivars = self.ivars();
+        ivars.run_loop.store(Some(a_run_loop.retain().into()));
+        ivars.run_loop_mode.store(Some(mode.retain().into()));
     }
     fn callback_streamStatus(&self) -> NSStreamStatus {
         NSStreamStatus::NotOpen
