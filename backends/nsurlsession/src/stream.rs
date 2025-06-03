@@ -140,6 +140,9 @@ impl InputStream {
         cb: impl FnOnce(&mut [u8]) -> ControlFlow<C, io::Result<usize>>,
     ) -> Option<C> {
         let ivars = self.ivars();
+        if ivars.eof.load(Ordering::SeqCst) {
+            return None;
+        }
         let mut stream_buffer = ivars.stream_buffer.lock().unwrap();
         let Ok(cursor) = &mut *stream_buffer else {
             return None;
