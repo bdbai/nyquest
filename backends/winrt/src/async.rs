@@ -1,6 +1,6 @@
 use std::future::{Future, IntoFuture};
 use std::io;
-use std::pin::Pin;
+use std::pin::{pin, Pin};
 use std::task::{ready, Context, Poll};
 
 use nyquest_interface::client::ClientOptions;
@@ -9,6 +9,7 @@ use nyquest_interface::Result as NyquestResult;
 use windows::Web::Http::HttpCompletionOption;
 use windows_future::IAsyncOperation;
 
+mod stream_content;
 mod timer_ext;
 
 use crate::client::WinrtClient;
@@ -34,19 +35,26 @@ impl crate::WinrtBackend {
 impl WinrtClient {
     async fn send_request_async(&self, req: Request) -> NyquestResult<WinrtAsyncResponse> {
         let req_msg = self.create_request(&req)?;
-        // TODO: stream
+        let mut stream_tasks = Default::default();
         if let Some(body) = req.body {
-            let body = create_body(body, &mut |_| unimplemented!())?;
+            let body = create_body(body, &mut |s| {
+                stream_content::transform_stream(s, &mut stream_tasks)
+            })?;
             self.append_content_headers(&body, &req.additional_headers)?;
             req_msg.SetContent(&body).into_nyquest_result()?;
         }
         let mut timer = Timer::new(self.request_timeout);
-        let res = self
-            .client
-            .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)
-            .into_nyquest_result()?
-            .timeout_by(&mut timer)
-            .await?;
+        let res = {
+            let request_fut = pin!(self
+                .client
+                .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)
+                .into_nyquest_result()?
+                .timeout_by(&mut timer));
+            match futures_util::future::select(request_fut, stream_tasks).await {
+                futures_util::future::Either::Left((res, _)) => res,
+                futures_util::future::Either::Right((_, _)) => unreachable!(),
+            }?
+        };
         let inner =
             WinrtResponse::new(res, self.max_response_buffer_size, timer).into_nyquest_result()?;
         Ok(WinrtAsyncResponse {
@@ -151,6 +159,6 @@ impl AsyncBackend for crate::WinrtBackend {
         &self,
         options: ClientOptions,
     ) -> NyquestResult<Self::AsyncClient> {
-        Ok(self.create_async_client(options).into_nyquest_result()?)
+        self.create_async_client(options).into_nyquest_result()
     }
 }

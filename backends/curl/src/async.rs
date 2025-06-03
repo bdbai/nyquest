@@ -2,13 +2,15 @@ use std::io;
 use std::task::{ready, Poll};
 use std::{pin::Pin, sync::Arc, task::Context};
 
-use curl::easy::Easy;
+use curl::easy::Easy2;
 use nyquest_interface::r#async::{futures_io, AsyncResponse};
 use nyquest_interface::Error as NyquestError;
 
-use crate::url::concat_url;
-
+mod handler;
 mod r#loop;
+mod pause;
+
+use crate::url::concat_url;
 
 pub struct CurlMultiClientInner {
     options: nyquest_interface::client::ClientOptions,
@@ -114,17 +116,20 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         &self,
         req: nyquest_interface::r#async::Request,
     ) -> nyquest_interface::Result<Self::Response> {
-        let req = loop {
-            // TODO: CURLOPT_SHARE
-            let mut easy = Easy::new();
+        let req = {
+            let mut easy = Easy2::new(handler::AsyncHandler::default());
+            let raw_handle = easy.raw();
+            easy.get_mut().pause = Some(pause::EasyPause::new(raw_handle));
             // FIXME: properly concat base_url and url
             let url = concat_url(self.inner.options.base_url.as_deref(), &req.relative_uri);
-            crate::request::populate_request(&url, &req, &self.inner.options, &mut easy)?;
-            let req = self.inner.loop_manager.start_request(easy).await?;
-            match req {
-                r#loop::MaybeStartedRequest::Gone => {}
-                r#loop::MaybeStartedRequest::Started(req) => break req,
-            }
+            crate::request::populate_request(
+                &url,
+                req,
+                &self.inner.options,
+                &mut easy,
+                |_, _| unimplemented!(),
+            )?;
+            self.inner.loop_manager.start_request(easy).await?
         };
         let mut res = req.wait_for_response().await?;
         res.max_response_buffer_size = self.inner.options.max_response_buffer_size;
@@ -141,8 +146,8 @@ impl nyquest_interface::r#async::AsyncBackend for crate::CurlBackend {
     ) -> Result<Self::AsyncClient, NyquestError> {
         Ok(CurlMultiClient {
             inner: Arc::new(CurlMultiClientInner {
-                options,
                 loop_manager: r#loop::LoopManager::new(),
+                options,
             }),
         })
     }

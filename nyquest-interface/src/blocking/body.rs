@@ -4,26 +4,39 @@
 
 use std::io::{Read, Seek};
 
-/// Trait for blocking body streams.
-#[doc(hidden)]
-pub trait BodyStream: Read + Seek + Send {}
+/// Trait for seekable blocking body streams with a known size.
+pub trait SizedBodyStream: Read + Seek + Send + 'static {}
 
-/// Type alias for boxed blocking body streams.
-#[doc(hidden)]
-pub type BoxedStream = Box<dyn BodyStream>;
+/// Trait for unsized blocking body streams that do not support seeking.
+pub trait UnsizedBodyStream: Read + Send + 'static {}
+
+/// A boxed blocking stream type that can either be sized or unsized.
+pub enum BoxedStream {
+    /// Sized stream with a known content length.
+    Sized {
+        /// The underlying stream that provides the body data.
+        stream: Box<dyn SizedBodyStream>,
+        /// Content length of the stream.
+        content_length: u64,
+    },
+    /// Unsized stream without a known content length.
+    Unsized {
+        /// The underlying stream that provides the body data.
+        stream: Box<dyn UnsizedBodyStream>,
+    },
+}
 
 /// Type alias for blocking HTTP request bodies.
 pub type Body = crate::body::Body<BoxedStream>;
 
-impl Body {
-    /// Creates a new streaming body from a reader.
-    #[doc(hidden)]
-    pub fn stream<S: Read + Seek + Send + 'static>(stream: S, content_length: Option<u64>) -> Self {
-        crate::body::Body::Stream(crate::body::StreamReader {
-            stream: Box::new(stream),
-            content_length,
-        })
+impl<S: Read + Seek + Send + 'static + ?Sized> SizedBodyStream for S {}
+impl<S: Read + Send + 'static + ?Sized> UnsizedBodyStream for S {}
+
+impl Read for BoxedStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            BoxedStream::Sized { stream, .. } => stream.read(buf),
+            BoxedStream::Unsized { stream } => stream.read(buf),
+        }
     }
 }
-
-impl<S: Read + Seek + Send + ?Sized> BodyStream for S {}

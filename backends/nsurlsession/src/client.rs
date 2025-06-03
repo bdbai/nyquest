@@ -84,6 +84,12 @@ impl NSUrlSessionClient {
     pub(crate) fn build_data_task<S>(
         &self,
         req: Request<S>,
+        mut map_stream: impl FnMut(
+            S,
+        ) -> NyquestResult<(
+            Retained<objc2_foundation::NSInputStream>,
+            Option<u64>,
+        )>,
     ) -> NyquestResult<Retained<objc2_foundation::NSURLSessionDataTask>> {
         let nsreq = NSMutableURLRequest::alloc();
         unsafe {
@@ -145,7 +151,23 @@ impl NSUrlSessionClient {
                         );
                         nsreq.setHTTPBody(Some(&generate_multipart_body(&boundary, parts)));
                     }
-                    _ => todo!("body types"),
+                    Body::Stream {
+                        stream,
+                        content_type,
+                    } => {
+                        nsreq.setValue_forHTTPHeaderField(
+                            Some(&NSString::from_str(&content_type)),
+                            ns_string!("content-type"),
+                        );
+                        let (stream, content_len) = map_stream(stream)?;
+                        if let Some(len) = content_len {
+                            nsreq.setValue_forHTTPHeaderField(
+                                Some(&NSString::from_str(&len.to_string())),
+                                ns_string!("content-length"),
+                            );
+                        }
+                        nsreq.setHTTPBodyStream(Some(&stream));
+                    }
                 }
             }
             Ok(self.session.dataTaskWithRequest(&nsreq))
