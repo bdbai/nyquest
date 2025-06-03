@@ -7,7 +7,9 @@ use std::task::{Context, Poll};
 
 use futures_util::AsyncRead;
 use nyquest_interface::client::ClientOptions;
-use nyquest_interface::r#async::{futures_io, AsyncBackend, AsyncClient, AsyncResponse};
+use nyquest_interface::r#async::{
+    futures_io, AsyncBackend, AsyncClient, AsyncResponse, BoxedStream,
+};
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::runtime::ProtocolObject;
 use objc2::Message;
@@ -129,8 +131,12 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         let mut stream = None;
         let task = self.inner.build_data_task(req, |s| {
             let retained = InputStream::new(waker.clone());
+            let content_length = match &s {
+                BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                BoxedStream::Unsized { .. } => None,
+            };
             stream = Some((retained.retain(), s));
-            Ok(retained.into_super())
+            Ok((retained.into_super(), content_length))
         })?;
         let shared = unsafe {
             let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
