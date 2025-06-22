@@ -10,7 +10,7 @@ pub fn populate_request<S, H: Handler>(
     req: Request<S>,
     options: &nyquest_interface::client::ClientOptions,
     easy: &mut Easy2<H>,
-    populate_stream: impl FnOnce(&mut Easy2<H>, S) -> nyquest_interface::Result<()>,
+    _populate_stream: impl FnOnce(&mut Easy2<H>, S) -> nyquest_interface::Result<()>,
 ) -> nyquest_interface::Result<()> {
     if !options.use_default_proxy {
         easy.noproxy("*")
@@ -70,12 +70,7 @@ pub fn populate_request<S, H: Handler>(
             easy.post_fields_copy(&content)
                 .into_nyquest_result("set CURLOPT_COPYPOSTFIELDS")?;
         }
-        Some(Body::Stream {
-            stream,
-            content_type,
-        }) => {
-            unimplemented!()
-        }
+        Some(Body::Stream { .. }) => unimplemented!(),
         Some(Body::Form { fields }) => {
             let mut buf =
                 String::with_capacity(fields.iter().map(|(k, v)| k.len() + v.len() + 2).sum());
@@ -123,9 +118,9 @@ pub fn populate_request<S, H: Handler>(
                         )));
                     }
                 }
-                formpart.add().map_err(|e| {
-                    nyquest_interface::Error::Io(io::Error::new(ErrorKind::Other, e.to_string()))
-                })?;
+                formpart
+                    .add()
+                    .map_err(|e| nyquest_interface::Error::Io(io::Error::other(e.to_string())))?;
             }
             easy.httppost(form)
                 .into_nyquest_result("set CURLOPT_HTTPPOST")?;

@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex};
 
 use curl::easy::{Handler, WriteError};
-use nyquest_interface::blocking::BoxedStream;
 
 use crate::state::RequestState;
 
@@ -28,11 +27,11 @@ impl Handler for BlockingHandler {
         true
     }
 
-    fn read(&mut self, data: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
+    fn read(&mut self, _data: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
         Ok(0)
     }
 
-    fn seek(&mut self, whence: std::io::SeekFrom) -> curl::easy::SeekResult {
+    fn seek(&mut self, _whence: std::io::SeekFrom) -> curl::easy::SeekResult {
         curl::easy::SeekResult::Fail
     }
 }

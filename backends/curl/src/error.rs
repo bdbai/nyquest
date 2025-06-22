@@ -18,10 +18,7 @@ impl<T> IntoNyquestResult<T> for Result<T, curl::Error> {
             return Err(NyquestError::RequestTimeout);
         }
         Ok(self.map_err(|e| {
-            std::io::Error::new(
-                ErrorKind::Other,
-                format!("curl error:{}:{}", ctx, e.description()),
-            )
+            std::io::Error::other(format!("curl error:{}:{}", ctx, e.description()))
         })?)
     }
 }
@@ -30,10 +27,7 @@ impl<T> IntoNyquestResult<T> for Result<T, curl::MultiError> {
     fn into_nyquest_result(self, ctx: &str) -> NyquestResult<T> {
         // TODO: proper error mapping
         Ok(self.map_err(|e| {
-            std::io::Error::new(
-                ErrorKind::Other,
-                format!("curl multi error:{}:{}", ctx, e.description()),
-            )
+            std::io::Error::other(format!("curl multi error:{}:{}", ctx, e.description()))
         })?)
     }
 }
@@ -42,10 +36,7 @@ impl<T> IntoNyquestResult<T> for Result<T, curl::ShareError> {
     fn into_nyquest_result(self, ctx: &str) -> NyquestResult<T> {
         // TODO: proper error mapping
         Ok(self.map_err(|e| {
-            std::io::Error::new(
-                ErrorKind::Other,
-                format!("curl share error:{}:{}", ctx, e.description()),
-            )
+            std::io::Error::other(format!("curl share error:{}:{}", ctx, e.description()))
         })?)
     }
 }

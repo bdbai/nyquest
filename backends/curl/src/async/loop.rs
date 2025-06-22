@@ -52,7 +52,7 @@ enum LoopTask {
         oneshot::Sender<NyquestResult<super::CurlAsyncResponse>>,
     ),
     UnpauseRecvHandle(usize),
-    UnpauseSendHandle(usize),
+    _UnpauseSendHandle(usize),
     DropHandle(usize),
     Shutdown,
 }
@@ -68,11 +68,8 @@ impl From<LoopTask> for LoopTaskWrapper {
 impl Drop for LoopTaskWrapper {
     fn drop(&mut self) {
         let task = unsafe { ManuallyDrop::take(&mut self.0) };
-        match task {
-            LoopTask::ConstructHandle(handle, tx) => {
-                tx.send(Err(handle)).ok();
-            }
-            _ => {}
+        if let LoopTask::ConstructHandle(handle, tx) = task {
+            tx.send(Err(handle)).ok();
         }
     }
 }
@@ -97,14 +94,15 @@ impl RequestHandle {
         .await?;
 
         let (tx, rx) = oneshot::channel();
-        self.manager
+        let send_task_res = self
+            .manager
             .clone()
             .dispatch_task(LoopTask::QueryHandleResponse(
                 self.shared_context.id,
                 self,
                 tx,
             ));
-        let Ok(res) = rx.await else {
+        let (Ok(_), Ok(res)) = (send_task_res, rx.await) else {
             return Err(
                 io::Error::new(io::ErrorKind::ConnectionAborted, "handle not found").into(),
             );
@@ -141,7 +139,8 @@ impl RequestHandle {
             return Poll::Ready(res.map(|()| None));
         };
         self.manager
-            .dispatch_task(LoopTask::UnpauseRecvHandle(self.shared_context.id));
+            .dispatch_task(LoopTask::UnpauseRecvHandle(self.shared_context.id))
+            .ok();
         self.shared_context.waker.register(cx.waker());
         Poll::Pending
     }
@@ -150,7 +149,8 @@ impl RequestHandle {
 impl Drop for RequestHandle {
     fn drop(&mut self) {
         self.manager
-            .dispatch_task(LoopTask::DropHandle(self.shared_context.id));
+            .dispatch_task(LoopTask::DropHandle(self.shared_context.id))
+            .ok();
     }
 }
 
@@ -270,7 +270,7 @@ impl LoopManager {
 impl Drop for LoopManager {
     fn drop(&mut self) {
         if let Some(inner) = self.inner.get_mut() {
-            inner.dispatch_task(LoopTask::Shutdown);
+            inner.dispatch_task(LoopTask::Shutdown).ok();
         }
     }
 }
@@ -364,7 +364,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                             handle.unpause_read().ok();
                         }
                     }
-                    LoopTask::UnpauseSendHandle(id) => {
+                    LoopTask::_UnpauseSendHandle(id) => {
                         if let Some((handle, _)) = slab.get(id) {
                             // Ignore the error. Also see
                             handle.unpause_write().ok();

@@ -1,6 +1,6 @@
 use curl_sys::{CURLPAUSE_RECV, CURLPAUSE_SEND};
 
-pub const CURLPAUSE_ALL: i32 = CURLPAUSE_RECV | CURLPAUSE_SEND;
+pub const _CURLPAUSE_ALL: i32 = CURLPAUSE_RECV | CURLPAUSE_SEND;
 
 #[derive(Clone, Copy)]
 pub(super) struct EasyPause(*mut curl_sys::CURL);
