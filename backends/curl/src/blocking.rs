@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use nyquest_interface::blocking::Request;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
+mod handler;
 mod multi_easy;
 
 use crate::share::Share;
@@ -34,8 +35,8 @@ pub struct CurlBlockingResponse {
 }
 
 impl<S: AsRef<Mutex<Option<MultiEasy>>>> EasyHandleGuard<S> {
-    fn with_handle<T>(&mut self, cb: impl FnOnce(&mut MultiEasy) -> T) -> T {
-        cb(self.handle.get_mut().unwrap())
+    fn handle_mut(&mut self) -> &mut MultiEasy {
+        self.handle.get_mut().unwrap()
     }
 }
 
@@ -91,21 +92,19 @@ impl CurlEasyClient {
 
 impl io::Read for CurlBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let written = self.handle.with_handle(|handle| {
-            handle.poll_until_partial_response()?;
-            let written = handle.with_response_buffer_mut(|response_buf| {
-                let len = response_buf.len().min(buf.len());
-                buf[..len].copy_from_slice(&response_buf[..len]);
-                response_buf.drain(..len);
-                len
-            });
-            NyquestResult::Ok(written)
-        });
-        match written {
-            Ok(written) => Ok(written),
-            Err(NyquestError::Io(e)) => Err(e),
-            Err(e) => unreachable!("Unexpected error: {}", e),
+        let handle = self.handle.handle_mut();
+        match handle.poll_until_partial_response() {
+            Ok(()) => {}
+            Err(NyquestError::Io(e)) => return Err(e),
+            Err(e) => unreachable!("Unexpected error: {e:?}"),
         }
+        let written = handle.with_response_buffer_mut(|response_buf| {
+            let len = response_buf.len().min(buf.len());
+            buf[..len].copy_from_slice(&response_buf[..len]);
+            response_buf.drain(..len);
+            len
+        });
+        Ok(written)
     }
 }
 
@@ -147,12 +146,9 @@ impl nyquest_interface::blocking::BlockingResponse for CurlBlockingResponse {
     }
 
     fn bytes(&mut self) -> nyquest_interface::Result<Vec<u8>> {
-        self.handle.with_handle(|handle| {
-            handle.poll_until_whole_response(self.max_response_buffer_size)
-        })?;
-        let buf = self
-            .handle
-            .with_handle(|handle| handle.take_response_buffer());
+        let handle = self.handle.handle_mut();
+        handle.poll_until_whole_response(self.max_response_buffer_size)?;
+        let buf = handle.take_response_buffer();
         if self
             .max_response_buffer_size
             .map(|limit| buf.len() > limit as usize)
@@ -168,15 +164,13 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
     type Response = CurlBlockingResponse;
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
-        let mut handle = self.get_or_create_handle();
+        let mut handle_guard = self.get_or_create_handle();
         // FIXME: properly concat base_url and url
         let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);
-        handle.with_handle(|handle| handle.populate_request(&url, req, &self.options))?;
-        handle.with_handle(|handle| handle.poll_until_response_headers())?;
-        let (status, content_length) = handle.with_handle(|handle| {
-            Ok::<_, NyquestError>((handle.status()?, handle.content_length()?))
-        })?;
-        let mut headers_buf = handle.with_handle(|handle| handle.take_response_headers_buffer());
+        let handle = handle_guard.handle_mut();
+        handle.populate_request(&url, req, &self.options)?;
+        handle.poll_until_response_headers()?;
+        let mut headers_buf = handle.take_response_headers_buffer();
         let headers = headers_buf
             .iter_mut()
             .filter_map(|line| std::str::from_utf8_mut(&mut *line).ok())
@@ -184,10 +178,10 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
             .map(|(k, v)| (k.into(), v.trim_start().into()))
             .collect();
         Ok(CurlBlockingResponse {
-            status,
-            content_length,
+            status: handle.status()?,
+            content_length: handle.content_length()?,
             headers,
-            handle: handle.into_owned(),
+            handle: handle_guard.into_owned(),
             max_response_buffer_size: self.options.max_response_buffer_size,
         })
     }

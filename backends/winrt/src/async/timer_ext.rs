@@ -21,6 +21,7 @@ where
     type Output = T;
     async fn timeout_by(self, timer: &mut Timer) -> NyquestResult<Self::Output> {
         let Some(remaining) = &mut timer.remaining else {
+            // TODO: cancel on drop
             return self.await.into_nyquest_result();
         };
         if remaining.is_zero() {
