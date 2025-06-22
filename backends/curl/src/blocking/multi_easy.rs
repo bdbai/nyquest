@@ -2,15 +2,16 @@ use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use curl::{
-    easy::Easy,
-    multi::{EasyHandle, Multi},
-};
+use curl::multi::Multi;
 use nyquest_interface::blocking::Request;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 use crate::error::IntoNyquestResult;
 use crate::share::Share;
+use crate::state::RequestState;
+
+type Easy = curl::easy::Easy2<super::handler::BlockingHandler>;
+type EasyHandle = curl::multi::Easy2Handle<super::handler::BlockingHandler>;
 
 enum MaybeAttachedEasy {
     Attached(EasyHandle),
@@ -19,18 +20,10 @@ enum MaybeAttachedEasy {
 }
 
 pub(crate) struct MultiEasy {
-    state: Arc<Mutex<MultiEasyState>>,
+    state: Arc<Mutex<RequestState>>,
     easy: MaybeAttachedEasy,
     multi: Multi,
     share: Share, // Drop later than easy
-}
-
-#[derive(Default)]
-struct MultiEasyState {
-    temp_status_code: u16,
-    header_finished: bool,
-    response_headers_buffer: Vec<Vec<u8>>,
-    response_buffer: Vec<u8>,
 }
 
 impl MaybeAttachedEasy {
@@ -47,7 +40,7 @@ impl MaybeAttachedEasy {
                             std::hint::unreachable_unchecked();
                         },
                     };
-                    *self = match multi.add(easy) {
+                    *self = match multi.add2(easy) {
                         Ok(handle) => MaybeAttachedEasy::Attached(handle),
                         Err(err) => MaybeAttachedEasy::Error(
                             Err(err).into_nyquest_result("multi_easy curl_multi_add_handle"),
@@ -73,7 +66,7 @@ impl MaybeAttachedEasy {
                             std::hint::unreachable_unchecked();
                         },
                     };
-                    *self = match multi.remove(easy) {
+                    *self = match multi.remove2(easy) {
                         Ok(easy) => MaybeAttachedEasy::Detached(easy),
                         Err(err) => MaybeAttachedEasy::Error(
                             Err(err).into_nyquest_result("multi_easy curl_multi_remove_handle"),
@@ -92,45 +85,8 @@ impl MaybeAttachedEasy {
 
 impl MultiEasy {
     pub fn new(share: Share) -> Self {
-        let state = Arc::new(Mutex::new(MultiEasyState::default()));
-        let mut easy = Easy::new();
-        easy.header_function({
-            let state = state.clone();
-            move |h| {
-                let mut state = state.lock().unwrap();
-                if h == b"\r\n" {
-                    let is_redirect = [301, 302, 303, 307, 308].contains(&state.temp_status_code);
-                    if !is_redirect {
-                        state.header_finished = true;
-                    }
-                } else if h.contains(&b':') {
-                    state
-                        .response_headers_buffer
-                        .push(h.strip_suffix(b"\r\n").unwrap_or(h).into());
-                } else if let Some(status) = h
-                    .split(u8::is_ascii_whitespace)
-                    .nth(1)
-                    .and_then(|s| std::str::from_utf8(s).ok())
-                    .and_then(|s| s.parse().ok())
-                {
-                    state.temp_status_code = status;
-                }
-
-                true
-            }
-        })
-        .expect("set curl header function");
-        easy.write_function({
-            let state = state.clone();
-            move |f| {
-                let mut state = state.lock().unwrap();
-                state.header_finished = true;
-                // TODO: handle max response buffer size
-                state.response_buffer.extend_from_slice(f);
-                Ok(f.len())
-            }
-        })
-        .expect("set curl write function");
+        let state = Arc::new(Mutex::new(Default::default()));
+        let easy = Easy::new(super::handler::BlockingHandler::new(state.clone()));
         let mut multi = Multi::new();
         multi.set_max_connects(5).expect("set max connects"); // Default of easy is 5
         MultiEasy {
@@ -147,7 +103,7 @@ impl MultiEasy {
 
     fn poll_until(
         &mut self,
-        mut cb: impl FnMut(&Mutex<MultiEasyState>) -> NyquestResult<ControlFlow<()>>,
+        mut cb: impl FnMut(&Mutex<RequestState>) -> NyquestResult<ControlFlow<()>>,
     ) -> NyquestResult<()> {
         let easy = self.easy.attach(&mut self.multi)?;
         // TODO: sigpipe
@@ -167,7 +123,7 @@ impl MultiEasy {
                     .into_nyquest_result("multi_easy curl_multi_perform")
             })?;
             let mut res = ControlFlow::Continue(());
-            self.multi.messages(|msg| match msg.result_for(easy) {
+            self.multi.messages(|msg| match msg.result_for2(easy) {
                 Some(Ok(())) => res = ControlFlow::Break(Ok(())),
                 Some(Err(err)) => {
                     res = ControlFlow::Break(
@@ -206,8 +162,8 @@ impl MultiEasy {
         self.reset_state();
         let easy = self.easy.detach(&mut self.multi)?;
         easy.reset();
-        unsafe { self.share.bind_easy(easy)? };
-        crate::request::populate_request(url, &req, options, easy)
+        unsafe { self.share.bind_easy2(easy)? };
+        crate::request::populate_request(url, req, options, easy, |easy, stream| unimplemented!())
     }
 
     pub fn status(&mut self) -> NyquestResult<u16> {
@@ -270,4 +226,4 @@ impl MultiEasy {
 // However, `MultiEasy` can be `Send` because it bundles both `Easy` and `Multi` handles together,
 // ensuring that they are dropped on the same thread. Moreover, we intentionally do not expose
 // `&mut Easy` or `&mut Multi` to the user, so the user cannot move them to another thread.
-unsafe impl Send for MultiEasy where Arc<MultiEasyState>: Send {}
+unsafe impl Send for MultiEasy where Arc<RequestState>: Send {}

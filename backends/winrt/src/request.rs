@@ -120,7 +120,7 @@ pub(crate) fn create_body<S>(
                     PartBody::Bytes { content } => {
                         create_content_from_bytes(content, part.content_type)?
                     }
-                    PartBody::Stream(stream) => map_stream(stream.stream)?,
+                    PartBody::Stream(stream) => map_stream(stream)?,
                 };
                 let headers = part_content.Headers()?;
                 for (name, value) in part.headers {
@@ -143,6 +143,6 @@ pub(crate) fn create_body<S>(
             }
             content.cast()?
         }
-        Body::Stream(stream) => map_stream(stream.stream)?,
+        Body::Stream { .. } => unimplemented!(),
     })
 }
