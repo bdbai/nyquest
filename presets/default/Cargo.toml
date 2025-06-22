@@ -1,7 +1,7 @@
 [package]
 name = "nyquest-preset"
 description = "Nyquest preset configuration with up-to-date rich-featured backends"
-version = "0.1.0"
+version = "0.2.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -32,14 +32,14 @@ multipart = [
 ]
 
 [dependencies]
-nyquest = { version = "0.1.0", path = "../..", default-features = false }
+nyquest = { version = "0.2.0", path = "../..", default-features = false }
 cfg-if = "1"
 
 [target.'cfg(windows)'.dependencies]
-nyquest-backend-winrt = { version = "0.1.0", path = "../../backends/winrt", default-features = false }
+nyquest-backend-winrt = { version = "0.2.0", path = "../../backends/winrt", default-features = false }
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
-nyquest-backend-nsurlsession = { version = "0.1.0", path = "../../backends/nsurlsession", default-features = false }
+nyquest-backend-nsurlsession = { version = "0.2.0", path = "../../backends/nsurlsession", default-features = false }
 
 [target.'cfg(not(any(windows, target_vendor = "apple")))'.dependencies]
-nyquest-backend-curl = { version = "0.1.0", path = "../../backends/curl", default-features = false }
+nyquest-backend-curl = { version = "0.2.0", path = "../../backends/curl", default-features = false }
