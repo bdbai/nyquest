@@ -1,5 +1,3 @@
-use std::io::ErrorKind;
-
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 pub(crate) trait IntoNyquestResult<T> {
