@@ -10,8 +10,7 @@ impl<T> IntoNyquestResult<T> for Result<T, curl::Error> {
         if self
             .as_ref()
             .err()
-            .map(|e| e.is_operation_timedout())
-            .is_some()
+            .is_some_and(|e| e.is_operation_timedout())
         {
             return Err(NyquestError::RequestTimeout);
         }
