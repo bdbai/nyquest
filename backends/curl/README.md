@@ -21,3 +21,9 @@ libcurl backend for [`nyquest`].
 
 [`nyquest`]: https://docs.rs/nyquest
 [`iconv-native`]: https://crates.io/crates/iconv-native
+
+## License
+
+Licensed under Apache License, Version 2.0 or MIT license, at your option.
+
+Part of the code in this crate is adapted from [`curl-rust`](https://github.com/alexcrichton/curl-rust) licensed under the [MIT license](https://github.com/alexcrichton/curl-rust/blob/main/LICENSE).

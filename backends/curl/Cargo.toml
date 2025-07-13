@@ -22,7 +22,6 @@ async = [
     "dep:futures-channel",
     "dep:futures-util",
     "dep:slab",
-    "curl/poll_7_68_0",
 ]
 blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart"]
@@ -32,7 +31,9 @@ charset-defaults = ["charset", "iconv-native/default"]
 
 [dependencies]
 nyquest-interface = { version = "0.2.0", path = "../../nyquest-interface", default-features = false }
-curl = { version = "0.4.47", default-features = false }
+curl = { version = "0.4.47", features = [
+    "poll_7_68_0",
+], default-features = false }
 curl-sys = { version = "0.4", default-features = false }
 iconv-native = { version = "0.1.0", optional = true, default-features = false }
 futures-channel = { version = "0.3", optional = true, default-features = false, features = [
