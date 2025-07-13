@@ -334,4 +334,36 @@ mod tests {
             });
         }
     }
+
+    #[test]
+    fn test_head() {
+        const PATH: &str = "requests/head";
+        let _handle = crate::add_hyper_fixture(PATH, {
+            move |req| async move {
+                let mut res = Response::new(Full::default());
+                if req.method() != Method::HEAD {
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                }
+                (res, Ok(()))
+            }
+        });
+
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
+            let response = client.request(NyquestRequest::head(PATH)).unwrap();
+            assert_eq!(response.status(), 200);
+        }
+
+        #[cfg(feature = "async")]
+        {
+            TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder.build_async().await.unwrap();
+                let response = client.request(NyquestRequest::head(PATH)).await.unwrap();
+                assert_eq!(response.status(), 200);
+            });
+        }
+    }
 }

@@ -20,6 +20,8 @@ pub enum Method {
     Delete,
     /// HTTP PATCH method
     Patch,
+    /// HTTP HEAD method
+    Head,
     /// Other HTTP methods not explicitly enumerated
     Other(Cow<'static, str>),
 }

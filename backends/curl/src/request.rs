@@ -45,6 +45,7 @@ pub fn populate_request<S, H: Handler>(
         Method::Put => easy.put(true),
         Method::Delete => easy.custom_request("delete"),
         Method::Patch => easy.custom_request("patch"),
+        Method::Head => easy.nobody(true),
         Method::Other(method) => easy.custom_request(method),
     }
     .into_nyquest_result("set CURLOPT_CUSTOMREQUEST")?;

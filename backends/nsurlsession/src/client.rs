@@ -101,6 +101,7 @@ impl NSUrlSessionClient {
                     Method::Put => ns_string!("PUT"),
                     Method::Delete => ns_string!("DELETE"),
                     Method::Patch => ns_string!("PATCH"),
+                    Method::Head => ns_string!("HEAD"),
                     Method::Other(method) => &*method_storage.insert(NSString::from_str(&method)),
                 });
             }
