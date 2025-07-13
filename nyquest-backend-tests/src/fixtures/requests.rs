@@ -41,7 +41,7 @@ mod tests {
                     .map(|v| v.to_str().unwrap_or_default().to_owned())
                     .unwrap_or_default();
 
-                let header_values = format!("{}|{}", accept, content_lang);
+                let header_values = format!("{accept}|{content_lang}");
                 let response_body = Bytes::from(header_values.into_bytes());
 
                 let res = Response::new(Full::new(response_body));

@@ -31,7 +31,7 @@ mod tests {
             Error::NonSuccessfulStatusCode(received_status) => {
                 assert_eq!(received_status, status_code);
             }
-            _ => panic!("Expected NonSuccessfulStatusCode error, got: {:?}", error),
+            _ => panic!("Expected NonSuccessfulStatusCode error, got: {error:?}"),
         };
 
         #[cfg(feature = "blocking")]

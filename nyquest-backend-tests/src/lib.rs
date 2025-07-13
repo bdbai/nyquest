@@ -147,7 +147,7 @@ async fn setup_hyper_impl() -> Result<String, io::Error> {
                     .serve_connection(io, service_fn(handle_service))
                     .await
                 {
-                    eprintln!("Error serving connection: {:?}", err);
+                    eprintln!("Error serving connection: {err:?}");
                 }
             });
         }
