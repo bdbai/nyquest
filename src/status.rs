@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn test_status_code_display() {
         let status = StatusCode::new(200);
-        assert_eq!(format!("{}", status), "200");
+        assert_eq!(status.to_string(), "200");
     }
 
     #[test]

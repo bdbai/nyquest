@@ -101,6 +101,7 @@ impl NSUrlSessionClient {
                     Method::Put => ns_string!("PUT"),
                     Method::Delete => ns_string!("DELETE"),
                     Method::Patch => ns_string!("PATCH"),
+                    Method::Head => ns_string!("HEAD"),
                     Method::Other(method) => &*method_storage.insert(NSString::from_str(&method)),
                 });
             }
@@ -138,7 +139,7 @@ impl NSUrlSessionClient {
                             generate_multipart_body, generate_multipart_boundary,
                         };
                         let boundary = generate_multipart_boundary();
-                        let content_type = format!("multipart/form-data; boundary={}", boundary);
+                        let content_type = format!("multipart/form-data; boundary={boundary}");
                         nsreq.setValue_forHTTPHeaderField(
                             Some(&NSString::from_str(&content_type)),
                             ns_string!("content-type"),

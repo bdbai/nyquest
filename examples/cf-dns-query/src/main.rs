@@ -32,16 +32,13 @@ async fn async_main() -> nyquest::Result<()> {
 }
 
 async fn query_address(client: &AsyncClient, domain_name: &str) -> nyquest::Result<String> {
-    eprintln!("Querying IP address of {}", domain_name);
+    eprintln!("Querying IP address of {domain_name}");
     let res = client
-        .request(Request::get(format!(
-            "dns-query?name={}&type=A",
-            domain_name
-        )))
+        .request(Request::get(format!("dns-query?name={domain_name}&type=A")))
         .await?
         .text()
         .await?;
-    eprintln!("Finished querying IP address of {}", domain_name);
+    eprintln!("Finished querying IP address of {domain_name}");
 
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "PascalCase")]
@@ -55,7 +52,7 @@ async fn query_address(client: &AsyncClient, domain_name: &str) -> nyquest::Resu
     let Response { answer } = match serde_json::from_str::<Response>(&res) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Failed to parse response: {}", e);
+            eprintln!("Failed to parse response: {e}");
             return Ok(res);
         }
     };

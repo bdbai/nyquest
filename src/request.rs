@@ -57,6 +57,13 @@ impl Method {
             inner: MethodImpl::Patch,
         }
     }
+
+    /// Constructs a `HEAD` method.
+    pub fn head() -> Self {
+        Self {
+            inner: MethodImpl::Head,
+        }
+    }
 }
 
 impl<S> Request<S> {
@@ -75,39 +82,46 @@ impl<S> Request<S> {
         }
     }
 
-    /// Constructs a request with the given method and a relative or absolute URI.
+    /// Constructs a GET request with a relative or absolute URI.
     ///
     /// See [`Request::new`] for more details.
     pub fn get(uri: impl Into<Cow<'static, str>>) -> Self {
         Self::new(Method::get(), uri)
     }
 
-    /// Constructs a request with the given method and a relative or absolute URI.
+    /// Constructs a POST request with a relative or absolute URI.
     ///
     /// See [`Request::new`] for more details.
     pub fn post(uri: impl Into<Cow<'static, str>>) -> Self {
         Self::new(Method::post(), uri)
     }
 
-    /// Constructs a request with the given method and a relative or absolute URI.
+    /// Constructs a PUT request with a relative or absolute URI.
     ///
     /// See [`Request::new`] for more details.
     pub fn put(uri: impl Into<Cow<'static, str>>) -> Self {
         Self::new(Method::put(), uri)
     }
 
-    /// Constructs a request with the given method and a relative or absolute URI.
+    /// Constructs a DELETE request with a relative or absolute URI.
     ///
     /// See [`Request::new`] for more details.
     pub fn delete(uri: impl Into<Cow<'static, str>>) -> Self {
         Self::new(Method::delete(), uri)
     }
 
-    /// Constructs a request with the given method and a relative or absolute URI.
+    /// Constructs a PATCH request with a relative or absolute URI.
     ///
     /// See [`Request::new`] for more details.
     pub fn patch(uri: impl Into<Cow<'static, str>>) -> Self {
         Self::new(Method::patch(), uri)
+    }
+
+    /// Constructs a HEAD request with a relative or absolute URI.
+    ///
+    /// See [`Request::new`] for more details.
+    pub fn head(uri: impl Into<Cow<'static, str>>) -> Self {
+        Self::new(Method::head(), uri)
     }
 
     /// Attach a request header to the request.

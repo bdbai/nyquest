@@ -45,18 +45,19 @@ pub fn populate_request<S, H: Handler>(
         Method::Put => easy.put(true),
         Method::Delete => easy.custom_request("delete"),
         Method::Patch => easy.custom_request("patch"),
+        Method::Head => easy.nobody(true),
         Method::Other(method) => easy.custom_request(method),
     }
     .into_nyquest_result("set CURLOPT_CUSTOMREQUEST")?;
     let mut headers = List::new();
     for (name, value) in &options.default_headers {
         headers
-            .append(&format!("{}: {}", name, value))
+            .append(&format!("{name}: {value}"))
             .into_nyquest_result("default_headers curl_slist_append")?;
     }
     for (name, value) in &req.additional_headers {
         headers
-            .append(&format!("{}: {}", name, value))
+            .append(&format!("{name}: {value}"))
             .into_nyquest_result("additional_headers curl_slist_append")?;
     }
     match req.body {
@@ -65,7 +66,7 @@ pub fn populate_request<S, H: Handler>(
             content_type,
         }) => {
             headers
-                .append(&format!("content-type: {}", content_type))
+                .append(&format!("content-type: {content_type}"))
                 .into_nyquest_result("set content-type curl_slist_append")?;
             easy.post_fields_copy(&content)
                 .into_nyquest_result("set CURLOPT_COPYPOSTFIELDS")?;
@@ -95,7 +96,7 @@ pub fn populate_request<S, H: Handler>(
                 if !part.headers.is_empty() {
                     let mut list = List::new();
                     for (name, value) in &part.headers {
-                        list.append(&format!("{}: {}", name, value))
+                        list.append(&format!("{name}: {value}"))
                             .into_nyquest_result("multipart header curl_slist_append")?;
                     }
                     formpart.content_header(list);

@@ -27,6 +27,7 @@ impl WinrtClient {
             Method::Put => HttpMethod::Put(),
             Method::Delete => HttpMethod::Delete(),
             Method::Patch => HttpMethod::Patch(),
+            Method::Head => HttpMethod::Head(),
             Method::Other(method) => HttpMethod::Create(&HSTRING::from(&**method)),
         }
         .into_nyquest_result()?;

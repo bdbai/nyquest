@@ -42,4 +42,6 @@ nyquest-backend-winrt = { version = "0.2.0", path = "../../backends/winrt", defa
 nyquest-backend-nsurlsession = { version = "0.2.0", path = "../../backends/nsurlsession", default-features = false }
 
 [target.'cfg(not(any(windows, target_vendor = "apple")))'.dependencies]
-nyquest-backend-curl = { version = "0.2.0", path = "../../backends/curl", default-features = false }
+nyquest-backend-curl = { version = "0.2.0", path = "../../backends/curl", default-features = false, features = [
+    "ssl",
+] }

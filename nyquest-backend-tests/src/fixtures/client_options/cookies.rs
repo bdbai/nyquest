@@ -29,7 +29,7 @@ mod tests {
 
         let request_body = req.into_body().collect().await.unwrap().to_bytes();
         let request_body = String::from_utf8_lossy(&request_body);
-        let set_cookie_header_value = format!("{}={}; Path=/", COOKIE_NAME, request_body);
+        let set_cookie_header_value = format!("{COOKIE_NAME}={request_body}; Path=/");
 
         let res = Response::builder()
             .header(SET_COOKIE, set_cookie_header_value)

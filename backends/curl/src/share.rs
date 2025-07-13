@@ -41,10 +41,7 @@ impl Drop for RawShare {
             .find(|(_idx, (_, guard_mutex))| guard_mutex.lock().unwrap().is_some())
             .map(|(idx, _)| idx);
         if let Some(unlocked_idx) = first_unlocked_mutex {
-            panic!(
-                "blocking: Mutex {} is not unlocked before dropping share",
-                unlocked_idx
-            );
+            panic!("blocking: Mutex {unlocked_idx} is not unlocked before dropping share");
         }
         unsafe { curl_sys::curl_share_cleanup(self.raw) };
     }

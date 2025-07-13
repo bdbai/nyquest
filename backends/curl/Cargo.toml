@@ -16,6 +16,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
+default = ["ssl"]
 async = [
     "nyquest-interface/async",
     "dep:futures-channel",
