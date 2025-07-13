@@ -139,7 +139,7 @@ impl NSUrlSessionClient {
                             generate_multipart_body, generate_multipart_boundary,
                         };
                         let boundary = generate_multipart_boundary();
-                        let content_type = format!("multipart/form-data; boundary={}", boundary);
+                        let content_type = format!("multipart/form-data; boundary={boundary}");
                         nsreq.setValue_forHTTPHeaderField(
                             Some(&NSString::from_str(&content_type)),
                             ns_string!("content-type"),

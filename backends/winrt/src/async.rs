@@ -151,6 +151,6 @@ impl AsyncBackend for crate::WinrtBackend {
         &self,
         options: ClientOptions,
     ) -> NyquestResult<Self::AsyncClient> {
-        Ok(self.create_async_client(options).into_nyquest_result()?)
+        self.create_async_client(options).into_nyquest_result()
     }
 }

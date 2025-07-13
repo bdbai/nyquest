@@ -15,12 +15,12 @@ pub(crate) fn concat_url(base: Option<&str>, relative: &str) -> String {
         let host = host_path
             .split_once('/')
             .map_or(host_path, |(host, _)| host);
-        format!("{}//{}{}", proto, host, relative)
+        format!("{proto}//{host}{relative}")
     } else {
         let pathsep = host_path
             .rsplit_once('/')
             .map_or(host_path, |(pathsep, _)| pathsep);
-        format!("{}//{}/{}", proto, pathsep, relative)
+        format!("{proto}//{pathsep}/{relative}")
     }
 }
 

@@ -61,7 +61,7 @@ impl BlockingBackend for crate::WinrtBackend {
         &self,
         options: ClientOptions,
     ) -> NyquestResult<Self::BlockingClient> {
-        Ok(self.create_blocking_client(options).into_nyquest_result()?)
+        self.create_blocking_client(options).into_nyquest_result()
     }
 }
 
