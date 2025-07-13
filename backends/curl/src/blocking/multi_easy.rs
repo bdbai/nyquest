@@ -23,7 +23,6 @@ pub(crate) struct MultiEasy {
     state: Arc<Mutex<RequestState>>,
     easy: MaybeAttachedEasy,
     multi: Multi,
-    share: Share, // Drop later than easy
 }
 
 impl MaybeAttachedEasy {
@@ -84,7 +83,7 @@ impl MaybeAttachedEasy {
 }
 
 impl MultiEasy {
-    pub fn new(share: Share) -> Self {
+    pub fn new() -> Self {
         let state = Arc::new(Mutex::new(Default::default()));
         let easy = Easy::new(super::handler::BlockingHandler::new(state.clone()));
         let mut multi = Multi::new();
@@ -93,7 +92,6 @@ impl MultiEasy {
             state,
             multi,
             easy: MaybeAttachedEasy::Detached(easy),
-            share,
         }
     }
 
@@ -153,16 +151,20 @@ impl MultiEasy {
         .map(|_| ())
     }
 
-    pub fn populate_request(
+    /// # Safety
+    ///
+    /// Caller must ensure the Share handle outlives the `MultiEasy` instance.
+    pub unsafe fn populate_request(
         &mut self,
         url: &str,
         req: Request,
+        share: &Share,
         options: &nyquest_interface::client::ClientOptions,
     ) -> NyquestResult<()> {
         self.reset_state();
         let easy = self.easy.detach(&mut self.multi)?;
         easy.reset();
-        unsafe { self.share.bind_easy2(easy)? };
+        unsafe { share.bind_easy2(easy)? };
         crate::request::populate_request(url, req, options, easy, |_easy, _stream| unimplemented!())
     }
 
