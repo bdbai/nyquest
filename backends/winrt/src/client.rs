@@ -54,7 +54,11 @@ impl WinrtClient {
         }
         let mut default_content_headers = vec![];
         for (name, value) in options.default_headers {
-            if is_header_name_content_related(&name) {
+            if name.eq_ignore_ascii_case("content-type") {
+                // If a request has a body, the content-type value is required from the user.
+                // Otherwise if there is no body, the content-type header will never be sent.
+                // So we can safely ignore the default content-type header.
+            } else if is_header_name_content_related(&name) {
                 default_content_headers.push((HSTRING::from(name), HSTRING::from(value)));
             } else {
                 client
