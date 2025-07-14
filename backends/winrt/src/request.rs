@@ -33,7 +33,7 @@ impl WinrtClient {
         .into_nyquest_result()?;
         let req_msg = HttpRequestMessage::Create(&method, &uri).into_nyquest_result()?;
         // TODO: cache method
-        if !req.additional_headers.is_empty() || !self.default_content_headers.is_empty() {
+        if !req.additional_headers.is_empty() {
             let headers = req_msg.Headers().into_nyquest_result()?;
             for (name, value) in &req.additional_headers {
                 headers

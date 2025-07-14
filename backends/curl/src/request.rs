@@ -50,7 +50,12 @@ pub fn populate_request<S, H: Handler>(
     }
     .into_nyquest_result("set CURLOPT_CUSTOMREQUEST")?;
     let mut headers = List::new();
-    for (name, value) in &options.default_headers {
+    for (name, value) in options.default_headers.iter().filter(|(name, _)| {
+        // FIXME: This is O(len(additional) * len(default))
+        !req.additional_headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case(name))
+    }) {
         headers
             .append(&format!("{name}: {value}"))
             .into_nyquest_result("default_headers curl_slist_append")?;
