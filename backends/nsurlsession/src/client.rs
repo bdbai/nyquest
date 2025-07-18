@@ -8,7 +8,7 @@ use objc2::runtime::ProtocolObject;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
     ns_string, NSCharacterSet, NSData, NSDictionary, NSMutableCharacterSet, NSMutableURLRequest,
-    NSString, NSURLRequestCachePolicy, NSUTF8StringEncoding, NSURL,
+    NSString, NSTimeInterval, NSURLRequestCachePolicy, NSUTF8StringEncoding, NSURL,
 };
 
 use crate::challenge::BypassServerVerifyDelegate;
@@ -34,9 +34,10 @@ impl NSUrlSessionClient {
             if !options.use_cookies {
                 config.setHTTPShouldSetCookies(false);
             }
-            if let Some(request_timeout) = options.request_timeout {
-                config.setTimeoutIntervalForRequest(request_timeout.as_secs_f64());
-            }
+            let timeout = options
+                .request_timeout
+                .map_or(NSTimeInterval::MAX, |t| t.as_secs_f64());
+            config.setTimeoutIntervalForRequest(timeout);
             if !options.default_headers.is_empty() || options.user_agent.is_some() {
                 let headers = options
                     .default_headers
