@@ -30,6 +30,8 @@ impl std::io::Read for NSUrlSessionBlockingResponse {
             let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
                 let read_len = if data.len() > buf.len() {
                     unsafe {
+                        // Triggering a suspend when the task is already suspended can cause it to
+                        // not wake up.
                         if inner.task.state() == NSURLSessionTaskState::Running {
                             inner.task.suspend();
                         }
