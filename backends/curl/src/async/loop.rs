@@ -128,7 +128,7 @@ impl RequestHandle {
     pub(super) fn poll_bytes<T>(
         &mut self,
         cx: &mut Context<'_>,
-        mut cb: impl FnMut(&mut Vec<u8>) -> nyquest_interface::Result<T>,
+        cb: impl FnOnce(&mut Vec<u8>) -> nyquest_interface::Result<T>,
     ) -> Poll<nyquest_interface::Result<Option<T>>> {
         let mut state = self.shared_context.state.lock().unwrap();
         if !state.0.response_buffer.is_empty() {
