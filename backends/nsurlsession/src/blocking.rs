@@ -48,7 +48,9 @@ impl std::io::Read for NSUrlSessionBlockingResponse {
                 Ok(read_len @ 1..) => {
                     return Ok(read_len);
                 }
-                Err(NyquestError::RequestTimeout) => return Err(io::ErrorKind::TimedOut.into()),
+                Err(NyquestError::RequestTimeout) => {
+                    return Err(std::io::ErrorKind::TimedOut.into())
+                }
                 Err(NyquestError::Io(e)) => return Err(e),
                 Err(e) => unreachable!("Unexpected error: {e}"),
                 Ok(0) if inner.shared.is_completed() => return Ok(0),
