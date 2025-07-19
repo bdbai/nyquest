@@ -105,6 +105,7 @@ impl<S> Body<S> {
         }
     }
 
+    #[doc(hidden)]
     /// Constructs a streaming non-seekable body from the given stream and
     /// content type.
     ///
