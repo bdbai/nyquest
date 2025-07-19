@@ -15,16 +15,20 @@ use multi_easy::MultiEasy;
 #[derive(Clone)]
 pub struct CurlEasyClient {
     options: Arc<nyquest_interface::client::ClientOptions>,
-    slot: Arc<Mutex<Option<MultiEasy>>>,
-    share: Share,
+    slot: Arc<MultiEasySlot>,
 }
 
-struct EasyHandleGuard<S: AsRef<Mutex<Option<MultiEasy>>>> {
+struct MultiEasySlot {
+    multi_easy: Mutex<Option<MultiEasy>>,
+    share: Share, // Drop later than any existing MultiEasy instances
+}
+
+struct EasyHandleGuard<S: AsRef<MultiEasySlot>> {
     slot: S,
     handle: ManuallyDrop<Mutex<MultiEasy>>, // TODO: use std::sync::Exclusive when stabilized
 }
 
-type OwnedEasyHandleGuard = EasyHandleGuard<Arc<Mutex<Option<MultiEasy>>>>;
+type OwnedEasyHandleGuard = EasyHandleGuard<Arc<MultiEasySlot>>;
 
 pub struct CurlBlockingResponse {
     status: u16,
@@ -34,13 +38,13 @@ pub struct CurlBlockingResponse {
     max_response_buffer_size: Option<u64>,
 }
 
-impl<S: AsRef<Mutex<Option<MultiEasy>>>> EasyHandleGuard<S> {
+impl<S: AsRef<MultiEasySlot>> EasyHandleGuard<S> {
     fn handle_mut(&mut self) -> &mut MultiEasy {
         self.handle.get_mut().unwrap()
     }
 }
 
-impl EasyHandleGuard<&'_ Arc<Mutex<Option<MultiEasy>>>> {
+impl EasyHandleGuard<&'_ Arc<MultiEasySlot>> {
     fn into_owned(self) -> OwnedEasyHandleGuard {
         let mut this = ManuallyDrop::new(self);
         // Safety: self inside ManuallyDrop will not be dropped, hence the handle will not be taken out from Drop
@@ -52,12 +56,12 @@ impl EasyHandleGuard<&'_ Arc<Mutex<Option<MultiEasy>>>> {
     }
 }
 
-impl<S: AsRef<Mutex<Option<MultiEasy>>>> Drop for EasyHandleGuard<S> {
+impl<S: AsRef<MultiEasySlot>> Drop for EasyHandleGuard<S> {
     fn drop(&mut self) {
         // Safety: the handle is only taken out once which is here, except in `into_owned` where a `ManuallyDrop` is
         // used to suppress our Drop
         let mut handle = unsafe { ManuallyDrop::take(&mut self.handle) };
-        let mut slot = self.slot.as_ref().lock().unwrap();
+        let mut slot = self.slot.as_ref().multi_easy.lock().unwrap();
         if slot.is_none() {
             handle.get_mut().unwrap().reset_state();
             *slot = Some(handle.into_inner().unwrap());
@@ -69,19 +73,21 @@ impl CurlEasyClient {
     pub fn new(options: nyquest_interface::client::ClientOptions) -> Self {
         Self {
             options: Arc::new(options),
-            slot: Arc::new(Mutex::new(None)),
-            share: Share::new(),
+            slot: Arc::new(MultiEasySlot {
+                multi_easy: Mutex::new(None),
+                share: Share::new(),
+            }),
         }
     }
 
-    fn get_or_create_handle(&self) -> EasyHandleGuard<&Arc<Mutex<Option<MultiEasy>>>> {
+    fn get_or_create_handle(&self) -> EasyHandleGuard<&Arc<MultiEasySlot>> {
         let slot = {
-            let mut slot = self.slot.lock().unwrap();
+            let mut slot = self.slot.multi_easy.lock().unwrap();
             slot.take()
         };
         let handle = match slot {
             Some(handle) => handle,
-            None => MultiEasy::new(self.share.clone()),
+            None => MultiEasy::new(),
         };
         EasyHandleGuard {
             slot: &self.slot,
@@ -167,8 +173,12 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
         let mut handle_guard = self.get_or_create_handle();
         // FIXME: properly concat base_url and url
         let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);
-        let handle = handle_guard.handle_mut();
-        handle.populate_request(&url, req, &self.options)?;
+        let handle: &mut MultiEasy = handle_guard.handle_mut();
+        // Safety: the guard always keeps a valid reference to the Share
+        // through the slot.
+        unsafe {
+            handle.populate_request(&url, req, &self.slot.share, &self.options)?;
+        }
         handle.poll_until_response_headers()?;
         let mut headers_buf = handle.take_response_headers_buffer();
         let headers = headers_buf
