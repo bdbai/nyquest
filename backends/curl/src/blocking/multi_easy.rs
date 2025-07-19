@@ -196,7 +196,13 @@ impl MultiEasy {
         .map(|_| ())
     }
 
-    pub fn poll_until_partial_response(&mut self) -> NyquestResult<()> {
+    pub fn poll_bytes<T>(&mut self, cb: impl FnOnce(&mut Vec<u8>) -> T) -> NyquestResult<T> {
+        {
+            let mut state = self.state.lock().unwrap();
+            if !state.response_buffer.is_empty() {
+                return Ok(cb(&mut state.response_buffer));
+            }
+        }
         self.poll_until(|state| {
             let is_empty = state.lock().unwrap().response_buffer.is_empty();
             Ok(if is_empty {
@@ -204,7 +210,8 @@ impl MultiEasy {
             } else {
                 ControlFlow::Break(())
             })
-        })
+        })?;
+        Ok(self.with_response_buffer_mut(cb))
     }
 
     pub fn take_response_buffer(&mut self) -> Vec<u8> {

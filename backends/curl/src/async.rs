@@ -103,6 +103,9 @@ impl futures_io::AsyncRead for CurlAsyncResponse {
         Poll::Ready(match poll_res {
             Ok(None) => Ok(0),
             Ok(Some(read_len)) => Ok(read_len),
+            Err(NyquestError::RequestTimeout) => {
+                return Poll::Ready(Err(io::ErrorKind::TimedOut.into()))
+            }
             Err(NyquestError::Io(e)) => return Poll::Ready(Err(e)),
             Err(e) => unreachable!("Unexpected error: {}", e),
         })
