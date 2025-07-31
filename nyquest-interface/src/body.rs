@@ -45,8 +45,6 @@ pub enum Body<S> {
 }
 
 impl<S> Debug for Body<S>
-where
-    S: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -68,11 +66,10 @@ where
                 .field("parts", parts)
                 .finish(),
             Body::Stream {
-                stream: reader,
+                stream: _,
                 content_type,
             } => f
                 .debug_struct("Body::Stream")
-                .field("reader", reader)
                 .field("content_type", content_type)
                 .finish(),
         }
