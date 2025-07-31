@@ -63,7 +63,6 @@ impl<S> Debug for Body<S>
             #[cfg(feature = "multipart")]
             Body::Multipart { parts } => f
                 .debug_struct("Body::Multipart")
-                .field("parts", parts)
                 .finish(),
             Body::Stream {
                 stream: _,
