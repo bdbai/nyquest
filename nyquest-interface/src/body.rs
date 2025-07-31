@@ -44,8 +44,7 @@ pub enum Body<S> {
     },
 }
 
-impl<S> Debug for Body<S>
-{
+impl<S> Debug for Body<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Body::Bytes {
