@@ -1,7 +1,7 @@
 [package]
 name = "nyquest-backend-winrt"
 description = "Windows.Web.Http.HttpClient backend for nyquest"
-version = "0.2.0"
+version = "0.3.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -39,5 +39,5 @@ features = [
 ]
 
 [dependencies]
-nyquest-interface = { version = "0.2.0", path = "../../nyquest-interface", default-features = false }
+nyquest-interface = { version = "0.3.0", path = "../../nyquest-interface", default-features = false }
 cfg-if.workspace = true

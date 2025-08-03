@@ -1,7 +1,7 @@
 [package]
 name = "nyquest-backend-curl"
 description = "libcurl backend for nyquest"
-version = "0.2.0"
+version = "0.3.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -31,7 +31,7 @@ charset = ["dep:iconv-native"]
 charset-defaults = ["charset", "iconv-native/default"]
 
 [dependencies]
-nyquest-interface = { version = "0.2.0", path = "../../nyquest-interface", default-features = false }
+nyquest-interface = { version = "0.3.0", path = "../../nyquest-interface", default-features = false }
 curl = { version = "0.4.47", default-features = false }
 curl-sys = { version = "0.4", default-features = false }
 iconv-native = { version = "0.1.0", optional = true, default-features = false }
