@@ -1,4 +1,14 @@
-use super::{easy_ref::EasyWithErrorBufRef, raw_multi::RawMulti};
+use std::{
+    ops::{Deref, DerefMut},
+    pin::Pin,
+};
+
+use crate::curl_ng::{
+    easy_ref::AsRawEasyMut,
+    error_context::{CurlMultiCodeContext, WithCurlCodeContext},
+};
+
+use super::raw_multi::RawMulti;
 
 /// # Safety
 ///
@@ -7,16 +17,18 @@ use super::{easy_ref::EasyWithErrorBufRef, raw_multi::RawMulti};
 /// handle.
 pub unsafe trait MultiEasySet {
     type Token;
-    type Item;
+    type Ptr: DerefMut;
 
-    fn add(&mut self, item: Self::Item) -> Self::Token;
-    fn remove(&mut self, token: Self::Token) -> Option<Self::Item>;
+    fn add(&mut self, item: Pin<Self::Ptr>) -> Self::Token;
+    fn remove(&mut self, token: Self::Token) -> Option<Pin<Self::Ptr>>;
     /// # Safety
     ///
     /// Caller must ensure that the underlying easy handle remains same and
     /// valid.
-    unsafe fn lookup<'s>(&mut self, token: &Self::Token) -> Option<&'s mut Self::Item>;
-    fn map_easy_mut(item: &mut Self::Item) -> EasyWithErrorBufRef;
+    unsafe fn lookup<'s>(
+        &mut self,
+        token: &Self::Token,
+    ) -> Option<Pin<&'s mut <Self::Ptr as Deref>::Target>>;
 }
 
 pub unsafe trait IsSendWithMultiSet {}
@@ -44,23 +56,26 @@ impl<M, S> MultiWithSet<M, S> {
 
 impl<M: AsMut<RawMulti>, S> MultiWithSet<M, S> {}
 
-impl<M: AsMut<RawMulti>, S: MultiEasySet> MultiWithSet<M, S> {
-    pub fn add(&mut self, mut item: S::Item) -> Result<S::Token, curl::MultiError> {
-        let mut easy = S::map_easy_mut(&mut item);
+impl<M: AsMut<RawMulti>, S: MultiEasySet> MultiWithSet<M, S>
+where
+    <S::Ptr as Deref>::Target: AsRawEasyMut,
+{
+    pub fn add(&mut self, mut item: Pin<S::Ptr>) -> Result<S::Token, CurlMultiCodeContext> {
+        let easy = item.as_mut().as_raw_easy_mut();
         let raw_multi = self.multi.as_mut();
-        let code = unsafe { curl_sys::curl_multi_add_handle(raw_multi.raw(), easy.raw()) };
-        cvt(code)?;
+        unsafe { curl_sys::curl_multi_add_handle(raw_multi.raw(), easy.raw()) }
+            .with_multi_context("curl_multi_add_handle")?;
         Ok(self.set.add(item))
     }
 
-    pub fn remove(&mut self, token: S::Token) -> Result<Option<S::Item>, curl::MultiError> {
+    pub fn remove(&mut self, token: S::Token) -> Result<Option<Pin<S::Ptr>>, CurlMultiCodeContext> {
         let Some(mut item) = self.set.remove(token) else {
             return Ok(None);
         };
-        let mut easy = S::map_easy_mut(&mut item);
+        let easy = item.as_mut().as_raw_easy_mut();
         let raw_multi = self.multi.as_mut();
-        let code = unsafe { curl_sys::curl_multi_remove_handle(raw_multi.raw(), easy.raw()) };
-        cvt(code)?;
+        unsafe { curl_sys::curl_multi_remove_handle(raw_multi.raw(), easy.raw()) }
+            .with_multi_context("curl_multi_remove_handle")?;
         Ok(Some(item))
     }
 
@@ -68,15 +83,10 @@ impl<M: AsMut<RawMulti>, S: MultiEasySet> MultiWithSet<M, S> {
     ///
     /// Caller must ensure that the underlying easy handle remains same and
     /// valid.
-    pub unsafe fn lookup<'s>(&mut self, token: &S::Token) -> Option<&'s mut S::Item> {
+    pub unsafe fn lookup<'s>(
+        &mut self,
+        token: &S::Token,
+    ) -> Option<Pin<&'s mut <S::Ptr as Deref>::Target>> {
         unsafe { self.set.lookup(token) }
-    }
-}
-
-fn cvt(code: curl_sys::CURLMcode) -> Result<(), curl::MultiError> {
-    if code == curl_sys::CURLM_OK {
-        Ok(())
-    } else {
-        Err(curl::MultiError::new(code))
     }
 }

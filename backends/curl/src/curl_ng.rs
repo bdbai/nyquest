@@ -1,5 +1,7 @@
+pub mod easy_callback;
 pub mod easy_ref;
 pub mod error_buf;
+pub mod error_context;
 pub mod multi_set;
 pub mod multi_waker;
 pub mod raw_easy;
