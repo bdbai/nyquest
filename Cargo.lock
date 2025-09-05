@@ -527,6 +527,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "iconv-native",
+ "libc",
  "nyquest-interface",
  "pin-project-lite",
  "slab",

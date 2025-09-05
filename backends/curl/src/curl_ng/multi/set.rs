@@ -4,11 +4,10 @@ use std::{
 };
 
 use crate::curl_ng::{
-    easy_ref::AsRawEasyMut,
+    easy::AsRawEasyMut,
     error_context::{CurlMultiCodeContext, WithCurlCodeContext},
+    multi::raw::RawMulti,
 };
-
-use super::raw_multi::RawMulti;
 
 /// # Safety
 ///

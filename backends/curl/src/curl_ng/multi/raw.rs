@@ -1,6 +1,6 @@
 use std::ptr::NonNull;
 
-use crate::curl_ng::multi_set::{IsSendWithMultiSet, IsSyncWithMultiSet};
+use crate::curl_ng::multi::{IsSendWithMultiSet, IsSyncWithMultiSet};
 
 #[derive(Debug)]
 pub struct RawMulti {

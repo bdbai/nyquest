@@ -7,9 +7,10 @@ use std::pin::Pin;
 use curl_sys::CURL_ERROR_SIZE;
 use pin_project_lite::pin_project;
 
-use crate::curl_ng::easy_ref::{AsRawEasyMut, AsRawEasyMutExt as _};
-use crate::curl_ng::error_context::{CurlCodeContext, CurlErrorContext};
-use crate::curl_ng::raw_easy::RawEasy;
+use crate::curl_ng::{
+    easy::{AsRawEasyMut, RawEasy},
+    error_context::{CurlCodeContext, CurlErrorContext},
+};
 
 pub struct ErrorBuf {
     pub(super) buf: [MaybeUninit<c_char>; CURL_ERROR_SIZE],
@@ -51,6 +52,7 @@ impl ErrorBuf {
     ) -> Result<T, CurlErrorContext<'s>> {
         unsafe {
             easy.as_mut()
+                .as_raw_easy_mut()
                 .attach_error_buf(self.buf.as_mut_ptr() as *mut c_char)
         }
         .map_err(|e| CurlErrorContext {
@@ -65,6 +67,7 @@ impl ErrorBuf {
             fn drop(&mut self) {
                 self.easy
                     .as_mut()
+                    .as_raw_easy_mut()
                     .detach_error_buf()
                     .expect("detach error buf");
             }
@@ -97,12 +100,14 @@ impl<E: AsRawEasyMut> OwnedEasyWithErrorBuf<E> {
         unsafe {
             this.error_buf.buf[0].write(0);
             this.easy
+                .as_raw_easy_mut()
                 .attach_error_buf(this.error_buf.buf.as_mut_ptr() as _)
         }
     }
     fn drop_detach(self: Pin<&mut Self>) {
         self.project()
             .easy
+            .as_raw_easy_mut()
             .detach_error_buf()
             .expect("detach owned error buf");
     }
@@ -131,10 +136,9 @@ impl<E: AsRawEasyMut> AsRawEasyMut for OwnedEasyWithErrorBuf<E> {
         self.project().easy.as_raw_easy_mut()
     }
 
-    fn reset_extra(mut self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
-        self.as_mut().attach()?;
-        let this = self.project();
-        this.easy.reset_extra()?;
-        Ok(())
+    fn reset(mut self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
+        let this = self.as_mut().project();
+        this.easy.reset()?;
+        self.as_mut().attach()
     }
 }

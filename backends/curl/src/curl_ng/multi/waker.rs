@@ -3,9 +3,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::curl_ng::multi_set::{IsSendWithMultiSet, IsSyncWithMultiSet};
-
-use super::raw_multi::RawMulti;
+use crate::curl_ng::multi::{raw::RawMulti, IsSendWithMultiSet, IsSyncWithMultiSet};
 
 #[derive(Clone)]
 pub struct MultiWaker {
