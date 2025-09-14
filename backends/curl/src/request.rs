@@ -108,10 +108,10 @@ pub fn populate_request<S, H: Handler>(
                 }
                 match &part.body {
                     PartBody::Bytes { content } => {
-                        formpart.buffer(
-                            part.filename.as_deref().unwrap_or_default(),
-                            content.to_vec(),
-                        );
+                        match &part.filename {
+                            Some(filename) => formpart.buffer(&**filename, content.to_vec()),
+                            None => formpart.contents(content),
+                        };
                         formpart.content_type(&part.content_type);
                     }
                     PartBody::Stream(_) => {
