@@ -4,12 +4,7 @@ mod ffi;
 mod part;
 mod raw;
 
-use std::{
-    ffi::{c_void, CString},
-    io::SeekFrom,
-    pin::Pin,
-    slice,
-};
+use std::{ffi::c_void, pin::Pin, ptr::NonNull};
 
 use crate::curl_ng::{
     easy::RawEasy,
@@ -33,11 +28,11 @@ impl Mime {
         parts: impl IntoIterator<Item = MimePart<R>>,
     ) -> Result<Self, CurlCodeContext> {
         let raw = unsafe { ffi::curl_mime_init(easy.raw()) };
-        assert!(!raw.is_null());
+        let raw = NonNull::new(raw).expect("curl_mime_init failed alloc mime");
         let raw = RawMime(raw);
 
         for mut part in parts {
-            let part_raw = unsafe { ffi::curl_mime_addpart(raw.0) };
+            let part_raw = unsafe { ffi::curl_mime_addpart(raw.0.as_ptr()) };
             assert!(!part_raw.is_null());
 
             unsafe {
@@ -89,6 +84,6 @@ impl Mime {
     }
 
     pub fn raw(&self) -> *mut ffi::curl_mime {
-        self.raw.0
+        self.raw.0.as_ptr()
     }
 }

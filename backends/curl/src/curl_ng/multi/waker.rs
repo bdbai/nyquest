@@ -1,66 +1,31 @@
-use std::sync::{
-    atomic::{AtomicPtr, Ordering},
-    Arc,
-};
+use std::sync::{Arc, Weak};
 
-use crate::curl_ng::multi::{raw::RawMulti, IsSendWithMultiSet, IsSyncWithMultiSet};
+use crate::curl_ng::multi::raw::RawMulti;
 
 #[derive(Clone)]
-pub struct MultiWaker {
-    multi: Arc<AtomicPtr<curl_sys::CURLM>>,
+pub struct MultiWaker<M> {
+    multi: Weak<M>,
 }
 
-pub struct WakerRegisteredMulti<M> {
-    waker: MultiWaker,
-    multi: M,
-}
+unsafe impl<M> Send for MultiWaker<M> {}
+unsafe impl<M> Sync for MultiWaker<M> {}
 
-unsafe impl<M: IsSendWithMultiSet> IsSendWithMultiSet for WakerRegisteredMulti<M> where
-    MultiWaker: Send
-{
-}
-unsafe impl<M: IsSyncWithMultiSet> IsSyncWithMultiSet for WakerRegisteredMulti<M> where
-    MultiWaker: Sync
-{
-}
-
-impl MultiWaker {
-    pub fn new() -> Self {
+impl<M> MultiWaker<M> {
+    pub(super) fn new(raw: &Arc<M>) -> Self {
         MultiWaker {
-            multi: Arc::new(AtomicPtr::new(std::ptr::null_mut())),
+            multi: Arc::downgrade(raw),
         }
-    }
-
-    pub fn register<M: AsMut<RawMulti>>(self, mut multi: M) -> WakerRegisteredMulti<M> {
-        let raw_multi_ptr = multi.as_mut().raw();
-        self.multi.store(raw_multi_ptr, Ordering::Release);
-        WakerRegisteredMulti { waker: self, multi }
-    }
-
-    pub fn wake(&self) -> Result<(), curl::MultiError> {
-        // Safety: When the registered multi is dropped, it will set the
-        // pointer to null. Otherwise, the pointer is guaranteed to be valid.
-        let multi_ptr = self.multi.load(Ordering::Acquire);
-        if !multi_ptr.is_null() {
-            let code = unsafe { curl_sys::curl_multi_wakeup(multi_ptr) };
-            if code != curl_sys::CURLM_OK {
-                return Err(curl::MultiError::new(code));
-            }
-        }
-        Ok(())
     }
 }
 
-impl<M: AsMut<RawMulti>> AsMut<RawMulti> for WakerRegisteredMulti<M> {
-    fn as_mut(&mut self) -> &mut RawMulti {
-        self.multi.as_mut()
-    }
-}
-
-impl<M> Drop for WakerRegisteredMulti<M> {
-    fn drop(&mut self) {
-        self.waker
-            .multi
-            .store(std::ptr::null_mut(), Ordering::Release);
+impl<M: AsRef<RawMulti>> MultiWaker<M> {
+    pub fn wake(&self) {
+        let Some(multi) = self.multi.upgrade() else {
+            return;
+        };
+        let raw = (*multi).as_ref().raw();
+        unsafe {
+            curl_sys::curl_multi_wakeup(raw);
+        }
     }
 }

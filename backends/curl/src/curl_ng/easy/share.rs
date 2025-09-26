@@ -1,5 +1,6 @@
 use std::ffi::c_void;
 use std::pin::Pin;
+use std::ptr::NonNull;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use curl::ShareError;
@@ -16,7 +17,7 @@ use crate::curl_ng::error_context::{CurlCodeContext, WithCurlCodeContext};
 
 type MutexGuardStore = Mutex<Option<MutexGuard<'static, ()>>>; // One per curl share data type
 struct RawShare {
-    raw: *mut curl_sys::CURLSH,
+    raw: NonNull<curl_sys::CURLSH>,
     mutexes: [(Mutex<()>, MutexGuardStore); 7], // One per curl share data type
 }
 
@@ -44,7 +45,7 @@ impl Drop for RawShare {
         if let Some(unlocked_idx) = first_unlocked_mutex {
             panic!("blocking: Mutex {unlocked_idx} is not unlocked before dropping share");
         }
-        unsafe { curl_sys::curl_share_cleanup(self.raw) };
+        unsafe { curl_sys::curl_share_cleanup(self.raw.as_ptr()) };
     }
 }
 
@@ -69,9 +70,7 @@ impl Share {
 impl RawShare {
     fn new() -> Self {
         let raw = unsafe { curl_sys::curl_share_init() };
-        if raw.is_null() {
-            panic!("blocking init failed alloc share");
-        }
+        let raw = NonNull::new(raw).expect("blocking init failed alloc share");
         let mut sh = RawShare {
             raw,
             mutexes: Default::default(),
@@ -84,23 +83,25 @@ impl RawShare {
         pub const CURL_LOCK_DATA_PSL: curl_lock_data = 6;
         pub const CURL_LOCK_DATA_HSTS: curl_lock_data = 7;
 
+        let raw = self.raw.as_ptr();
         unsafe {
-            set_share_option(self.raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE).ok();
-            set_share_option(self.raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS).ok();
-            set_share_option(self.raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION).ok();
-            set_share_option(self.raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT).ok();
-            set_share_option(self.raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_PSL).ok();
-            set_share_option(self.raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_HSTS).ok();
+            set_share_option(raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE).ok();
+            set_share_option(raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS).ok();
+            set_share_option(raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION).ok();
+            set_share_option(raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT).ok();
+            set_share_option(raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_PSL).ok();
+            set_share_option(raw, CURLSHOPT_SHARE, CURL_LOCK_DATA_HSTS).ok();
         };
     }
 
     unsafe fn set_self_ptr(&self, ptr: *const Self) -> Result<(), ShareError> {
-        let result = curl_sys::curl_share_setopt(self.raw, CURLSHOPT_USERDATA, ptr as *const _);
+        let raw = self.raw.as_ptr();
+        let result = curl_sys::curl_share_setopt(raw, CURLSHOPT_USERDATA, ptr as *const _);
         if result != CURLSHE_OK {
             return Err(ShareError::new(result));
         }
         let result = curl_sys::curl_share_setopt(
-            self.raw,
+            raw,
             CURLSHOPT_LOCKFUNC,
             lock_function as curl_lock_function,
         );
@@ -108,7 +109,7 @@ impl RawShare {
             return Err(ShareError::new(result));
         }
         let result = curl_sys::curl_share_setopt(
-            self.raw,
+            raw,
             CURLSHOPT_UNLOCKFUNC,
             unlock_function as curl_unlock_function,
         );
@@ -133,7 +134,7 @@ impl<E: AsRawEasyMut> ShareHandle<E> {
         let this = self.as_mut().project();
         let raw = this.easy.as_raw_easy_mut().raw();
         unsafe {
-            setopt_ptr(raw, CURLOPT_SHARE, this.share.raw as _)
+            setopt_ptr(raw, CURLOPT_SHARE, this.share.raw.as_ptr() as _)
                 .with_easy_context("setopt CURLOPT_SHARE")
         }
     }

@@ -14,11 +14,11 @@ impl RawMulti {
     pub fn raw(&self) -> *mut curl_sys::CURLM {
         self.raw.as_ptr()
     }
-}
 
-impl AsMut<RawMulti> for RawMulti {
-    fn as_mut(&mut self) -> &mut RawMulti {
-        self
+    pub fn new() -> Self {
+        let raw = unsafe { curl_sys::curl_multi_init() };
+        let raw = NonNull::new(raw).expect("curl_multi_init returned null");
+        Self { raw }
     }
 }
 

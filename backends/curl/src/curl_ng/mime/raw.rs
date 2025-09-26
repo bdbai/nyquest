@@ -1,12 +1,14 @@
+use std::ptr::NonNull;
+
 use crate::curl_ng::mime::ffi::{curl_mime, curl_mime_free};
 
 #[derive(Debug)]
-pub(crate) struct RawMime(pub(crate) *mut curl_mime);
+pub(crate) struct RawMime(pub(crate) NonNull<curl_mime>);
 
 unsafe impl Send for RawMime {}
 
 impl Drop for RawMime {
     fn drop(&mut self) {
-        unsafe { curl_mime_free(self.0) }
+        unsafe { curl_mime_free(self.0.as_ptr()) }
     }
 }
