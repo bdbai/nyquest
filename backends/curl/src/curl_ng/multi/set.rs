@@ -9,6 +9,7 @@ use crate::curl_ng::{
     easy::AsRawEasyMut,
     error_context::{CurlMultiCodeContext, WithCurlCodeContext},
     multi::raw::RawMulti,
+    CurlCodeContext, CurlErrorContext,
 };
 
 /// # Safety
@@ -93,15 +94,40 @@ where
         }
     }
 
-    /// # Safety
-    ///
-    /// Caller must ensure that the underlying easy handle remains same and
-    /// valid.
-    pub unsafe fn lookup<'s>(
-        &mut self,
-        token: usize,
-    ) -> Option<Pin<&'s mut <S::Ptr as Deref>::Target>> {
+    pub fn lookup<'s>(&mut self, token: usize) -> Option<Pin<&'s mut <S::Ptr as Deref>::Target>> {
         unsafe { self.set.lookup(token) }
+    }
+
+    pub fn messages(
+        &mut self,
+        mut callback: impl FnMut(
+            Pin<&mut <S::Ptr as Deref>::Target>,
+            Option<Result<(), CurlCodeContext>>,
+        ),
+    ) -> Result<(), CurlMultiCodeContext> {
+        unsafe {
+            let mut queue = 0;
+            loop {
+                let msg_ptr = curl_sys::curl_multi_info_read(self.multi.as_mut().raw(), &mut queue);
+                if msg_ptr.is_null() {
+                    break;
+                }
+                let msg = &*msg_ptr;
+                let done_result = if msg.msg == curl_sys::CURLMSG_DONE {
+                    Some((msg.data as curl_sys::CURLcode).with_easy_context("curl_multi_info_read"))
+                } else {
+                    None
+                };
+                let token = curl_sys::curl_easy_getinfo(msg.easy_handle, curl_sys::CURLINFO_PRIVATE)
+                    as usize;
+                if let Some(mut easy) = self.lookup(token) {
+                    if easy.as_mut().as_raw_easy_mut().raw() == msg.easy_handle {
+                        callback(easy, done_result);
+                    }
+                }
+            }
+            Ok(())
+        }
     }
 }
 
