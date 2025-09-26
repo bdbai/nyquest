@@ -1,5 +1,5 @@
-pub mod raw;
-pub mod set;
-pub mod waker;
+mod raw;
+mod set;
+mod waker;
 
 pub use set::{IsSendWithMultiSet, IsSyncWithMultiSet, MultiEasySet};

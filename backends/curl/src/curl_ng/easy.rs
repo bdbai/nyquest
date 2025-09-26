@@ -2,6 +2,7 @@ mod as_raw;
 mod callback;
 mod error_buf;
 mod header_list;
+mod mime;
 mod raw;
 mod share;
 

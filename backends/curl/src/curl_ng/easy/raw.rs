@@ -3,6 +3,7 @@ use std::ptr::NonNull;
 use std::{borrow::Cow, ffi::c_char};
 
 use crate::curl_ng::easy::AsRawEasyMut;
+use crate::curl_ng::ffi::transform_cow_str_to_c_str;
 use crate::curl_ng::{CurlCodeContext, WithCurlCodeContext as _};
 
 #[derive(Debug)]
@@ -84,20 +85,13 @@ impl Drop for RawEasy {
         }
     }
 }
+
 unsafe fn setopt_str(
     raw: *mut curl_sys::CURL,
     opt: curl_sys::CURLoption,
     mut val: Cow<'_, str>,
 ) -> curl_sys::CURLcode {
-    if val.ends_with('\0') {
-        // Quick path: if the string ends with a null byte, we can just use
-        // the pointer directly.
-    } else {
-        let mut s = val.into_owned();
-        s.push('\0');
-        val = Cow::Owned(s);
-    };
-    setopt_ptr(raw, opt, val.as_ptr() as *const c_char)
+    setopt_ptr(raw, opt, transform_cow_str_to_c_str(&mut val))
 }
 
 pub(super) unsafe fn setopt_ptr(

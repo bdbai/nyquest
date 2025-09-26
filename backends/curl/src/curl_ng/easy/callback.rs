@@ -15,17 +15,16 @@ use crate::curl_ng::{
 };
 
 pub trait EasyCallback {
-    fn write(self: Pin<&mut Self>, data: &[u8]) -> Result<usize, WriteError>;
-    fn read(self: Pin<&mut Self>, buf: &mut [u8]) -> Result<usize, ReadError>;
-    fn header(self: Pin<&mut Self>, data: &[u8]) -> bool;
-    fn seek(self: Pin<&mut Self>, offset: i64, whence: SeekFrom) -> SeekResult;
+    fn write(&mut self, data: &[u8]) -> Result<usize, WriteError>;
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, ReadError>;
+    fn header(&mut self, data: &[u8]) -> bool;
+    fn seek(&mut self, offset: i64, whence: SeekFrom) -> SeekResult;
 }
 
 pin_project! {
     pub struct EasyWithCallback<E, C> {
         #[pin]
         easy: E,
-        #[pin]
         callback: C,
         __pinned: PhantomPinned,
     }
@@ -43,7 +42,7 @@ impl<E, C> EasyWithCallback<E, C> {
     pub fn as_easy_mut(self: Pin<&mut Self>) -> Pin<&mut E> {
         self.project().easy
     }
-    pub fn as_callback_mut(self: Pin<&mut Self>) -> Pin<&mut C> {
+    pub fn as_callback_mut(self: Pin<&mut Self>) -> &mut C {
         self.project().callback
     }
 }

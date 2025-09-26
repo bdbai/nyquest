@@ -1,4 +1,4 @@
-use std::{mem::transmute_copy, pin::Pin};
+use std::pin::Pin;
 
 use curl::easy::List;
 use pin_project_lite::pin_project;
@@ -6,6 +6,7 @@ use pin_project_lite::pin_project;
 use crate::curl_ng::{
     easy::{setopt_ptr, AsRawEasyMut, RawEasy},
     error_context::{CurlCodeContext, WithCurlCodeContext as _},
+    ffi::list_to_raw,
 };
 
 pin_project! {
@@ -29,15 +30,7 @@ impl<E: AsRawEasyMut> HeaderList<E> {
     ) -> Result<(), CurlCodeContext> {
         let this = self.as_mut().project();
         let raw = this.easy.as_raw_easy_mut().raw();
-        let raw_list = this.list.as_ref().map_or(std::ptr::null(), |l| {
-            // TODO: rewrite our own List wrapper
-            assert_eq!(
-                size_of::<List>(),
-                size_of::<*mut curl_sys::curl_slist>(),
-                "List size is not equal to curl_slist pointer size"
-            );
-            unsafe { transmute_copy::<List, *mut curl_sys::curl_slist>(l) }
-        });
+        let raw_list = list_to_raw(headers.as_ref());
         unsafe {
             setopt_ptr(raw, curl_sys::CURLOPT_HTTPHEADER, raw_list as *const _)
                 .with_easy_context("setopt CURLOPT_HTTPHEADER")?
