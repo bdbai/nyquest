@@ -12,7 +12,7 @@ use curl_sys::{
 };
 use pin_project_lite::pin_project;
 
-use crate::curl_ng::easy::{setopt_ptr, AsRawEasyMut, RawEasy};
+use crate::curl_ng::easy::{AsRawEasyMut, RawEasy};
 use crate::curl_ng::error_context::{CurlCodeContext, WithCurlCodeContext};
 
 type MutexGuardStore = Mutex<Option<MutexGuard<'static, ()>>>; // One per curl share data type
@@ -132,9 +132,9 @@ impl<E> ShareHandle<E> {
 impl<E: AsRawEasyMut> ShareHandle<E> {
     fn bind_share(mut self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         let this = self.as_mut().project();
-        let raw = this.easy.as_raw_easy_mut().raw();
+        let raw = this.easy.as_raw_easy_mut();
         unsafe {
-            setopt_ptr(raw, CURLOPT_SHARE, this.share.raw.as_ptr() as _)
+            raw.setopt_ptr(CURLOPT_SHARE, this.share.raw.as_ptr() as _)
                 .with_easy_context("setopt CURLOPT_SHARE")
         }
     }

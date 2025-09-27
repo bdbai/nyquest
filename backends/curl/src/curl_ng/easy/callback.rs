@@ -10,7 +10,7 @@ use curl::easy::{ReadError, SeekResult, WriteError};
 use pin_project_lite::pin_project;
 
 use crate::curl_ng::{
-    easy::{setopt_ptr, AsRawEasyMut, RawEasy},
+    easy::{AsRawEasyMut, RawEasy},
     CurlCodeContext, WithCurlCodeContext as _,
 };
 
@@ -49,42 +49,37 @@ impl<E, C> EasyWithCallback<E, C> {
 
 impl<E: AsRawEasyMut, C: EasyCallback> EasyWithCallback<E, C> {
     fn bind_callbacks(mut self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
+        let self_ptr: *mut Self = unsafe { self.as_mut().get_unchecked_mut() };
         let this = self.as_mut().project();
-        let raw = this.easy.as_raw_easy_mut().raw();
+        let mut raw = this.easy.as_raw_easy_mut();
         unsafe {
-            let self_ptr: *mut Self = self.get_unchecked_mut();
-            setopt_ptr(raw, curl_sys::CURLOPT_WRITEDATA, self_ptr as _)
+            raw.as_mut()
+                .setopt_ptr(curl_sys::CURLOPT_WRITEDATA, self_ptr as _)
                 .with_easy_context("setopt WRITEDATA")?;
-            setopt_ptr(
-                raw,
-                curl_sys::CURLOPT_WRITEFUNCTION,
-                write_callback::<E, C> as _,
-            )
-            .with_easy_context("setopt WRITEFUNCTION")?;
-            setopt_ptr(raw, curl_sys::CURLOPT_READDATA, self_ptr as _)
+            raw.as_mut()
+                .setopt_ptr(curl_sys::CURLOPT_WRITEFUNCTION, write_callback::<E, C> as _)
+                .with_easy_context("setopt WRITEFUNCTION")?;
+            raw.as_mut()
+                .setopt_ptr(curl_sys::CURLOPT_READDATA, self_ptr as _)
                 .with_easy_context("setopt READDATA")?;
-            setopt_ptr(
-                raw,
-                curl_sys::CURLOPT_READFUNCTION,
-                read_callback::<E, C> as _,
-            )
-            .with_easy_context("setopt READFUNCTION")?;
-            setopt_ptr(raw, curl_sys::CURLOPT_HEADERDATA, self_ptr as _)
+            raw.as_mut()
+                .setopt_ptr(curl_sys::CURLOPT_READFUNCTION, read_callback::<E, C> as _)
+                .with_easy_context("setopt READFUNCTION")?;
+            raw.as_mut()
+                .setopt_ptr(curl_sys::CURLOPT_HEADERDATA, self_ptr as _)
                 .with_easy_context("setopt HEADERDATA")?;
-            setopt_ptr(
-                raw,
-                curl_sys::CURLOPT_HEADERFUNCTION,
-                header_callback::<E, C> as _,
-            )
-            .with_easy_context("setopt HEADERFUNCTION")?;
-            setopt_ptr(raw, curl_sys::CURLOPT_SEEKDATA, self_ptr as _)
+            raw.as_mut()
+                .setopt_ptr(
+                    curl_sys::CURLOPT_HEADERFUNCTION,
+                    header_callback::<E, C> as _,
+                )
+                .with_easy_context("setopt HEADERFUNCTION")?;
+            raw.as_mut()
+                .setopt_ptr(curl_sys::CURLOPT_SEEKDATA, self_ptr as _)
                 .with_easy_context("setopt SEEKDATA")?;
-            setopt_ptr(
-                raw,
-                curl_sys::CURLOPT_SEEKFUNCTION,
-                seek_callback::<E, C> as _,
-            )
-            .with_easy_context("setopt SEEKFUNCTION")?;
+            raw.as_mut()
+                .setopt_ptr(curl_sys::CURLOPT_SEEKFUNCTION, seek_callback::<E, C> as _)
+                .with_easy_context("setopt SEEKFUNCTION")?;
         }
         Ok(())
     }

@@ -3,7 +3,7 @@ use std::{pin::Pin, ptr::null};
 use pin_project_lite::pin_project;
 
 use crate::curl_ng::{
-    easy::{setopt_ptr, AsRawEasyMut},
+    easy::AsRawEasyMut,
     mime::{Mime, MimePart, MimePartReader, CURLOPT_MIMEPOST},
     CurlCodeContext, WithCurlCodeContext,
 };
@@ -27,11 +27,11 @@ impl<E: AsRawEasyMut> MimeHandle<E> {
         self: Pin<&mut Self>,
         parts: impl IntoIterator<Item = MimePart<impl MimePartReader + Send + 'static>>,
     ) -> Result<(), CurlCodeContext> {
-        let mut this = self.project();
-        let mime = Mime::new(this.easy.as_mut().as_raw_easy_mut(), parts)?;
-        let raw = this.easy.as_raw_easy_mut().raw();
+        let this = self.project();
+        let mut raw = this.easy.as_raw_easy_mut();
+        let mime = Mime::new(raw.as_mut(), parts)?;
         unsafe {
-            setopt_ptr(raw, CURLOPT_MIMEPOST, mime.raw() as _)
+            raw.setopt_ptr(CURLOPT_MIMEPOST, mime.raw() as _)
                 .with_easy_context("setopt CURLOPT_MIMEPOST")?
         }
         *this.mime = Some(mime);
@@ -39,9 +39,9 @@ impl<E: AsRawEasyMut> MimeHandle<E> {
     }
     pub fn clear_mime(mut self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         let this = self.as_mut().project();
-        let raw = this.easy.as_raw_easy_mut().raw();
+        let raw = this.easy.as_raw_easy_mut();
         unsafe {
-            setopt_ptr(raw, CURLOPT_MIMEPOST, null())
+            raw.setopt_ptr(CURLOPT_MIMEPOST, null())
                 .with_easy_context("setopt CURLOPT_MIMEPOST null")?
         }
         *this.mime = None;

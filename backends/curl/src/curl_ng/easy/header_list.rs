@@ -4,7 +4,7 @@ use curl::easy::List;
 use pin_project_lite::pin_project;
 
 use crate::curl_ng::{
-    easy::{setopt_ptr, AsRawEasyMut, RawEasy},
+    easy::{AsRawEasyMut, RawEasy},
     error_context::{CurlCodeContext, WithCurlCodeContext as _},
     ffi::list_to_raw,
 };
@@ -29,10 +29,10 @@ impl<E: AsRawEasyMut> HeaderList<E> {
         headers: Option<List>,
     ) -> Result<(), CurlCodeContext> {
         let this = self.as_mut().project();
-        let raw = this.easy.as_raw_easy_mut().raw();
+        let raw = this.easy.as_raw_easy_mut();
         let raw_list = list_to_raw(headers.as_ref());
         unsafe {
-            setopt_ptr(raw, curl_sys::CURLOPT_HTTPHEADER, raw_list as *const _)
+            raw.setopt_ptr(curl_sys::CURLOPT_HTTPHEADER, raw_list as *const _)
                 .with_easy_context("setopt CURLOPT_HTTPHEADER")?
         }
         *this.list = headers;
