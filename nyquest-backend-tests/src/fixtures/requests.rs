@@ -177,6 +177,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "multipart")]
     fn test_body_multipart_bytes() {
         const PATH: &str = "requests/body_multipart_bytes";
         #[derive(Debug, Clone, Default, PartialEq, Eq)]

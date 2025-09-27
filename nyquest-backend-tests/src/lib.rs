@@ -157,7 +157,7 @@ async fn setup_hyper_impl() -> Result<String, io::Error> {
 }
 
 static TOKIO_RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()

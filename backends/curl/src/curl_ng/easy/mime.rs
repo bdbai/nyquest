@@ -20,6 +20,10 @@ impl<E> MimeHandle<E> {
     pub fn new(easy: E) -> Self {
         MimeHandle { easy, mime: None }
     }
+
+    pub fn as_easy_mut(self: Pin<&mut Self>) -> Pin<&mut E> {
+        self.project().easy
+    }
 }
 
 impl<E: AsRawEasyMut> MimeHandle<E> {

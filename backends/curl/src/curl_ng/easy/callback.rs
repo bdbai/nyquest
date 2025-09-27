@@ -14,6 +14,7 @@ use crate::curl_ng::{
     CurlCodeContext, WithCurlCodeContext as _,
 };
 
+// TODO: pass easy handle to callback methods for pause etc.
 pub trait EasyCallback {
     fn write(&mut self, data: &[u8]) -> Result<usize, WriteError>;
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, ReadError>;

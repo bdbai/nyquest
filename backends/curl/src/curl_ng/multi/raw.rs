@@ -4,7 +4,7 @@ use crate::curl_ng::multi::{IsSendWithMultiSet, IsSyncWithMultiSet};
 
 #[derive(Debug)]
 pub struct RawMulti {
-    raw: NonNull<curl_sys::CURLM>,
+    pub(super) raw: NonNull<curl_sys::CURLM>,
 }
 
 unsafe impl IsSendWithMultiSet for RawMulti {}
@@ -19,6 +19,12 @@ impl RawMulti {
         let raw = unsafe { curl_sys::curl_multi_init() };
         let raw = NonNull::new(raw).expect("curl_multi_init returned null");
         Self { raw }
+    }
+}
+
+impl AsRef<RawMulti> for RawMulti {
+    fn as_ref(&self) -> &RawMulti {
+        self
     }
 }
 

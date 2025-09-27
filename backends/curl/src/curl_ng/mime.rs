@@ -6,16 +6,14 @@ mod raw;
 
 use std::{ffi::c_void, pin::Pin, ptr::NonNull};
 
-use crate::curl_ng::{
-    easy::RawEasy,
-    ffi::{list_to_raw, transform_cow_str_to_c_str},
-    CurlCodeContext, WithCurlCodeContext,
-};
-use raw::RawMime;
+use libc::{c_char, size_t};
 
+use crate::curl_ng::{
+    easy::RawEasy, ffi::transform_cow_str_to_c_str, CurlCodeContext, WithCurlCodeContext,
+};
 pub(super) use ffi::CURLOPT_MIMEPOST;
-use libc::{c_char, c_int, size_t};
 pub use part::{MimePart, MimePartContent, MimePartReader};
+use raw::RawMime;
 
 #[derive(Debug)]
 pub struct Mime {
@@ -48,8 +46,7 @@ impl Mime {
                         .with_easy_context("curl_mime_type")?;
                 }
                 if let Some(header_list) = part.header_list {
-                    let list_raw = list_to_raw(Some(&header_list));
-                    ffi::curl_mime_headers(part_raw, list_raw, 1)
+                    ffi::curl_mime_headers(part_raw, header_list.raw(), 1)
                         .with_easy_context("curl_mime_headers")?;
                     std::mem::forget(header_list);
                 }

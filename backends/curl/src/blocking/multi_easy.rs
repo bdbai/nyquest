@@ -165,7 +165,13 @@ impl MultiEasy {
         let easy = self.easy.detach(&mut self.multi)?;
         easy.reset();
         unsafe { share.bind_easy2(easy)? };
-        crate::request::populate_request(url, req, options, easy, |_easy, _stream| unimplemented!())
+        crate::request::populate_request2(
+            url,
+            req,
+            options,
+            easy,
+            |_easy, _stream| unimplemented!(),
+        )
     }
 
     pub fn status(&mut self) -> NyquestResult<u16> {

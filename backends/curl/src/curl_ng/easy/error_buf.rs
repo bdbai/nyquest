@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
 use std::ffi::c_char;
 use std::marker::PhantomPinned;
 use std::mem::MaybeUninit;
@@ -13,21 +14,18 @@ use crate::curl_ng::{
 };
 
 pub struct ErrorBuf {
-    pub(super) buf: [MaybeUninit<c_char>; CURL_ERROR_SIZE],
+    pub(super) buf: UnsafeCell<[MaybeUninit<c_char>; CURL_ERROR_SIZE]>,
 }
 
+unsafe impl Send for ErrorBuf {}
+unsafe impl Sync for ErrorBuf {}
+
 pin_project! {
-    pub struct OwnedEasyWithErrorBuf<E: AsRawEasyMut> {
+    pub struct OwnedEasyWithErrorBuf<E> {
         #[pin]
         pub(super) easy: E,
         pub(super) error_buf: ErrorBuf,
         __pinned: PhantomPinned,
-    }
-
-    impl<E: AsRawEasyMut> PinnedDrop for OwnedEasyWithErrorBuf<E> {
-        fn drop(this: Pin<&mut Self>) {
-            this.drop_detach();
-        }
     }
 }
 
@@ -35,25 +33,27 @@ impl ErrorBuf {
     pub fn new() -> Self {
         let mut buf = [MaybeUninit::uninit(); CURL_ERROR_SIZE];
         buf[0].write(0);
-        ErrorBuf { buf }
+        ErrorBuf {
+            buf: UnsafeCell::new(buf),
+        }
     }
 
-    fn to_string(&mut self) -> Cow<str> {
-        let cstr = unsafe { std::ffi::CStr::from_ptr(self.buf.as_ptr() as _) };
+    fn to_string(&self) -> Cow<'_, str> {
+        let cstr = unsafe { std::ffi::CStr::from_ptr(self.buf.get() as _) };
         cstr.to_string_lossy()
     }
 }
 
 impl ErrorBuf {
     pub fn with_easy_attached<'s, E: AsRawEasyMut, T>(
-        mut self: Pin<&'s mut Self>,
+        self: Pin<&'s mut Self>,
         mut easy: Pin<&mut E>,
         callback: impl FnOnce(Pin<&mut E>) -> Result<T, CurlCodeContext>,
     ) -> Result<T, CurlErrorContext<'s>> {
         unsafe {
             easy.as_mut()
                 .as_raw_easy_mut()
-                .attach_error_buf(self.buf.as_mut_ptr() as *mut c_char)
+                .attach_error_buf(self.buf.get() as *mut c_char)
         }
         .map_err(|e| CurlErrorContext {
             code: e.code,
@@ -84,7 +84,7 @@ impl ErrorBuf {
     }
 }
 
-impl<E: AsRawEasyMut> OwnedEasyWithErrorBuf<E> {
+impl<E> OwnedEasyWithErrorBuf<E> {
     pub fn new(easy: E) -> Self {
         OwnedEasyWithErrorBuf {
             easy,
@@ -92,16 +92,32 @@ impl<E: AsRawEasyMut> OwnedEasyWithErrorBuf<E> {
             __pinned: PhantomPinned,
         }
     }
+
+    pub fn as_easy_mut(self: Pin<&mut Self>) -> Pin<&mut E> {
+        self.project().easy
+    }
+
+    pub fn with_error_message<T>(
+        mut self: Pin<&mut Self>,
+        callback: impl FnOnce(Pin<&mut Self>) -> Result<T, CurlCodeContext>,
+    ) -> Result<T, CurlErrorContext<'_>> {
+        let res = callback(self.as_mut());
+        res.map_err(|e| CurlErrorContext {
+            code: e.code,
+            msg: self.project().error_buf.to_string(),
+            context: e.context,
+        })
+    }
 }
 
 impl<E: AsRawEasyMut> OwnedEasyWithErrorBuf<E> {
     fn attach(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         let this = self.project();
         unsafe {
-            this.error_buf.buf[0].write(0);
+            (*this.error_buf.buf.get())[0].write(0);
             this.easy
                 .as_raw_easy_mut()
-                .attach_error_buf(this.error_buf.buf.as_mut_ptr() as _)
+                .attach_error_buf(this.error_buf.buf.get() as _)
         }
     }
     fn drop_detach(self: Pin<&mut Self>) {
@@ -110,19 +126,6 @@ impl<E: AsRawEasyMut> OwnedEasyWithErrorBuf<E> {
             .as_raw_easy_mut()
             .detach_error_buf()
             .expect("detach owned error buf");
-    }
-
-    pub fn with_error_message<T>(
-        self: Pin<&mut Self>,
-        callback: impl FnOnce(Pin<&mut E>) -> Result<T, CurlCodeContext>,
-    ) -> Result<T, CurlErrorContext<'_>> {
-        let mut this = self.project();
-        let res = callback(this.easy.as_mut());
-        res.map_err(|e| CurlErrorContext {
-            code: e.code,
-            msg: this.error_buf.to_string(),
-            context: e.context,
-        })
     }
 }
 

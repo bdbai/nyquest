@@ -1,21 +1,22 @@
 use std::borrow::Cow;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CurlCodeContext {
     pub(super) code: curl_sys::CURLcode,
     pub(super) context: &'static str,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CurlErrorContext<'e> {
-    pub(super) code: curl_sys::CURLcode,
-    pub(super) msg: Cow<'e, str>,
-    pub(super) context: &'static str,
+    pub code: curl_sys::CURLcode,
+    pub msg: Cow<'e, str>,
+    pub context: &'static str,
 }
 
+#[derive(Debug, Clone)]
 pub struct CurlMultiCodeContext {
-    code: curl_sys::CURLMcode,
-    context: &'static str,
+    pub code: curl_sys::CURLMcode,
+    pub context: &'static str,
 }
 
 pub trait WithCurlCodeContext {

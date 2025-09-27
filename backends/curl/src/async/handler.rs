@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use curl::easy::{Handler, WriteError};
+use curl::easy::WriteError;
 
 use super::pause::EasyPause;
 use super::r#loop::SharedRequestContext;
+use crate::curl_ng::easy::EasyCallback;
 
 #[derive(Default)]
 pub(super) struct AsyncHandler {
     // To be filled in the loop
-    pub(super) ctx: Option<Arc<SharedRequestContext>>,
+    pub(super) ctx: Arc<SharedRequestContext>,
     // To be filled after Easy2 is constructed
     pub(super) pause: Option<EasyPause>,
 }
@@ -20,13 +21,13 @@ struct AsyncHandlerRef<'a> {
 
 impl AsyncHandler {
     fn get_ref(&mut self) -> Option<AsyncHandlerRef<'_>> {
-        let ctx = self.ctx.as_ref()?;
+        let ctx = self.ctx.as_ref();
         let pause = self.pause.as_mut()?;
         Some(AsyncHandlerRef { ctx, pause })
     }
 }
 
-impl Handler for AsyncHandler {
+impl EasyCallback for AsyncHandler {
     fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
         let Some(inner) = self.get_ref() else {
             // ... signals an error condition to the library and returns CURLE_WRITE_ERROR.
@@ -60,5 +61,13 @@ impl Handler for AsyncHandler {
         }
         inner.ctx.waker.wake();
         true
+    }
+
+    fn read(&mut self, _buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
+        unimplemented!()
+    }
+
+    fn seek(&mut self, _offset: i64, _whence: std::io::SeekFrom) -> curl::easy::SeekResult {
+        unimplemented!()
     }
 }

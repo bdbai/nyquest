@@ -2,19 +2,20 @@ use std::{
     borrow::Cow,
     ffi::{c_char, c_int, c_void},
     io::SeekFrom,
-    mem::MaybeUninit,
     panic, slice,
 };
 
-use curl::easy::{List, ReadError, SeekResult};
+use curl::easy::{ReadError, SeekResult};
 use libc::size_t;
+
+use crate::curl_ng::CurlStringList;
 
 #[derive(Debug)]
 pub struct MimePart<R> {
     pub name: Cow<'static, str>,
     pub filename: Option<Cow<'static, str>>,
     pub content_type: Option<Cow<'static, str>>,
-    pub header_list: Option<List>,
+    pub header_list: Option<CurlStringList>,
     pub content: MimePartContent<R>,
 }
 

@@ -14,6 +14,11 @@ unsafe impl Send for RawEasy {}
 unsafe impl Sync for RawEasy {}
 
 impl RawEasy {
+    pub fn new() -> Self {
+        let raw = unsafe { curl_sys::curl_easy_init() };
+        let raw = NonNull::new(raw).expect("curl_easy_init returned null");
+        Self { raw }
+    }
     pub fn raw(&self) -> *mut curl_sys::CURL {
         self.raw.as_ptr()
     }
@@ -21,7 +26,7 @@ impl RawEasy {
 
 impl AsRawEasyMut for RawEasy {
     fn init(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
-        Ok(())
+        self.set_nosignal(true)
     }
 
     fn as_raw_easy_mut(self: Pin<&mut Self>) -> Pin<&mut RawEasy> {
@@ -32,7 +37,7 @@ impl AsRawEasyMut for RawEasy {
         unsafe {
             curl_sys::curl_easy_reset(self.raw());
         }
-        Ok(())
+        self.set_nosignal(true)
     }
 }
 
@@ -52,6 +57,19 @@ impl RawEasy {
         unsafe {
             self.setopt_ptr(curl_sys::CURLOPT_ERRORBUFFER, null_buf)
                 .with_easy_context("setopt CURLOPT_ERRORBUFFER")
+        }
+    }
+
+    pub fn unpause_send(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
+        unsafe {
+            curl_sys::curl_easy_pause(self.raw(), curl_sys::CURLPAUSE_SEND_CONT)
+                .with_easy_context("curl_easy_pause SEND_CONT")
+        }
+    }
+    pub fn unpause_recv(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
+        unsafe {
+            curl_sys::curl_easy_pause(self.raw(), curl_sys::CURLPAUSE_RECV_CONT)
+                .with_easy_context("curl_easy_pause RECV_CONT")
         }
     }
 }

@@ -44,6 +44,13 @@ impl RawEasy {
         unsafe { curl_sys::curl_easy_setopt(self.as_raw_easy_mut().raw(), opt, val) }
     }
 
+    pub fn set_nosignal(self: Pin<&mut Self>, no_signal: bool) -> Result<(), CurlCodeContext> {
+        unsafe {
+            self.setopt_long(curl_sys::CURLOPT_NOSIGNAL, no_signal as c_long)
+                .with_easy_context("setopt CURLOPT_NOSIGNAL")
+        }
+    }
+
     pub fn set_noproxy<'s>(
         self: Pin<&mut Self>,
         skip: impl Into<Cow<'s, str>>,
@@ -102,10 +109,17 @@ impl RawEasy {
         }
     }
 
-    pub fn set_ssl_verify_host(self: Pin<&mut Self>, verify: bool) -> Result<(), CurlCodeContext> {
+    pub fn _set_ssl_verify_host(self: Pin<&mut Self>, verify: bool) -> Result<(), CurlCodeContext> {
         unsafe {
             self.setopt_long(curl_sys::CURLOPT_SSL_VERIFYHOST, verify as c_long)
                 .with_easy_context("setopt CURLOPT_SSL_VERIFYHOST")
+        }
+    }
+
+    pub fn set_follow_location(self: Pin<&mut Self>, follow: bool) -> Result<(), CurlCodeContext> {
+        unsafe {
+            self.setopt_long(curl_sys::CURLOPT_FOLLOWLOCATION, follow as c_long)
+                .with_easy_context("setopt CURLOPT_FOLLOWLOCATION")
         }
     }
 
@@ -172,7 +186,7 @@ impl RawEasy {
                         data.len() as curl_sys::curl_off_t,
                     )
                     .with_easy_context("setopt CURLOPT_POSTFIELDSIZE_LARGE")?;
-                self.setopt_ptr(curl_sys::CURLOPT_POSTFIELDS, data.as_ptr() as _)
+                self.setopt_ptr(curl_sys::CURLOPT_COPYPOSTFIELDS, data.as_ptr() as _)
                     .with_easy_context("setopt CURLOPT_POSTFIELDS")?;
             }
         }

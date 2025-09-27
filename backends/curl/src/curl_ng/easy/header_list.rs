@@ -1,36 +1,39 @@
-use std::pin::Pin;
+use std::{pin::Pin, ptr::null};
 
-use curl::easy::List;
 use pin_project_lite::pin_project;
 
 use crate::curl_ng::{
     easy::{AsRawEasyMut, RawEasy},
     error_context::{CurlCodeContext, WithCurlCodeContext as _},
-    ffi::list_to_raw,
+    CurlStringList,
 };
 
 pin_project! {
-    pub struct HeaderList<E> {
+    pub struct EasyWithHeaderList<E> {
         #[pin]
         easy: E,
-        list: Option<List>,
+        list: Option<CurlStringList>,
     }
 }
 
-impl<E> HeaderList<E> {
+impl<E> EasyWithHeaderList<E> {
     pub fn new(easy: E) -> Self {
-        HeaderList { easy, list: None }
+        EasyWithHeaderList { easy, list: None }
+    }
+
+    pub fn as_easy_mut(self: Pin<&mut Self>) -> Pin<&mut E> {
+        self.project().easy
     }
 }
 
-impl<E: AsRawEasyMut> HeaderList<E> {
+impl<E: AsRawEasyMut> EasyWithHeaderList<E> {
     pub fn set_headers(
         mut self: Pin<&mut Self>,
-        headers: Option<List>,
+        headers: Option<CurlStringList>,
     ) -> Result<(), CurlCodeContext> {
         let this = self.as_mut().project();
         let raw = this.easy.as_raw_easy_mut();
-        let raw_list = list_to_raw(headers.as_ref());
+        let raw_list = headers.as_ref().map_or(null(), |l| l.raw());
         unsafe {
             raw.setopt_ptr(curl_sys::CURLOPT_HTTPHEADER, raw_list as *const _)
                 .with_easy_context("setopt CURLOPT_HTTPHEADER")?
@@ -40,7 +43,7 @@ impl<E: AsRawEasyMut> HeaderList<E> {
     }
 }
 
-impl<E: AsRawEasyMut> AsRawEasyMut for HeaderList<E> {
+impl<E: AsRawEasyMut> AsRawEasyMut for EasyWithHeaderList<E> {
     fn init(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         self.project().easy.init()
     }
