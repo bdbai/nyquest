@@ -7,8 +7,9 @@ use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 mod handler;
 mod multi_easy;
+mod set;
 
-use crate::share::Share;
+use crate::curl_ng::easy::Share;
 use crate::url::concat_url;
 use multi_easy::MultiEasy;
 
@@ -16,11 +17,11 @@ use multi_easy::MultiEasy;
 pub struct CurlEasyClient {
     options: Arc<nyquest_interface::client::ClientOptions>,
     slot: Arc<MultiEasySlot>,
+    share: Share,
 }
 
 struct MultiEasySlot {
     multi_easy: Mutex<Option<MultiEasy>>,
-    share: Share, // Drop later than any existing MultiEasy instances
 }
 
 struct EasyHandleGuard<S: AsRef<MultiEasySlot>> {
@@ -62,8 +63,7 @@ impl<S: AsRef<MultiEasySlot>> Drop for EasyHandleGuard<S> {
         // used to suppress our Drop
         let mut handle = unsafe { ManuallyDrop::take(&mut self.handle) };
         let mut slot = self.slot.as_ref().multi_easy.lock().unwrap();
-        if slot.is_none() {
-            handle.get_mut().unwrap().reset_state();
+        if slot.is_none() && handle.get_mut().unwrap().reset_state().is_ok() {
             *slot = Some(handle.into_inner().unwrap());
         }
     }
@@ -75,24 +75,27 @@ impl CurlEasyClient {
             options: Arc::new(options),
             slot: Arc::new(MultiEasySlot {
                 multi_easy: Mutex::new(None),
-                share: Share::new(),
             }),
+            share: Share::new(),
         }
     }
 
-    fn get_or_create_handle(&self) -> EasyHandleGuard<&Arc<MultiEasySlot>> {
+    fn get_or_create_handle(&self) -> NyquestResult<EasyHandleGuard<&Arc<MultiEasySlot>>> {
         let slot = {
             let mut slot = self.slot.multi_easy.lock().unwrap();
             slot.take()
         };
         let handle = match slot {
-            Some(handle) => handle,
-            None => MultiEasy::new(),
+            Some(mut handle) => {
+                handle.reset_state()?;
+                handle
+            }
+            None => MultiEasy::new(&self.share)?,
         };
-        EasyHandleGuard {
+        Ok(EasyHandleGuard {
             slot: &self.slot,
             handle: ManuallyDrop::new(Mutex::new(handle)),
-        }
+        })
     }
 }
 
@@ -170,15 +173,11 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
     type Response = CurlBlockingResponse;
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
-        let mut handle_guard = self.get_or_create_handle();
+        let mut handle_guard = self.get_or_create_handle()?;
         // FIXME: properly concat base_url and url
         let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);
         let handle: &mut MultiEasy = handle_guard.handle_mut();
-        // Safety: the guard always keeps a valid reference to the Share
-        // through the slot.
-        unsafe {
-            handle.populate_request(&url, req, &self.slot.share, &self.options)?;
-        }
+        handle.populate_request(&url, req, &self.options)?;
         handle.poll_until_response_headers()?;
         let mut headers_buf = handle.take_response_headers_buffer();
         let headers = headers_buf

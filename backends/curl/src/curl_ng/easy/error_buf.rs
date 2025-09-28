@@ -45,7 +45,7 @@ impl ErrorBuf {
 }
 
 impl ErrorBuf {
-    pub fn with_easy_attached<'s, E: AsRawEasyMut, T>(
+    pub fn _with_easy_attached<'s, E: AsRawEasyMut, T>(
         self: Pin<&'s mut Self>,
         mut easy: Pin<&mut E>,
         callback: impl FnOnce(Pin<&mut E>) -> Result<T, CurlCodeContext>,
@@ -68,7 +68,7 @@ impl ErrorBuf {
                 self.easy
                     .as_mut()
                     .as_raw_easy_mut()
-                    .detach_error_buf()
+                    ._detach_error_buf()
                     .expect("detach error buf");
             }
         }
@@ -120,11 +120,11 @@ impl<E: AsRawEasyMut> OwnedEasyWithErrorBuf<E> {
                 .attach_error_buf(this.error_buf.buf.get() as _)
         }
     }
-    fn drop_detach(self: Pin<&mut Self>) {
+    fn _drop_detach(self: Pin<&mut Self>) {
         self.project()
             .easy
             .as_raw_easy_mut()
-            .detach_error_buf()
+            ._detach_error_buf()
             .expect("detach owned error buf");
     }
 }

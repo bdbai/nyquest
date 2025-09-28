@@ -52,7 +52,7 @@ impl RawEasy {
         self.setopt_ptr(curl_sys::CURLOPT_ERRORBUFFER, error_buf)
             .with_easy_context("setopt CURLOPT_ERRORBUFFER")
     }
-    pub(super) fn detach_error_buf(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
+    pub(super) fn _detach_error_buf(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         let null_buf: *mut c_char = std::ptr::null_mut();
         unsafe {
             self.setopt_ptr(curl_sys::CURLOPT_ERRORBUFFER, null_buf)

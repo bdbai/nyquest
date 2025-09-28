@@ -14,7 +14,6 @@ mod blocking;
 mod curl_ng;
 mod error;
 mod request;
-mod share;
 mod state;
 mod url;
 

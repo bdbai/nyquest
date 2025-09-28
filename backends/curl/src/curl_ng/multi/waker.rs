@@ -1,6 +1,6 @@
 use std::{
     ptr::NonNull,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, RwLock, Weak},
 };
 
 use curl_sys::CURLM_BAD_HANDLE;
@@ -12,7 +12,7 @@ use crate::curl_ng::{
 };
 
 struct WakerCore {
-    multi: Mutex<Option<NonNull<curl_sys::CURLM>>>,
+    multi: RwLock<Option<NonNull<curl_sys::CURLM>>>,
 }
 
 #[derive(Clone)]
@@ -35,7 +35,7 @@ impl WakerCore {
         let Some(this) = core.upgrade() else {
             return CURLM_BAD_HANDLE.with_multi_context("curl_multi_wakeup");
         };
-        let guard = this.multi.lock().unwrap();
+        let guard = this.multi.read().unwrap();
         let Some(raw) = guard.as_ref() else {
             return CURLM_BAD_HANDLE.with_multi_context("curl_multi_wakeup");
         };
@@ -48,7 +48,7 @@ impl WakerCore {
     }
 
     fn invalidate(&self) {
-        let mut guard = self.multi.lock().unwrap();
+        let mut guard = self.multi.write().unwrap();
         *guard = None;
     }
 }
@@ -62,7 +62,7 @@ impl MultiWaker {
 impl<M: AsRef<RawMulti>> WakeableMulti<M> {
     pub fn new(multi: M) -> Self {
         let waker_core = Arc::new(WakerCore {
-            multi: Mutex::new(Some(multi.as_ref().raw)),
+            multi: RwLock::new(Some(multi.as_ref().raw)),
         });
         WakeableMulti { multi, waker_core }
     }

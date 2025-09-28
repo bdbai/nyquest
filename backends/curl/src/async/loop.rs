@@ -10,11 +10,11 @@ use futures_util::lock::Mutex as FuturesMutex;
 use futures_util::task::AtomicWaker;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
-use crate::curl_ng::easy::AsRawEasyMut;
+use crate::curl_ng::easy::AsRawEasyMut as _;
 use crate::curl_ng::multi::{MultiWaker, MultiWithSet, RawMulti, WakeableMulti};
 use crate::r#async::set::SlabMultiSet;
 use crate::r#async::AsyncHandler;
-use crate::request::BoxEasyHandle;
+use crate::request::{AsCallbackMut as _, BoxEasyHandle};
 use crate::state::RequestState;
 
 type Easy = BoxEasyHandle<super::handler::AsyncHandler>;
@@ -181,14 +181,7 @@ impl LoopManagerShared {
         self,
         mut easy: Easy,
     ) -> NyquestResult<Result<RequestHandle, (Easy, Self)>> {
-        let shared_context = easy
-            .as_mut()
-            .as_easy_mut()
-            .as_easy_mut()
-            .as_easy_mut()
-            .as_callback_mut()
-            .ctx
-            .clone();
+        let shared_context = easy.as_callback_mut().ctx.clone();
         let (tx, rx) = oneshot::channel();
         {
             let Some(inner) = self.inner.upgrade() else {
@@ -320,15 +313,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                                     .get_content_length()
                                     .unwrap_or_default()
                                     .map(|l| l as _);
-                                let mut state = e
-                                    .as_easy_mut()
-                                    .as_easy_mut()
-                                    .as_easy_mut()
-                                    .as_callback_mut()
-                                    .ctx
-                                    .state
-                                    .lock()
-                                    .unwrap();
+                                let mut state = e.as_callback_mut().ctx.state.lock().unwrap();
                                 Ok(super::CurlAsyncResponse {
                                     status,
                                     content_length,
@@ -382,15 +367,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             Ok(res) => res,
             Err(err) => {
                 for (_, ctx) in multi.iter_mut() {
-                    let state = ctx
-                        .as_mut()
-                        .as_easy_mut()
-                        .as_easy_mut()
-                        .as_easy_mut()
-                        .as_callback_mut()
-                        .ctx
-                        .state
-                        .lock();
+                    let state = ctx.as_callback_mut().ctx.state.lock();
                     if let Ok(mut state) = state {
                         if state.1.is_none() {
                             state.1 = Some(Err(err.clone().into()));
@@ -405,13 +382,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                 .as_mut()
                 .with_error_message(|_| res.transpose())
                 .map_err(|e| e.into());
-            let ctx = &*e
-                .as_mut()
-                .as_easy_mut()
-                .as_easy_mut()
-                .as_easy_mut()
-                .as_callback_mut()
-                .ctx;
+            let ctx = &*e.as_callback_mut().ctx;
             if let Some(res) = res.transpose() {
                 let mut state = ctx.state.lock().unwrap();
                 state.1 = Some(res);

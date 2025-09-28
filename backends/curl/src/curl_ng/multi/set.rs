@@ -144,6 +144,31 @@ where
 }
 
 impl<M: AsRef<RawMulti>, S> MultiWithSet<M, S> {
+    pub fn get_timeout_ms(&self) -> Result<Option<u32>, CurlMultiCodeContext> {
+        let mut timeout_ms = 0;
+        unsafe {
+            curl_sys::curl_multi_timeout(self.multi.as_ref().raw(), &mut timeout_ms)
+                .with_multi_context("curl_multi_timeout")?;
+        }
+        Ok(if timeout_ms == -1 {
+            None
+        } else {
+            Some(timeout_ms as u32)
+        })
+    }
+
+    pub fn set_max_connects(&mut self, max: u32) -> Result<(), CurlMultiCodeContext> {
+        unsafe {
+            curl_sys::curl_multi_setopt(
+                self.multi.as_ref().raw(),
+                curl_sys::CURLMOPT_MAXCONNECTS,
+                max as libc::c_long,
+            )
+        }
+        .with_multi_context("curl_multi_setopt(CURLMOPT_MAXCONNECTS)")?;
+        Ok(())
+    }
+
     pub fn perform(&mut self) -> Result<i32, CurlMultiCodeContext> {
         unsafe {
             let mut ret = 0;
@@ -164,6 +189,21 @@ impl<M: AsRef<RawMulti>, S> MultiWithSet<M, S> {
                 &mut ret,
             )
             .with_multi_context("curl_multi_poll")?;
+            Ok(ret as u32)
+        }
+    }
+
+    pub fn wait(&self, timeout_ms: u32) -> Result<u32, CurlMultiCodeContext> {
+        unsafe {
+            let mut ret = 0;
+            curl_sys::curl_multi_wait(
+                self.multi.as_ref().raw(),
+                null_mut(),
+                0,
+                timeout_ms as _,
+                &mut ret,
+            )
+            .with_multi_context("curl_multi_wait")?;
             Ok(ret as u32)
         }
     }

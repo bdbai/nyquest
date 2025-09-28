@@ -10,9 +10,9 @@ mod r#loop;
 mod pause;
 mod set;
 
-use crate::curl_ng::easy::{AsRawEasyMut, Share};
+use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
 use crate::r#async::handler::AsyncHandler;
-use crate::request::create_easy;
+use crate::request::{create_easy, AsCallbackMut as _};
 use crate::url::concat_url;
 
 pub struct CurlMultiClientInner {
@@ -126,12 +126,7 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         let req = {
             let mut easy = create_easy(AsyncHandler::default(), &self.inner.share)?;
             let raw = easy.as_mut().as_raw_easy_mut().raw();
-            easy.as_mut()
-                .as_easy_mut()
-                .as_easy_mut()
-                .as_easy_mut()
-                .as_callback_mut()
-                .pause = Some(pause::EasyPause::new(raw));
+            easy.as_callback_mut().pause = Some(pause::EasyPause::new(raw));
             // FIXME: properly concat base_url and url
             let url = concat_url(self.inner.options.base_url.as_deref(), &req.relative_uri);
             crate::request::populate_request(&url, req, &self.inner.options, easy.as_mut())?;

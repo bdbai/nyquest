@@ -19,7 +19,7 @@ pub trait EasyCallback {
     fn write(&mut self, data: &[u8]) -> Result<usize, WriteError>;
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, ReadError>;
     fn header(&mut self, data: &[u8]) -> bool;
-    fn seek(&mut self, offset: i64, whence: SeekFrom) -> SeekResult;
+    fn seek(&mut self, whence: SeekFrom) -> SeekResult;
 }
 
 pin_project! {
@@ -40,7 +40,7 @@ impl<E, C> EasyWithCallback<E, C> {
         }
     }
 
-    pub fn as_easy_mut(self: Pin<&mut Self>) -> Pin<&mut E> {
+    pub fn _as_easy_mut(self: Pin<&mut Self>) -> Pin<&mut E> {
         self.project().easy
     }
     pub fn as_callback_mut(self: Pin<&mut Self>) -> &mut C {
@@ -173,7 +173,7 @@ fn seek_callback<E: AsRawEasyMut, C: EasyCallback>(
             libc::SEEK_END => SeekFrom::End(offset),
             _ => return curl_sys::CURL_SEEKFUNC_FAIL,
         };
-        this.project().callback.seek(offset, whence) as c_int
+        this.project().callback.seek(whence) as c_int
     })
     .unwrap_or(curl_sys::CURL_SEEKFUNC_FAIL)
 }

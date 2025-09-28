@@ -67,7 +67,7 @@ impl EasyCallback for AsyncHandler {
         unimplemented!()
     }
 
-    fn seek(&mut self, _offset: i64, _whence: std::io::SeekFrom) -> curl::easy::SeekResult {
+    fn seek(&mut self, _whence: std::io::SeekFrom) -> curl::easy::SeekResult {
         unimplemented!()
     }
 }
