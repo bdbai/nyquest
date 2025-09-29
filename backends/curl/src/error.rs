@@ -16,9 +16,6 @@ impl<'e> From<CurlErrorContext<'e>> for NyquestError {
 
 impl From<CurlMultiCodeContext> for NyquestError {
     fn from(e: CurlMultiCodeContext) -> Self {
-        if e.code == curl_sys::CURLE_OPERATION_TIMEDOUT {
-            return NyquestError::RequestTimeout;
-        }
         NyquestError::Io(std::io::Error::other(format!(
             "curl multi error:{}:{}",
             e.context, e.code
