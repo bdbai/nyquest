@@ -36,7 +36,7 @@ impl RawEasy {
     }
 
     pub fn get_content_length(&self) -> Result<Option<u64>, CurlCodeContext> {
-        const CURLINFO_CONTENT_LENGTH_DOWNLOAD_T: i32 = 0x600000 + 15;
+        const CURLINFO_CONTENT_LENGTH_DOWNLOAD_T: curl_sys::CURLINFO = 0x600000 + 15;
 
         let len = unsafe {
             self.getinfo_off_t(
