@@ -35,7 +35,7 @@ impl EasyCallback for AsyncHandler {
         };
         {
             let mut state = inner.ctx.state.lock().unwrap();
-            let state = &mut state.0;
+            let state = &mut state.state;
             state.write_data(data);
         }
         unsafe {
@@ -52,7 +52,7 @@ impl EasyCallback for AsyncHandler {
         };
         {
             let mut state = inner.ctx.state.lock().unwrap();
-            let state = &mut state.0;
+            let state = &mut state.state;
             if state.push_header_data(data) {
                 unsafe {
                     inner.pause.pause_recv();

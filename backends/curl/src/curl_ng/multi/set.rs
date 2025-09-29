@@ -109,6 +109,7 @@ where
     pub fn messages(
         &mut self,
         mut callback: impl FnMut(
+            usize,
             Pin<&mut <S::Ptr as Deref>::Target>,
             Option<Result<(), CurlCodeContext>>,
         ),
@@ -135,7 +136,7 @@ where
                 );
                 if let Some(mut easy) = self.lookup(token) {
                     if easy.as_mut().as_raw_easy_mut().raw() == msg.easy_handle {
-                        callback(easy, done_result);
+                        callback(token, easy, done_result);
                     }
                 }
             }

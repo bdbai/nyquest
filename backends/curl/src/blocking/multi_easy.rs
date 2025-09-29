@@ -81,7 +81,7 @@ impl MultiEasy {
             let multi_res = self.multi.wait(suggested_timeout);
             let multi_res = multi_res.and_then(|_| self.multi.perform())?;
             let mut res = ControlFlow::Continue(());
-            self.multi.messages(|easy, msg| {
+            self.multi.messages(|_, easy, msg| {
                 let msg = easy.with_error_message(|_| msg.transpose());
                 match msg {
                     Ok(Some(())) => res = ControlFlow::Break(Ok(())),
