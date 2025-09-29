@@ -11,9 +11,11 @@ mod r#async;
 #[cfg(feature = "blocking")]
 #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
 mod blocking;
+mod curl_ng;
 mod error;
+#[cfg(feature = "multipart")]
+mod mime_reader;
 mod request;
-mod share;
 mod state;
 mod url;
 

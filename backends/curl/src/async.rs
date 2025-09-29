@@ -2,19 +2,23 @@ use std::io;
 use std::task::{ready, Poll};
 use std::{pin::Pin, sync::Arc, task::Context};
 
-use curl::easy::Easy2;
 use nyquest_interface::r#async::{futures_io, AsyncResponse};
 use nyquest_interface::Error as NyquestError;
 
 mod handler;
 mod r#loop;
 mod pause;
+mod set;
 
+use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
+use crate::r#async::handler::AsyncHandler;
+use crate::request::{create_easy, AsCallbackMut as _};
 use crate::url::concat_url;
 
 pub struct CurlMultiClientInner {
     options: nyquest_interface::client::ClientOptions,
     loop_manager: r#loop::LoopManager,
+    share: Share,
 }
 #[derive(Clone)]
 pub struct CurlMultiClient {
@@ -120,18 +124,12 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         req: nyquest_interface::r#async::Request,
     ) -> nyquest_interface::Result<Self::Response> {
         let req = {
-            let mut easy = Easy2::new(handler::AsyncHandler::default());
-            let raw_handle = easy.raw();
-            easy.get_mut().pause = Some(pause::EasyPause::new(raw_handle));
+            let mut easy = create_easy(AsyncHandler::default(), &self.inner.share)?;
+            let raw = easy.as_mut().as_raw_easy_mut().raw();
+            easy.as_callback_mut().pause = Some(pause::EasyPause::new(raw));
             // FIXME: properly concat base_url and url
             let url = concat_url(self.inner.options.base_url.as_deref(), &req.relative_uri);
-            crate::request::populate_request(
-                &url,
-                req,
-                &self.inner.options,
-                &mut easy,
-                |_, _| unimplemented!(),
-            )?;
+            crate::request::populate_request(&url, req, &self.inner.options, easy.as_mut())?;
             self.inner.loop_manager.start_request(easy).await?
         };
         let mut res = req.wait_for_response().await?;
@@ -151,6 +149,7 @@ impl nyquest_interface::r#async::AsyncBackend for crate::CurlBackend {
             inner: Arc::new(CurlMultiClientInner {
                 loop_manager: r#loop::LoopManager::new(),
                 options,
+                share: Share::new(),
             }),
         })
     }
