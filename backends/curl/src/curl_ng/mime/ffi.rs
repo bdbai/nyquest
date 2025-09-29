@@ -33,6 +33,7 @@ extern "C" {
         freefunc: Option<curl_free_callback>,
         arg: *mut c_void,
     ) -> CURLcode;
+    #[allow(dead_code)]
     pub fn curl_mime_subparts(part: *mut curl_mimepart, subparts: *mut curl_mime) -> CURLcode;
     pub fn curl_mime_headers(
         part: *mut curl_mimepart,

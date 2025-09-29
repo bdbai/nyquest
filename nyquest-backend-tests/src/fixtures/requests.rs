@@ -292,8 +292,12 @@ mod tests {
                 Part::new_with_content_type("text", "text/plain", PartBody::text("ttt")),
                 Part::new_with_content_type("filename", "audio/mpeg", PartBody::bytes(b"ID3"))
                     .with_filename("3253212.mp3"),
-                Part::new_with_content_type("headed", "text/plain", PartBody::text("head"))
-                    .with_header("content-language", "zh-CN"),
+                Part::new_with_content_type(
+                    "headed",
+                    "text/plain",
+                    PartBody::text("head".to_string()),
+                )
+                .with_header("content-language", "zh-CN"),
             ]));
             TOKIO_RT.block_on(async move {
                 let builder = crate::init_builder().await.unwrap();

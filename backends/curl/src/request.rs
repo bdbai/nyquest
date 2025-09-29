@@ -3,6 +3,7 @@ use std::pin::Pin;
 
 use nyquest_interface::{Body, Method, Request, Result as NyquestResult};
 
+use crate::curl_ng::easy::MimeHandle;
 use crate::{
     curl_ng::{
         easy::{
@@ -14,14 +15,17 @@ use crate::{
     url::form_url_encode,
 };
 
-pub type EasyHandle<C> =
-    OwnedEasyWithErrorBuf<ShareHandle<EasyWithHeaderList<EasyWithCallback<RawEasy, C>>>>;
+pub type EasyHandle<C> = OwnedEasyWithErrorBuf<
+    MimeHandle<ShareHandle<EasyWithHeaderList<EasyWithCallback<RawEasy, C>>>>,
+>;
 pub type BoxEasyHandle<C> = Pin<Box<EasyHandle<C>>>;
 pub fn create_easy<C: EasyCallback>(callback: C, share: &Share) -> NyquestResult<BoxEasyHandle<C>> {
     let easy = RawEasy::new();
     let easy = EasyWithCallback::new(easy, callback);
     let easy = EasyWithHeaderList::new(easy);
-    let easy = share.spawn_easy(easy);
+    let easy: ShareHandle<EasyWithHeaderList<EasyWithCallback<RawEasy, C>>> =
+        share.spawn_easy(easy);
+    let easy = MimeHandle::new(easy);
     let easy = OwnedEasyWithErrorBuf::new(easy);
     let mut easy = Box::pin(easy);
     easy.as_mut().with_error_message(|e| e.init())?;
@@ -84,6 +88,7 @@ pub fn populate_request<S, C: EasyCallback>(
         for (name, value) in &req.additional_headers {
             headers.append(format!("{name}: {value}"));
         }
+        raw.as_mut().set_accept_encoding("")?;
         match req.body {
             Some(Body::Bytes {
                 content,
@@ -109,15 +114,43 @@ pub fn populate_request<S, C: EasyCallback>(
                 raw.as_mut().set_post_fields_copy(Some(&*buf))?;
             }
             #[cfg(feature = "multipart")]
-            Some(Body::Multipart { parts }) => todo!(),
+            Some(Body::Multipart { parts }) => {
+                let mime = e.as_mut().as_easy_mut();
+                mime.set_mime_from_parts(parts.into_iter().map(|p| {
+                    use nyquest_interface::PartBody;
+
+                    use crate::curl_ng::mime;
+
+                    mime::MimePart {
+                        name: p.name,
+                        filename: p.filename,
+                        content_type: Some(p.content_type),
+                        header_list: if p.headers.is_empty() {
+                            None
+                        } else {
+                            let mut list = CurlStringList::default();
+                            for (name, value) in p.headers {
+                                list.append(format!("{name}: {value}"));
+                            }
+                            Some(list)
+                        },
+                        content: match p.body {
+                            PartBody::Bytes { content } => mime::MimePartContent::Data(content),
+                            _ => mime::MimePartContent::Reader {
+                                reader: crate::mime_reader::DummyMimeReader,
+                                size: None,
+                            },
+                        },
+                    }
+                }))?;
+            }
             None if need_body => {
                 // Workaround for https://github.com/curl/curl/issues/1625
                 raw.as_mut().set_post_fields_copy(Some(b""))?;
             }
             None => {}
         }
-        raw.set_accept_encoding("")?;
-        let header = e.as_easy_mut().as_easy_mut();
+        let header = e.as_easy_mut().as_easy_mut().as_easy_mut();
         header.set_headers(Some(headers))?;
         Ok(())
     })?;
@@ -134,6 +167,7 @@ impl<C: EasyCallback, Ptr: Deref<Target = EasyHandle<C>> + DerefMut> AsCallbackM
     fn as_callback_mut(&mut self) -> &mut Self::C {
         let this = self.as_mut();
         this.as_easy_mut()
+            .as_easy_mut()
             .as_easy_mut()
             .as_easy_mut()
             .as_callback_mut()

@@ -12,5 +12,6 @@ pub use as_raw::AsRawEasyMut;
 pub use callback::{EasyCallback, EasyWithCallback};
 pub use error_buf::OwnedEasyWithErrorBuf;
 pub use header_list::EasyWithHeaderList;
+pub use mime::MimeHandle;
 pub use raw::RawEasy;
 pub use share::{Share, ShareHandle};

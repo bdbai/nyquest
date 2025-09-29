@@ -119,8 +119,7 @@ impl MultiEasy {
         req: Request,
         options: &nyquest_interface::client::ClientOptions,
     ) -> NyquestResult<()> {
-        self.with_detached_easy(|mut easy| {
-            reset_easy_state(easy.as_mut())?;
+        self.with_detached_easy(|easy| {
             crate::request::populate_request(url, req, options, easy)?;
             Ok(())
         })
