@@ -215,7 +215,7 @@ mod tests {
                     while let Some(field) = multipart.next_field().await.unwrap() {
                         form_items.push(FormItem {
                             name: field.name().unwrap_or_default().to_owned(),
-                            file_name: field.file_name().unwrap_or_default().into(),
+                            file_name: field.file_name().unwrap_or("not_a_file").into(),
                             content_type: field
                                 .content_type()
                                 .map(|mime| mime.to_string())
@@ -245,7 +245,7 @@ mod tests {
                 items[0],
                 FormItem {
                     name: "text".to_owned(),
-                    file_name: "".into(),
+                    file_name: "not_a_file".into(),
                     content_type: "text/plain".to_owned(),
                     bytes: Bytes::from_static(b"ttt"),
                     content_lang: None,
@@ -265,7 +265,7 @@ mod tests {
                 items[2],
                 FormItem {
                     name: "headed".to_owned(),
-                    file_name: "".into(),
+                    file_name: "not_a_file".into(),
                     content_type: "text/plain".to_owned(),
                     bytes: Bytes::from_static(b"head"),
                     content_lang: Some("zh-CN".to_owned()),

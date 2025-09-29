@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "nyquest-interface",
  "serde",
@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest-backend-curl"
-version = "0.2.0"
+version = "0.3.1"
 dependencies = [
  "curl",
  "curl-sys",
@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest-backend-nsurlsession"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arc-swap",
  "block2",
@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest-backend-winrt"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cfg-if",
  "nyquest-interface",
@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest-interface"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cfg-if",
  "futures-core",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest-preset"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cfg-if",
  "nyquest",
