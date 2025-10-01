@@ -16,17 +16,21 @@ features = ["async", "blocking", "multipart"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["async", "blocking", "default-tls"]
-async = ["nyquest-interface/async"]
+default = ["default-tls"]
+async = ["nyquest-interface/async", "tokio/rt-multi-thread"]
 blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart", "reqwest/multipart"]
 charset = ["dep:encoding_rs", "dep:mime"]
 default-tls = ["reqwest/default-tls"]
 native-tls = ["reqwest/native-tls"]
+rustls-tls = ["reqwest/rustls-tls"]
 
 [dependencies]
 nyquest-interface = { version = "0.3.0", path = "../../nyquest-interface", default-features = false }
-reqwest = { version = "0.12", default-features = false, features = ["cookies"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "cookies",
+    "__tls",
+] }
 thiserror.workspace = true
 futures.workspace = true
 bytes = "1.0"
@@ -40,7 +44,7 @@ mime = { version = "0.3.16", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio] # TODO: wasm
 default-features = false
-features = ["rt-multi-thread"]
+features = ["rt"]
 version = "1.0"
 
 [dev-dependencies]
