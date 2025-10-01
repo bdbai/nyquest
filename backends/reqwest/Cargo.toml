@@ -16,7 +16,7 @@ features = ["async", "blocking", "multipart"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["default-tls"]
+default = ["default-tls", "reqwest/system-proxy"]
 async = ["nyquest-interface/async", "tokio/rt-multi-thread"]
 blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart", "reqwest/multipart"]
