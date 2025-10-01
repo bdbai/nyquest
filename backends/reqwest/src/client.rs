@@ -1,3 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Arc, OnceLock};
+
 use http::{HeaderMap, HeaderName, HeaderValue};
 use nyquest_interface::{client::ClientOptions, Result as NyquestResult};
 use reqwest::Client;

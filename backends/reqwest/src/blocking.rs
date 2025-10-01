@@ -160,13 +160,13 @@ impl Read for ReqwestBlockingResponse {
     }
 }
 
-impl nyquest_interface::blocking::BlockingBackend for ReqwestBackend {
-    type BlockingClient = blocking::ReqwestBlockingClient;
+impl nyquest_interface::blocking::BlockingBackend for crate::ReqwestBackend {
+    type BlockingClient = ReqwestBlockingClient;
 
     fn create_blocking_client(
         &self,
         options: nyquest_interface::client::ClientOptions,
-    ) -> Result<Self::BlockingClient> {
-        blocking::ReqwestBlockingClient::new(options)
+    ) -> NyquestResult<Self::BlockingClient> {
+        ReqwestBlockingClient::new(options)
     }
 }
