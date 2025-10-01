@@ -68,8 +68,15 @@ pub fn build_reqwest_client(options: &ClientOptions) -> Result<Client> {
             reqwest::redirect::Policy::default()
         } else {
             reqwest::redirect::Policy::none()
-        })
-        .danger_accept_invalid_certs(options.ignore_certificate_errors);
+        });
+    #[cfg(any(
+        feature = "default-tls",
+        feature = "native-tls",
+        feature = "rustls-tls-minimal",
+    ))]
+    {
+        builder = builder.danger_accept_invalid_certs(options.ignore_certificate_errors);
+    }
 
     if let Some(timeout) = options.request_timeout {
         builder = builder.timeout(timeout);
