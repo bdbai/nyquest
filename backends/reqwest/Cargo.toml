@@ -28,21 +28,32 @@ rustls-tls-minimal = ["reqwest/rustls-tls-manual-roots-no-provider"]
 [dependencies]
 nyquest-interface = { version = "0.3.0", path = "../../nyquest-interface", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["cookies"] }
+cfg-if.workspace = true
 thiserror.workspace = true
 futures.workspace = true
-bytes = "1.0"
 url = "2.4"
 http = "1.0"
-http-body = "1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 encoding_rs = { version = "0.8", optional = true }
 mime = { version = "0.3.16", optional = true }
+bytes = "1.0"
+http-body = "1.0"
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio] # TODO: wasm
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio]
 default-features = false
 features = ["rt-multi-thread"]
 version = "1.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.iconv-native]
+default-features = false
+version = "0.1"
+features = ["web-encoding"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.reqwest]
+version = "0.12"
+default-features = false
+features = ["stream", "cookies"]
 
 [dev-dependencies]
 nyquest-backend-tests = { path = "../../nyquest-backend-tests" }

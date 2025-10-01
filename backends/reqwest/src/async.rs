@@ -177,3 +177,14 @@ impl AsyncRead for ReqwestAsyncResponse {
         }
     }
 }
+
+impl nyquest_interface::r#async::AsyncBackend for ReqwestBackend {
+    type AsyncClient = r#async::ReqwestAsyncClient;
+
+    async fn create_async_client(
+        &self,
+        options: nyquest_interface::client::ClientOptions,
+    ) -> Result<Self::AsyncClient> {
+        r#async::ReqwestAsyncClient::new(options)
+    }
+}

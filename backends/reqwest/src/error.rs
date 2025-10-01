@@ -7,6 +7,7 @@ use thiserror::Error;
 pub enum ReqwestBackendError {
     #[error("reqwest error: {0}")]
     Reqwest(#[from] reqwest::Error),
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("tokio error: {0}")]
     Tokio(#[from] tokio::task::JoinError),
     #[error("response too large")]
@@ -19,6 +20,9 @@ pub enum ReqwestBackendError {
     InvalidUrl(String),
     #[error("invalid HTTP method")]
     InvalidMethod,
+    #[cfg(target_arch = "wasm32")]
+    #[error("unknown content type charset")]
+    UnknownCharset,
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
