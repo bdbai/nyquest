@@ -8,10 +8,7 @@ use futures::{AsyncRead, StreamExt};
 use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse};
 use reqwest::Response as ReqwestResponse;
 
-use crate::{
-    client::ReqwestClient, error::ReqwestBackendError, request::build_request_generic,
-    wasm::send_wrapper::SendWrapper,
-};
+use crate::{client::ReqwestClient, error::ReqwestBackendError, wasm::send_wrapper::SendWrapper};
 
 #[derive(Clone)]
 pub struct ReqwestAsyncClient {
@@ -113,12 +110,7 @@ impl AsyncClient for ReqwestAsyncClient {
         &self,
         req: nyquest_interface::r#async::Request,
     ) -> nyquest_interface::Result<Self::Response> {
-        let request_builder = build_request_generic(
-            &self.inner.client,
-            self.inner.base_url.as_ref(),
-            req,
-            |_body| unimplemented!(),
-        )?;
+        let request_builder = self.inner.request(req, |_body| unimplemented!())?;
 
         // Execute the request using shared runtime handling
         let response = SendWrapper::new(request_builder.send())

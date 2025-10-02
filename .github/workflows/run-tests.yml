@@ -24,3 +24,14 @@ jobs:
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
     - name: Run rustfmt
       run: cargo fmt --all --check
+
+  test-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Install wasm32-unknown-unknown target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Run tests
+        run: wasm-pack test backends/reqwest

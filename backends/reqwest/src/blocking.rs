@@ -40,12 +40,7 @@ async fn execute_request(
     this: &ReqwestBlockingClient,
     req: Request,
 ) -> NyquestResult<ReqwestBlockingResponse> {
-    let request_builder = crate::request::build_request_generic(
-        &this.inner.client,
-        this.inner.base_url.as_ref(),
-        req,
-        |_body| unimplemented!(),
-    )?;
+    let request_builder = this.inner.request(req, |_body| unimplemented!())?;
 
     let response = request_builder
         .send()

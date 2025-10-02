@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 // TODO: move to backend tests
 
 use nyquest_backend_reqwest::ReqwestBackend;

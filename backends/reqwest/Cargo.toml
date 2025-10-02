@@ -60,3 +60,6 @@ nyquest-backend-tests = { path = "../../nyquest-backend-tests" }
 tokio = { version = "1.0", features = ["macros"] }
 futures = { version = "0.3", features = ["executor"] }
 async-std = { version = "1.12", features = ["attributes"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"

@@ -34,12 +34,7 @@ impl AsyncClient for ReqwestAsyncClient {
     }
 
     async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
-        let request_builder = crate::request::build_request_generic(
-            &self.inner.client,
-            self.inner.base_url.as_ref(),
-            req,
-            |_body| unimplemented!(),
-        )?;
+        let request_builder = self.inner.request(req, |_body| unimplemented!())?;
 
         // Execute the request using shared runtime handling
         let (response, handle) =

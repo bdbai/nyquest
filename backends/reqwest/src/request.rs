@@ -5,7 +5,10 @@ use nyquest_interface::Method;
 use reqwest::{Client, RequestBuilder};
 use url::Url;
 
-use crate::error::{ReqwestBackendError, Result};
+use crate::{
+    client::ReqwestClient,
+    error::{ReqwestBackendError, Result},
+};
 
 pub fn convert_method(method: Method) -> Result<reqwest::Method> {
     Ok(match method {
@@ -48,7 +51,7 @@ fn convert_header_value(k: &str, v: Cow<'static, str>) -> Result<HeaderValue> {
     }
 }
 
-pub fn build_request_generic<S>(
+fn build_request_generic<S>(
     client: &Client,
     base_url: Option<&Url>,
     req: nyquest_interface::Request<S>,
@@ -137,4 +140,21 @@ pub fn build_request_generic<S>(
     }
 
     Ok(request_builder)
+}
+
+impl ReqwestClient {
+    pub fn request<S>(
+        &self,
+        req: nyquest_interface::Request<S>,
+        transform_body: impl FnMut(S) -> (reqwest::Body, Option<usize>),
+    ) -> nyquest_interface::Result<reqwest::RequestBuilder> {
+        #[allow(unused_mut)]
+        let mut builder =
+            build_request_generic(&self.client, self.base_url.as_ref(), req, transform_body)?;
+        #[cfg(target_arch = "wasm32")]
+        if let Some(timeout) = self.timeout {
+            builder = builder.timeout(timeout);
+        }
+        Ok(builder)
+    }
 }
