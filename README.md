@@ -65,6 +65,7 @@ The following items are planned in MVP:
   - [x] Blocking
   - [x] Async
 - [x] Backend: NSURLSession
+- [x] Backend: reqwest (with WASM support)
 - [x] Client Options
 - [x] Streaming download
 - [x] Test framework for backends
@@ -75,7 +76,6 @@ Future work may include:
 
 - [ ] Streaming upload
 - [ ] Backend: WASM fetch
-- [ ] Backend: reqwest
 - [ ] Cookie management
 - [ ] Progress tracking
 - [ ] Direct file upload/download support
