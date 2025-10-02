@@ -34,7 +34,7 @@ mod tests {
         (res.into(), Ok(()))
     }
 
-    #[cfg(not(feature = "curl"))] // libcurl does not support caching
+    #[cfg(not(any(feature = "curl", feature = "reqwest")))] // does not support caching
     #[test]
     fn test_response_caching() {
         const PATH: &str = "client_options/response_caching";
