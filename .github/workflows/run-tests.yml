@@ -34,4 +34,4 @@ jobs:
       - name: Install wasm32-unknown-unknown target
         run: rustup target add wasm32-unknown-unknown
       - name: Run tests
-        run: wasm-pack test backends/reqwest
+        run: wasm-pack test --node backends/reqwest --features async
