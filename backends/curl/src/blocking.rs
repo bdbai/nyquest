@@ -7,6 +7,7 @@ use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 mod handler;
 mod multi_easy;
+mod part_reader;
 mod set;
 
 use crate::curl_ng::easy::Share;
@@ -111,13 +112,6 @@ impl io::Read for CurlBlockingResponse {
             Err(NyquestError::Io(e)) => Err(e),
             Err(e) => unreachable!("Unexpected error: {}", e),
         }
-        let written = handle.with_response_buffer_mut(|response_buf| {
-            let len = response_buf.len().min(buf.len());
-            buf[..len].copy_from_slice(&response_buf[..len]);
-            response_buf.drain(..len);
-            len
-        });
-        Ok(written)
     }
 }
 

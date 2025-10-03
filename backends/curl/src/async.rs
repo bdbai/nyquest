@@ -1,19 +1,26 @@
+use std::cell::RefCell;
 use std::io;
+use std::pin::pin;
 use std::task::{ready, Poll};
 use std::{pin::Pin, sync::Arc, task::Context};
 
+use futures_util::future::{select, Either};
 use nyquest_interface::r#async::{futures_io, AsyncResponse};
 use nyquest_interface::Error as NyquestError;
 
 mod handler;
 mod r#loop;
 mod pause;
+mod read_task;
 mod set;
+mod shared;
 
 use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
 use crate::r#async::handler::AsyncHandler;
 use crate::request::{create_easy, AsCallbackMut as _};
 use crate::url::concat_url;
+
+type Easy = crate::request::BoxEasyHandle<handler::AsyncHandler>;
 
 pub struct CurlMultiClientInner {
     options: nyquest_interface::client::ClientOptions,
@@ -123,16 +130,40 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         &self,
         req: nyquest_interface::r#async::Request,
     ) -> nyquest_interface::Result<Self::Response> {
-        let req = {
+        let (req, read_task_collection) = {
             let mut easy = create_easy(AsyncHandler::default(), &self.inner.share)?;
             let raw = easy.as_mut().as_raw_easy_mut().raw();
             easy.as_callback_mut().pause = Some(pause::EasyPause::new(raw));
             // FIXME: properly concat base_url and url
             let url = concat_url(self.inner.options.base_url.as_deref(), &req.relative_uri);
-            crate::request::populate_request(&url, req, &self.inner.options, easy.as_mut())?;
-            self.inner.loop_manager.start_request(easy).await?
+            let req_ctx = easy.as_callback_mut().ctx.clone();
+            let read_task_collection = RefCell::new(read_task::ReadTaskCollection::new(req_ctx));
+            crate::request::populate_request(
+                &url,
+                req,
+                &self.inner.options,
+                easy.as_mut(),
+                |easy, stream| {
+                    read_task_collection
+                        .borrow_mut()
+                        .add_in_handler(easy, stream)
+                },
+                |stream| {
+                    read_task_collection
+                        .borrow_mut()
+                        .add_mime_part_reader(stream)
+                },
+            )?;
+            let req = self.inner.loop_manager.start_request(easy).await?;
+            (req, read_task_collection.into_inner())
         };
-        let mut res = req.wait_for_response().await?;
+        let res_task = pin!(req.wait_for_response());
+        let read_task_collection = pin!(read_task_collection.execute(&self.inner.loop_manager));
+        let mut res = match select(res_task, read_task_collection).await {
+            Either::Left((res, _)) => res?,
+            Either::Right((Err(e), _)) => return Err(e),
+            Either::Right((Ok(_), _)) => unreachable!(),
+        };
         res.max_response_buffer_size = self.inner.options.max_response_buffer_size;
         Ok(res)
     }

@@ -1,23 +1,18 @@
-use curl::easy::WriteError;
+use std::io::Read as _;
+
+use curl::easy::{ReadError, SeekResult, WriteError};
 
 use crate::{curl_ng::easy::EasyCallback, state::RequestState};
-use nyquest_interface::{blocking::BoxedStream, SizedStream};
+use nyquest_interface::blocking::BoxedStream;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct BlockingHandler {
     pub(super) state: RequestState,
-    body_stream: Option<SizedStream<BoxedStream>>,
+    body_stream: Option<BoxedStream>,
 }
 
 impl BlockingHandler {
-    pub fn new(state: RequestState) -> Self {
-        Self {
-            state,
-            body_stream: None,
-        }
-    }
-
-    pub fn set_body_stream(&mut self, body_stream: SizedStream<BoxedStream>) {
+    pub fn set_body_stream(&mut self, body_stream: BoxedStream) {
         self.body_stream = Some(body_stream);
     }
 }
@@ -33,25 +28,28 @@ impl EasyCallback for BlockingHandler {
         true
     }
 
-    fn read(&mut self, _data: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
+    fn read(&mut self, data: &mut [u8]) -> Result<usize, ReadError> {
         let Some(stream) = &mut self.body_stream else {
             return Ok(0);
         };
-        match stream.stream.read(data) {
+        match stream.read(data) {
             Ok(n) => Ok(n),
             // FIXME: propagate IO errors
-            Err(_e) => Err(curl::easy::ReadError::Abort),
+            Err(_e) => Err(ReadError::Abort),
         }
     }
 
-    fn seek(&mut self, whence: std::io::SeekFrom) -> curl::easy::SeekResult {
+    fn seek(&mut self, whence: std::io::SeekFrom) -> SeekResult {
         let Some(stream) = &mut self.body_stream else {
-            return curl::easy::SeekResult::Fail;
+            return SeekResult::Fail;
+        };
+        let BoxedStream::Sized { stream, .. } = stream else {
+            return SeekResult::CantSeek;
         };
         match stream.seek(whence) {
-            Ok(_pos) => curl::easy::SeekResult::Ok,
+            Ok(_pos) => SeekResult::Ok,
             // FIXME: propagate IO errors
-            Err(_e) => curl::easy::SeekResult::Fail,
+            Err(_e) => SeekResult::Fail,
         }
     }
 }

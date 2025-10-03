@@ -172,7 +172,7 @@ mod tests {
     }
 
     fn multipart_body_assertions(content_type: Option<String>, body: String) {
-        fn poll_once<F: Future<Output = T>, T>(mut fut: F) -> T {
+        fn poll_once<F: Future<Output = T>, T>(fut: F) -> T {
             let fut = pin!(fut);
             let poll = fut.poll(&mut Context::from_waker(noop_waker_ref()));
             match poll {
@@ -181,7 +181,7 @@ mod tests {
             }
         }
 
-        let boundary = multer::parse_boundary(&content_type.unwrap()).unwrap();
+        let boundary = multer::parse_boundary(content_type.unwrap()).unwrap();
         let mut multipart = Multipart::new(
             futures_util::stream::once(async { Ok::<_, io::Error>(Bytes::from(body)) }),
             boundary,

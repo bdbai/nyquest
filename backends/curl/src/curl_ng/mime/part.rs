@@ -27,11 +27,7 @@ pub enum MimePartContent<R> {
 
 pub trait MimePartReader {
     fn read(&mut self, data: &mut [u8]) -> Result<usize, ReadError>;
-
-    fn seek(&mut self, whence: SeekFrom) -> SeekResult {
-        let _ = whence; // ignore unused
-        SeekResult::CantSeek
-    }
+    fn seek(&mut self, whence: SeekFrom) -> SeekResult;
 }
 
 pub(super) extern "C" fn read_cb<P: MimePartReader + Send + 'static>(
