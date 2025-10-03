@@ -418,11 +418,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     if let Some(easy) = multi.lookup(id) {
                         // Ignore the error. Also see
                         // https://github.com/sagebind/isahc/blob/9d1edd475231ad5cfd5842d939db1382dc3a88f5/src/agent/mod.rs#L432
-                        // easy.as_raw_easy_mut().unpause_send().ok();
-                        let res = easy.with_error_message(|mut easy| {
-                            easy.as_mut().as_raw_easy_mut().unpause_send()
-                        });
-                        eprintln!("unpause_send: {res:?} {id}");
+                        easy.as_raw_easy_mut().unpause_send().ok();
                     }
                 }
                 LoopTask::DropHandle(id) => {
