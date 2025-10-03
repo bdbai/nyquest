@@ -63,7 +63,7 @@ mod tests {
                     while let Some(field) = multipart.next_field().await.unwrap() {
                         form_items.push(FormItem {
                             name: field.name().unwrap_or_default().to_owned(),
-                            file_name: field.file_name().unwrap_or_default().into(),
+                            file_name: field.file_name().unwrap_or("not_a_file").into(),
                             content_type: field
                                 .content_type()
                                 .map(|mime| mime.to_string())
@@ -93,7 +93,7 @@ mod tests {
                 items[0],
                 FormItem {
                     name: "text".to_owned(),
-                    file_name: "".into(),
+                    file_name: "not_a_file".into(),
                     content_type: "text/plain".to_owned(),
                     bytes: Bytes::from_static(b"ttt"),
                     content_lang: None,
@@ -113,7 +113,7 @@ mod tests {
                 items[2],
                 FormItem {
                     name: "headed".to_owned(),
-                    file_name: "".into(),
+                    file_name: "not_a_file".into(),
                     content_type: "text/plain".to_owned(),
                     bytes: Bytes::from_static(b"head"),
                     content_lang: Some("zh-CN".to_owned()),
@@ -140,8 +140,12 @@ mod tests {
                 Part::new_with_content_type("text", "text/plain", PartBody::text("ttt")),
                 Part::new_with_content_type("filename", "audio/mpeg", PartBody::bytes(b"ID3"))
                     .with_filename("3253212.mp3"),
-                Part::new_with_content_type("headed", "text/plain", PartBody::text("head"))
-                    .with_header("content-language", "zh-CN"),
+                Part::new_with_content_type(
+                    "headed",
+                    "text/plain",
+                    PartBody::text("head".to_string()),
+                )
+                .with_header("content-language", "zh-CN"),
             ]));
             TOKIO_RT.block_on(async move {
                 let builder = crate::init_builder().await.unwrap();

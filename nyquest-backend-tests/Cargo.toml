@@ -15,22 +15,26 @@ async = [
     "nyquest-backend-winrt?/async",
     "nyquest-backend-curl?/async",
     "nyquest-backend-nsurlsession?/async",
+    "nyquest-backend-reqwest?/async",
 ]
 blocking = [
     "nyquest/blocking",
     "nyquest-backend-winrt?/blocking",
     "nyquest-backend-curl?/blocking",
     "nyquest-backend-nsurlsession?/blocking",
+    "nyquest-backend-reqwest?/blocking",
 ]
 multipart = [
     "nyquest/multipart",
     "nyquest-backend-winrt?/multipart",
     "nyquest-backend-curl?/multipart",
     "nyquest-backend-nsurlsession?/multipart",
+    "nyquest-backend-reqwest?/multipart",
 ]
 winrt = ["dep:nyquest-backend-winrt"]
 curl = ["dep:nyquest-backend-curl"]
 nsurlsession = ["dep:nyquest-backend-nsurlsession"]
+reqwest = ["dep:nyquest-backend-reqwest"]
 
 [dev-dependencies]
 hyper = { version = "1", features = ["http1", "client"] }
@@ -50,3 +54,4 @@ nyquest = { path = "../", features = ["json"] }
 nyquest-backend-winrt = { path = "../backends/winrt", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }
 nyquest-backend-nsurlsession = { path = "../backends/nsurlsession", optional = true }
+nyquest-backend-reqwest = { path = "../backends/reqwest", optional = true }

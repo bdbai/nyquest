@@ -10,7 +10,7 @@ unsafe extern "C" {
 
 pub fn generate_multipart_boundary() -> String {
     let [rnd1, rnd2] = unsafe { [arc4random(), arc4random()] };
-    format!("----nyquest.boundary.{:08x}{:08x}", rnd1, rnd2)
+    format!("----nyquest.boundary.{rnd1:08x}{rnd2:08x}")
 }
 
 fn quick_escape_header(key: &mut Cow<'static, str>, value: &mut Cow<'static, str>) {

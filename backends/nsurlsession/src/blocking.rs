@@ -4,6 +4,7 @@ use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingRespo
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::runtime::ProtocolObject;
+use objc2_foundation::NSURLSessionTaskState;
 use waker::BlockingWaker;
 
 pub(crate) mod waker;
@@ -31,7 +32,11 @@ impl std::io::Read for NSUrlSessionBlockingResponse {
             let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
                 let read_len = if data.len() > buf.len() {
                     unsafe {
-                        inner.task.suspend();
+                        // Triggering a suspend when the task is already suspended can cause it to
+                        // not wake up.
+                        if inner.task.state() == NSURLSessionTaskState::Running {
+                            inner.task.suspend();
+                        }
                     }
                     buf.len()
                 } else {
@@ -44,6 +49,9 @@ impl std::io::Read for NSUrlSessionBlockingResponse {
             match read_len {
                 Ok(read_len @ 1..) => {
                     return Ok(read_len);
+                }
+                Err(NyquestError::RequestTimeout) => {
+                    return Err(std::io::ErrorKind::TimedOut.into())
                 }
                 Err(NyquestError::Io(e)) => return Err(e),
                 Err(e) => unreachable!("Unexpected error: {e}"),

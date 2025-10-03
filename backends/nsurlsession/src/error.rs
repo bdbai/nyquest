@@ -1,4 +1,4 @@
-use std::io::{self, ErrorKind};
+use std::io;
 
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::rc::{autoreleasepool, Retained};
@@ -16,10 +16,11 @@ impl<T> IntoNyquestResult<T> for Result<T, Retained<NSError>> {
             }
             let msg =
                 autoreleasepool(|pool| unsafe { e.localizedDescription().to_str(pool).to_owned() });
-            NyquestError::Io(io::Error::new(
-                ErrorKind::Other,
-                format!("NSURLSession error {}: {}", e.code(), msg),
-            ))
+            NyquestError::Io(io::Error::other(format!(
+                "NSURLSession error {}: {}",
+                e.code(),
+                msg
+            )))
         })
     }
 }

@@ -1,3 +1,5 @@
+use std::{borrow::Cow, ffi::CStr};
+
 fn is_absolute(url: &str) -> bool {
     url.len() >= 8
         && (url[..7].eq_ignore_ascii_case("http://") || url[..8].eq_ignore_ascii_case("https://"))
@@ -15,12 +17,47 @@ pub(crate) fn concat_url(base: Option<&str>, relative: &str) -> String {
         let host = host_path
             .split_once('/')
             .map_or(host_path, |(host, _)| host);
-        format!("{}//{}{}", proto, host, relative)
+        format!("{proto}//{host}{relative}")
     } else {
         let pathsep = host_path
             .rsplit_once('/')
             .map_or(host_path, |(pathsep, _)| pathsep);
-        format!("{}//{}/{}", proto, pathsep, relative)
+        format!("{proto}//{pathsep}/{relative}")
+    }
+}
+
+pub(crate) fn form_url_encode<'s>(
+    easy: *mut curl_sys::CURL,
+    input: impl Into<Cow<'s, str>>,
+    output: &mut Vec<u8>,
+) {
+    use std::ffi::c_char;
+
+    let input = input.into();
+    if input.is_empty() {
+        return;
+    }
+
+    struct CurlString(*mut c_char);
+    impl Drop for CurlString {
+        fn drop(&mut self) {
+            unsafe {
+                curl_sys::curl_free(self.0 as _);
+            }
+        }
+    }
+
+    unsafe {
+        let encoded = curl_sys::curl_easy_escape(easy, input.as_ptr() as _, input.len() as _);
+        assert!(!encoded.is_null());
+        let encoded = CurlString(encoded);
+        let mut encoded = CStr::from_ptr(encoded.0).to_bytes();
+        while let Some(idx) = memchr::memmem::find(encoded, b"%20") {
+            output.extend_from_slice(&encoded[..idx]);
+            output.push(b'+');
+            encoded = &encoded[idx + 3..];
+        }
+        output.extend_from_slice(encoded);
     }
 }
 

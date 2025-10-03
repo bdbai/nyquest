@@ -147,7 +147,7 @@ async fn setup_hyper_impl() -> Result<String, io::Error> {
                     .serve_connection(io, service_fn(handle_service))
                     .await
                 {
-                    eprintln!("Error serving connection: {:?}", err);
+                    eprintln!("Error serving connection: {err:?}");
                 }
             });
         }
@@ -200,16 +200,8 @@ macro_rules! declare_backends {
         }
 
         #[allow(non_upper_case_globals)]
-        let backend_feature_count = || {
-            $(
-                #[cfg(feature = $feature)]
-                const $pkg: u8 = 1;
-                #[cfg(not(feature = $feature))]
-                const $pkg: u8 = 0;
-            )*
-            0 $(+ $pkg)*
-        };
-        match backend_feature_count() {
+        let backend_feature_count = 0 $(+ cfg!(feature = $feature) as u32)*;
+        match backend_feature_count {
             0 => panic!("No backend feature enabled."),
             1 => backend::register(),
             _ => panic!("Multiple backend features enabled."),
@@ -222,5 +214,6 @@ fn init_backend() {
         ("curl", nyquest_backend_curl),
         ("nsurlsession", nyquest_backend_nsurlsession),
         ("winrt", nyquest_backend_winrt),
+        ("reqwest", nyquest_backend_reqwest),
     );
 }

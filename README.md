@@ -61,6 +61,7 @@ The following items are planned in MVP:
 - [x] Backend: WinRT HttpClient
 - [x] Backend: libcurl
 - [x] Backend: NSURLSession
+- [x] Backend: reqwest (with WASM support)
 - [x] Client Options
 - [x] Streaming download
 - [x] Streaming upload (WIP)
@@ -71,7 +72,6 @@ The following items are planned in MVP:
 Future work may include:
 
 - [ ] Backend: WASM fetch
-- [ ] Backend: reqwest
 - [ ] Cookie management
 - [ ] Progress tracking
 - [ ] Direct file upload/download support

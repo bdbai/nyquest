@@ -13,6 +13,7 @@ use nyquest_interface::r#async::{
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::runtime::ProtocolObject;
 use objc2::Message;
+use objc2_foundation::NSURLSessionTaskState;
 use waker::AsyncWaker;
 
 pub(crate) mod waker;
@@ -88,7 +89,11 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
         let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
             let read_len = if data.len() > buf.len() {
                 unsafe {
-                    inner.task.suspend();
+                    // Triggering a suspend when the task is already suspended can cause it to not
+                    // wake up.
+                    if inner.task.state() == NSURLSessionTaskState::Running {
+                        inner.task.suspend();
+                    }
                 }
                 buf.len()
             } else {
