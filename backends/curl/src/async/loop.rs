@@ -415,7 +415,10 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     }
                 }
                 LoopTask::UnpauseSendHandle(id) => {
-                    if let Some(easy) = multi.lookup(id) {
+                    if let Some(mut easy) = multi.lookup(id) {
+                        // curl seems buggy with unsized upload multipart streams (i.e. chunked)
+                        // Pausing and unpausing again seems to make it work
+                        easy.as_mut().as_raw_easy_mut().pause_send().ok();
                         // Ignore the error. Also see
                         // https://github.com/sagebind/isahc/blob/9d1edd475231ad5cfd5842d939db1382dc3a88f5/src/agent/mod.rs#L432
                         easy.as_raw_easy_mut().unpause_send().ok();
