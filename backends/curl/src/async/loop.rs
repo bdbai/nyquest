@@ -1,61 +1,31 @@
 use std::collections::VecDeque;
 use std::future::poll_fn;
+use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use std::{io, thread};
 
 use futures_channel::oneshot;
 use futures_util::lock::Mutex as FuturesMutex;
-use futures_util::task::AtomicWaker;
-use nyquest_interface::Result as NyquestResult;
 
 use crate::curl_ng::easy::AsRawEasyMut as _;
 use crate::curl_ng::multi::{MultiWaker, MultiWithSet, RawMulti, WakeableMulti};
 use crate::r#async::set::SlabMultiSet;
+use crate::r#async::shared::{RequestResult, SharedRequestStates};
 use crate::r#async::AsyncHandler;
 use crate::request::{AsCallbackMut as _, BoxEasyHandle};
-use crate::state::RequestState;
-
-type Easy = BoxEasyHandle<super::handler::AsyncHandler>;
 
 pub(super) struct RequestHandle {
     id: usize,
-    shared_context: Arc<SharedRequestContext>,
+    shared_state: Arc<SharedRequestStates>,
     manager: LoopManagerShared,
 }
 
-#[derive(Default)]
-enum SharedRequestContextResult {
-    #[default]
-    Init,
-    InProgress {
-        id: usize,
-    },
-    EasyLost(Easy),
-    Done {
-        res: NyquestResult<()>,
-        id: usize,
-    },
-}
-
-#[derive(Default)]
-pub(super) struct SharedRequestContextState {
-    pub(super) state: RequestState,
-    result: SharedRequestContextResult,
-    response: Option<super::CurlAsyncResponse>,
-}
-
-#[derive(Default)]
-pub(super) struct SharedRequestContext {
-    pub(super) waker: AtomicWaker,
-    pub(super) state: Mutex<SharedRequestContextState>,
-}
-
 enum LoopTask {
-    ConstructHandle(Easy),
+    ConstructHandle(super::Easy),
     QueryHandleResponse(RequestHandle),
     UnpauseRecvHandle(usize),
-    _UnpauseSendHandle(usize),
+    UnpauseSendHandle(usize),
     DropHandle(usize),
     Shutdown,
 }
@@ -65,26 +35,26 @@ impl RequestHandle {
         self,
     ) -> nyquest_interface::Result<super::CurlAsyncResponse> {
         poll_fn(|cx| {
-            let mut state = self.shared_context.state.lock().unwrap();
+            let mut state = self.shared_state.state.lock().unwrap();
             match std::mem::take(&mut state.result) {
-                SharedRequestContextResult::Done { res: Ok(()), id } => {
+                RequestResult::Done { res: Ok(()), id } => {
                     // Do not take out result if it is a success
-                    state.result = SharedRequestContextResult::Done { res: Ok(()), id };
+                    state.result = RequestResult::Done { res: Ok(()), id };
                     return Poll::Ready(Ok(()));
                 }
-                SharedRequestContextResult::Done { res: Err(e), .. } => return Poll::Ready(Err(e)),
+                RequestResult::Done { res: Err(e), .. } => return Poll::Ready(Err(e)),
                 r => state.result = r,
             }
             if state.state.header_finished {
                 return Poll::Ready(Ok(()));
             }
             // Register the waker while holding the lock to avoid missing the wake-up signal
-            self.shared_context.waker.register(cx.waker());
+            self.shared_state.waker.register(cx.waker());
             Poll::Pending
         })
         .await?;
 
-        let shared_context = self.shared_context.clone();
+        let shared_context = self.shared_state.clone();
         let send_task_res = self
             .manager
             .clone()
@@ -100,7 +70,7 @@ impl RequestHandle {
                 return Poll::Ready(Ok(response));
             }
             match std::mem::take(&mut state.result) {
-                SharedRequestContextResult::Done { res: Err(e), .. } => return Poll::Ready(Err(e)),
+                RequestResult::Done { res: Err(e), .. } => return Poll::Ready(Err(e)),
                 r => state.result = r,
             }
             shared_context.waker.register(cx.waker());
@@ -129,18 +99,18 @@ impl RequestHandle {
         cx: &mut Context<'_>,
         cb: impl FnOnce(&mut Vec<u8>) -> nyquest_interface::Result<T>,
     ) -> Poll<nyquest_interface::Result<Option<T>>> {
-        let mut state = self.shared_context.state.lock().unwrap();
+        let mut state = self.shared_state.state.lock().unwrap();
         if !state.state.response_buffer.is_empty() {
             let res = cb(&mut state.state.response_buffer);
             return Poll::Ready(res.map(Some));
         }
-        if let SharedRequestContextResult::Done { res, .. } = std::mem::take(&mut state.result) {
+        if let RequestResult::Done { res, .. } = std::mem::take(&mut state.result) {
             return Poll::Ready(res.map(|_| None));
         };
         self.manager
             .dispatch_task(LoopTask::UnpauseRecvHandle(self.id))
             .ok();
-        self.shared_context.waker.register(cx.waker());
+        self.shared_state.waker.register(cx.waker());
         Poll::Pending
     }
 }
@@ -165,7 +135,7 @@ impl Drop for LoopManagerInner {
             _ => None,
         }) {
             let ctx = lost_easy.as_callback_mut().ctx.clone();
-            ctx.state.lock().unwrap().result = SharedRequestContextResult::EasyLost(lost_easy);
+            ctx.state.lock().unwrap().result = RequestResult::EasyLost(lost_easy);
             ctx.waker.wake();
         }
     }
@@ -178,6 +148,12 @@ struct LoopManagerShared {
 
 pub(super) struct LoopManager {
     inner: FuturesMutex<Option<LoopManagerShared>>,
+}
+
+pub(super) struct SendUnpauser<'a> {
+    manager: &'a mut LoopManagerInner,
+    id: usize,
+    sent: bool,
 }
 
 impl LoopManagerShared {
@@ -202,9 +178,9 @@ impl LoopManagerShared {
     }
     async fn start_request(
         &self,
-        easy: Easy,
-        shared_context: &SharedRequestContext,
-    ) -> Result<usize, Easy> {
+        easy: super::Easy,
+        shared_state: &SharedRequestStates,
+    ) -> Result<usize, super::Easy> {
         {
             let Some(inner) = self.inner.upgrade() else {
                 return Err(easy);
@@ -218,8 +194,8 @@ impl LoopManagerShared {
             inner.tasks.push_back(request);
         }
         poll_fn(|cx| {
-            use SharedRequestContextResult::*;
-            let mut state = shared_context.state.lock().unwrap();
+            use RequestResult::*;
+            let mut state = shared_state.state.lock().unwrap();
             match std::mem::take(&mut state.result) {
                 r @ InProgress { id } | r @ Done { id, .. } => {
                     state.result = r;
@@ -227,7 +203,7 @@ impl LoopManagerShared {
                 }
                 EasyLost(easy) => Poll::Ready(Err(easy)),
                 Init => {
-                    shared_context.waker.register(cx.waker());
+                    shared_state.waker.register(cx.waker());
                     Poll::Pending
                 }
             }
@@ -254,7 +230,7 @@ impl LoopManager {
         &self,
         mut easy: BoxEasyHandle<AsyncHandler>,
     ) -> nyquest_interface::Result<RequestHandle> {
-        let shared_context = easy.as_callback_mut().ctx.clone();
+        let shared_state = easy.as_callback_mut().ctx.clone();
         loop {
             let inner = match &mut *self.inner.lock().await {
                 Some(inner) => inner.clone(),
@@ -262,11 +238,11 @@ impl LoopManager {
                     .insert(LoopManagerShared::start_loop().await)
                     .clone(),
             };
-            let backup_easy = match inner.start_request(easy, &shared_context).await {
+            let backup_easy = match inner.start_request(easy, &shared_state).await {
                 Ok(res) => {
                     return Ok(RequestHandle {
                         id: res,
-                        shared_context,
+                        shared_state,
                         manager: inner,
                     })
                 }
@@ -279,6 +255,55 @@ impl LoopManager {
                 }
             }
             easy = backup_easy;
+        }
+    }
+    pub(super) async fn batch_unpause_send<
+        's,
+        E,
+        C: for<'a> FnMut(&mut Context<'a>, &mut SendUnpauser) -> ControlFlow<E>,
+    >(
+        &self,
+        shared_state: &SharedRequestStates,
+        mut cb: C,
+    ) -> ControlFlow<E, C> {
+        let mut inner = self.inner.lock().await;
+        let Some(inner) = inner.as_mut().and_then(|i| i.inner.upgrade()) else {
+            return ControlFlow::Continue(cb);
+        };
+        let RequestResult::InProgress { id } = shared_state.state.lock().unwrap().result else {
+            return ControlFlow::Continue(cb);
+        };
+        let res = match poll_fn(|cx| {
+            let mut inner = inner.lock().unwrap();
+            let mut unpauser = SendUnpauser {
+                manager: &mut inner,
+                id,
+                sent: false,
+            };
+            Poll::Ready(cb(cx, &mut unpauser))
+        })
+        .await
+        {
+            ControlFlow::Continue(()) => ControlFlow::Continue(cb),
+            ControlFlow::Break(b) => ControlFlow::Break(b),
+        };
+        res
+    }
+}
+
+impl<'a> SendUnpauser<'a> {
+    pub fn unpause_send(&mut self) {
+        self.manager
+            .tasks
+            .push_back(LoopTask::UnpauseSendHandle(self.id));
+        self.sent = true;
+    }
+}
+
+impl<'a> Drop for SendUnpauser<'a> {
+    fn drop(&mut self) {
+        if self.sent {
+            self.manager.multi_waker.wakeup().ok();
         }
     }
 }
@@ -323,7 +348,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     context.waker.wake();
                     match handle {
                         Ok(token) => {
-                            state.result = SharedRequestContextResult::InProgress { id: token };
+                            state.result = RequestResult::InProgress { id: token };
                         }
                         Err(e) => {
                             panic!("failed to add easy handle to multi: {e:?}");
@@ -334,11 +359,11 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                 }
                 LoopTask::QueryHandleResponse(req_handle) => {
                     let id = req_handle.id;
-                    let ctx = req_handle.shared_context.clone();
+                    let ctx = req_handle.shared_state.clone();
                     let mut state = ctx.state.lock().unwrap();
                     ctx.waker.wake();
                     let Some(handle) = multi.lookup(id) else {
-                        state.result = SharedRequestContextResult::Done {
+                        state.result = RequestResult::Done {
                             res: Err(io::Error::new(
                                 io::ErrorKind::ConnectionAborted,
                                 "handle not found",
@@ -378,7 +403,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                             state.response = Some(response);
                         }
                         Err(e) => {
-                            state.result = SharedRequestContextResult::Done { res: Err(e), id };
+                            state.result = RequestResult::Done { res: Err(e), id };
                         }
                     };
                 }
@@ -389,8 +414,11 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                         easy.as_raw_easy_mut().unpause_recv().ok();
                     }
                 }
-                LoopTask::_UnpauseSendHandle(id) => {
-                    if let Some(easy) = multi.lookup(id) {
+                LoopTask::UnpauseSendHandle(id) => {
+                    if let Some(mut easy) = multi.lookup(id) {
+                        // curl seems buggy with unsized upload multipart streams (i.e. chunked)
+                        // Pausing and unpausing again seems to make it work
+                        easy.as_mut().as_raw_easy_mut().pause_send().ok();
                         // Ignore the error. Also see
                         // https://github.com/sagebind/isahc/blob/9d1edd475231ad5cfd5842d939db1382dc3a88f5/src/agent/mod.rs#L432
                         easy.as_raw_easy_mut().unpause_send().ok();
@@ -417,8 +445,8 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     let ctx = &*ctx.as_callback_mut().ctx;
                     let state = ctx.state.lock();
                     if let Ok(mut state) = state {
-                        if !matches!(state.result, SharedRequestContextResult::Done { .. }) {
-                            state.result = SharedRequestContextResult::Done {
+                        if !matches!(state.result, RequestResult::Done { .. }) {
+                            state.result = RequestResult::Done {
                                 res: Err(err.clone().into()),
                                 id,
                             };
@@ -437,7 +465,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             let ctx = &*e.as_callback_mut().ctx;
             if let Some(res) = res.transpose() {
                 let mut state = ctx.state.lock().unwrap();
-                state.result = SharedRequestContextResult::Done { res, id: token };
+                state.result = RequestResult::Done { res, id: token };
             }
             ctx.waker.wake();
         });

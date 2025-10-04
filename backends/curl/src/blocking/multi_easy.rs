@@ -2,13 +2,15 @@ use std::mem::ManuallyDrop;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 
-use nyquest_interface::blocking::Request;
+use nyquest_interface::blocking::{BoxedStream, Request};
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 use crate::blocking::handler::BlockingHandler;
+use crate::blocking::part_reader::BlockingPartReader;
 use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
+use crate::curl_ng::mime::MimePartContent;
 use crate::curl_ng::multi::{MultiWithSet, RawMulti};
-use crate::request::{create_easy, AsCallbackMut, BoxEasyHandle, EasyHandle};
+use crate::request::{create_easy, AsCallbackMut as _, BoxEasyHandle, EasyHandle};
 use crate::state::RequestState;
 
 type Easy = EasyHandle<super::handler::BlockingHandler>;
@@ -120,7 +122,31 @@ impl MultiEasy {
         options: &nyquest_interface::client::ClientOptions,
     ) -> NyquestResult<()> {
         self.with_detached_easy(|easy| {
-            crate::request::populate_request(url, req, options, easy)?;
+            crate::request::populate_request(
+                url,
+                req,
+                options,
+                easy,
+                |mut easy, stream| {
+                    if let BoxedStream::Sized { content_length, .. } = &stream {
+                        easy.as_mut()
+                            .as_raw_easy_mut()
+                            .set_post_field_size(*content_length)?;
+                    }
+                    easy.as_callback_mut().set_body_stream(stream);
+                    Ok(())
+                },
+                |stream| {
+                    let size = match &stream {
+                        BoxedStream::Sized { content_length, .. } => Some(*content_length as i64),
+                        BoxedStream::Unsized { .. } => None,
+                    };
+                    MimePartContent::Reader {
+                        reader: BlockingPartReader::new(stream),
+                        size,
+                    }
+                },
+            )?;
             Ok(())
         })
     }
@@ -155,12 +181,10 @@ impl MultiEasy {
     }
 
     pub fn poll_bytes<T>(&mut self, cb: impl FnOnce(&mut Vec<u8>) -> T) -> NyquestResult<T> {
-        {
-            let mut easy = self.easy_mut();
-            let buffer = &mut easy.as_callback_mut().state.response_buffer;
-            if !buffer.is_empty() {
-                return Ok(cb(buffer));
-            }
+        let mut easy = self.easy_mut();
+        let buffer = &mut easy.as_callback_mut().state.response_buffer;
+        if !buffer.is_empty() {
+            return Ok(cb(buffer));
         }
         self.poll_until(|state| {
             let is_empty = state.response_buffer.is_empty();

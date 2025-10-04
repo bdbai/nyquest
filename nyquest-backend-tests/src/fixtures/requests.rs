@@ -1,23 +1,20 @@
 #[cfg(test)]
 mod tests {
     use std::{
+        io::Cursor,
         ops::Deref,
         sync::{Arc, OnceLock},
     };
 
-    use futures::StreamExt as _;
-    use http_body_util::{BodyExt, BodyStream};
+    use http_body_util::BodyExt;
     use hyper::header::{ACCEPT, CONTENT_LANGUAGE, CONTENT_TYPE};
     use hyper::{Method, StatusCode};
     use memchr::memmem;
-    use multer::Multipart;
     #[cfg(feature = "blocking")]
     use nyquest::blocking::Body as NyquestBlockingBody;
     #[cfg(feature = "async")]
     use nyquest::r#async::Body as NyquestAsyncBody;
     use nyquest::{body_form, Request as NyquestRequest};
-    #[cfg(feature = "multipart")]
-    use nyquest::{Part, PartBody};
 
     use crate::*;
 
@@ -177,138 +174,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "multipart")]
-    fn test_body_multipart_bytes() {
-        const PATH: &str = "requests/body_multipart_bytes";
-        #[derive(Debug, Clone, Default, PartialEq, Eq)]
-        struct FormItem {
-            name: String,
-            file_name: String,
-            content_type: String,
-            bytes: Bytes,
-            content_lang: Option<String>,
-        }
-        let received_facts = Arc::new([const { OnceLock::new() }; 2]);
-        let _handle = crate::add_hyper_fixture(PATH, {
-            let received_body = Arc::clone(&received_facts);
-            move |req: Request<body::Incoming>| {
-                let received_body = Arc::clone(&received_body);
-                async move {
-                    let boundary = req
-                        .headers()
-                        .get(CONTENT_TYPE)
-                        .and_then(|ct| ct.to_str().ok())
-                        .and_then(|ct| multer::parse_boundary(ct).ok());
-                    let is_blocking = req.is_blocking();
-                    let content_type = req
-                        .headers()
-                        .get(CONTENT_TYPE)
-                        .map(|v| v.to_str().unwrap().to_owned());
-
-                    let body_stream =
-                        BodyStream::new(req.into_body()).filter_map(|result| async move {
-                            result.map(|frame| frame.into_data().ok()).transpose()
-                        });
-
-                    let mut multipart = Multipart::new(body_stream, boundary.unwrap_or_default());
-                    let mut form_items = vec![];
-                    while let Some(field) = multipart.next_field().await.unwrap() {
-                        form_items.push(FormItem {
-                            name: field.name().unwrap_or_default().to_owned(),
-                            file_name: field.file_name().unwrap_or("not_a_file").into(),
-                            content_type: field
-                                .content_type()
-                                .map(|mime| mime.to_string())
-                                .unwrap_or_default(),
-                            content_lang: field
-                                .headers()
-                                .get("content-language")
-                                .map(|v| v.to_str().unwrap_or_default().to_owned()),
-                            bytes: field.bytes().await.unwrap_or_default(),
-                        });
-                    }
-                    received_body[is_blocking as usize]
-                        .set((form_items, content_type))
-                        .ok();
-                    let res = Response::new(Full::new(Default::default()));
-                    (res, Ok(()))
-                }
-            }
-        });
-        let assertions = |(items, content_type): &(Vec<FormItem>, Option<String>)| {
-            assert!(content_type
-                .as_deref()
-                .unwrap()
-                .starts_with("multipart/form-data; "),);
-            assert_eq!(items.len(), 3);
-            assert_eq!(
-                items[0],
-                FormItem {
-                    name: "text".to_owned(),
-                    file_name: "not_a_file".into(),
-                    content_type: "text/plain".to_owned(),
-                    bytes: Bytes::from_static(b"ttt"),
-                    content_lang: None,
-                }
-            );
-            assert_eq!(
-                items[1],
-                FormItem {
-                    name: "filename".to_owned(),
-                    file_name: "3253212.mp3".into(),
-                    content_type: "audio/mpeg".to_owned(),
-                    bytes: Bytes::from_static(b"ID3"),
-                    content_lang: None,
-                }
-            );
-            assert_eq!(
-                items[2],
-                FormItem {
-                    name: "headed".to_owned(),
-                    file_name: "not_a_file".into(),
-                    content_type: "text/plain".to_owned(),
-                    bytes: Bytes::from_static(b"head"),
-                    content_lang: Some("zh-CN".to_owned()),
-                }
-            );
-        };
-        #[cfg(feature = "blocking")]
-        {
-            let builder = crate::init_builder_blocking().unwrap();
-            let req_body = NyquestRequest::post(PATH).with_body(NyquestBlockingBody::multipart([
-                Part::new_with_content_type("text", "text/plain", PartBody::text("ttt")),
-                Part::new_with_content_type("filename", "audio/mpeg", PartBody::bytes(b"ID3"))
-                    .with_filename("3253212.mp3"),
-                Part::new_with_content_type("headed", "text/plain", PartBody::text("head"))
-                    .with_header("content-language", "zh-CN"),
-            ]));
-            let client = builder.build_blocking().unwrap();
-            client.request(req_body).unwrap();
-            assertions(received_facts[1].get().unwrap());
-        }
-        #[cfg(feature = "async")]
-        {
-            let req_body = NyquestRequest::post(PATH).with_body(NyquestAsyncBody::multipart([
-                Part::new_with_content_type("text", "text/plain", PartBody::text("ttt")),
-                Part::new_with_content_type("filename", "audio/mpeg", PartBody::bytes(b"ID3"))
-                    .with_filename("3253212.mp3"),
-                Part::new_with_content_type(
-                    "headed",
-                    "text/plain",
-                    PartBody::text("head".to_string()),
-                )
-                .with_header("content-language", "zh-CN"),
-            ]));
-            TOKIO_RT.block_on(async move {
-                let builder = crate::init_builder().await.unwrap();
-                let client = builder.build_async().await.unwrap();
-                client.request(req_body).await.unwrap();
-            });
-            assertions(received_facts[0].get().unwrap());
-        }
-    }
-
-    #[test]
     fn test_put_without_body() {
         const PATH: &str = "requests/put_without_body";
         let _handle = crate::add_hyper_fixture(PATH, {
@@ -367,6 +232,124 @@ mod tests {
                 let builder = crate::init_builder().await.unwrap();
                 let client = builder.build_async().await.unwrap();
                 let response = client.request(NyquestRequest::head(PATH)).await.unwrap();
+                assert_eq!(response.status(), 200);
+            });
+        }
+    }
+
+    #[test]
+    fn test_stream_upload() {
+        const PATH: &str = "requests/stream_upload";
+        const CONTENT_TYPE: &str = "text/plain";
+        const CONTENTS: &str = "1234567890";
+
+        let _handle = crate::add_hyper_fixture(PATH, {
+            move |req| async move {
+                let content_type = req
+                    .headers()
+                    .get("content-type")
+                    .map(|v| v.to_str().unwrap_or_default().to_owned())
+                    .unwrap_or_default();
+                let content_length = req
+                    .headers()
+                    .get("content-length")
+                    .map(|v| v.to_str().unwrap_or_default().to_owned())
+                    .unwrap_or_default();
+                let mut res = Response::new(Full::default());
+                if content_type != CONTENT_TYPE {
+                    *res.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+                }
+                if content_length != "10" {
+                    *res.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
+                }
+                let body = req.into_body().collect().await.unwrap().to_bytes();
+                if body != CONTENTS.as_bytes() {
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                }
+                (res, Ok(()))
+            }
+        });
+
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
+            let body = NyquestBlockingBody::stream(Cursor::new(CONTENTS), CONTENT_TYPE, 10);
+            let response = client
+                .request(NyquestRequest::put(PATH).with_body(body))
+                .unwrap();
+            assert_eq!(response.status(), 200);
+        }
+
+        #[cfg(feature = "async")]
+        {
+            TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder.build_async().await.unwrap();
+                let body = NyquestAsyncBody::stream(
+                    futures_util::io::Cursor::new(CONTENTS),
+                    CONTENT_TYPE,
+                    10,
+                );
+                let response = client
+                    .request(NyquestRequest::put(PATH).with_body(body))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200);
+            });
+        }
+    }
+
+    #[test]
+    fn test_unsized_stream_upload() {
+        const PATH: &str = "requests/unsized_stream_upload";
+        const CONTENT_TYPE: &str = "text/plain";
+        const CONTENTS: &str = "1234567890";
+
+        let _handle = crate::add_hyper_fixture(PATH, {
+            move |req| async move {
+                let content_type = req
+                    .headers()
+                    .get("content-type")
+                    .map(|v| v.to_str().unwrap_or_default().to_owned())
+                    .unwrap_or_default();
+                let mut res = Response::new(Full::default());
+                if content_type != CONTENT_TYPE {
+                    *res.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+                }
+                let body = req.into_body().collect().await.unwrap().to_bytes();
+                if body != CONTENTS.as_bytes() {
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                }
+
+                (res, Ok(()))
+            }
+        });
+
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
+            let body = NyquestBlockingBody::stream_unsized(Cursor::new(CONTENTS), CONTENT_TYPE);
+            let response = client
+                .request(NyquestRequest::put(PATH).with_body(body))
+                .unwrap();
+            assert_eq!(response.status(), 200);
+        }
+
+        #[cfg(feature = "async")]
+        {
+            TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder.build_async().await.unwrap();
+                let body = NyquestAsyncBody::stream_unsized(
+                    futures_util::io::Cursor::new(CONTENTS),
+                    CONTENT_TYPE,
+                );
+                let response = client
+                    .request(NyquestRequest::put(PATH).with_body(body))
+                    .await
+                    .unwrap();
                 assert_eq!(response.status(), 200);
             });
         }

@@ -121,7 +121,14 @@ pub(crate) fn create_body<S>(
                     PartBody::Bytes { content } => {
                         create_content_from_bytes(content, part.content_type)?
                     }
-                    PartBody::Stream(stream) => map_stream(stream)?,
+                    PartBody::Stream(stream) => {
+                        let content = map_stream(stream)?;
+                        let content_type =
+                            HttpMediaTypeHeaderValue::Create(&HSTRING::from(&*part.content_type))?;
+                        let headers = content.Headers()?;
+                        headers.SetContentType(&content_type)?;
+                        content
+                    }
                 };
                 let headers = part_content.Headers()?;
                 for (name, value) in part.headers {
@@ -144,6 +151,15 @@ pub(crate) fn create_body<S>(
             }
             content.cast()?
         }
-        Body::Stream { .. } => unimplemented!(),
+        Body::Stream {
+            stream,
+            content_type,
+        } => {
+            let content = map_stream(stream)?;
+            let headers = content.Headers()?;
+            let content_type = HttpMediaTypeHeaderValue::Create(&HSTRING::from(&*content_type))?;
+            headers.SetContentType(&content_type)?;
+            content.cast()?
+        }
     })
 }

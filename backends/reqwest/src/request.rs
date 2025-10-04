@@ -55,7 +55,7 @@ fn build_request_generic<S>(
     client: &Client,
     base_url: Option<&Url>,
     req: nyquest_interface::Request<S>,
-    mut transform_body: impl FnMut(S) -> (reqwest::Body, Option<usize>),
+    mut transform_stream: impl FnMut(S) -> (reqwest::Body, Option<u64>),
 ) -> nyquest_interface::Result<RequestBuilder> {
     let url = build_url(base_url, &req.relative_uri).map_err(nyquest_interface::Error::from)?;
     let method = convert_method(req.method)?;
@@ -96,7 +96,7 @@ fn build_request_generic<S>(
         }) => {
             request_builder = request_builder
                 .header("content-type", &*content_type)
-                .body(transform_body(stream).0);
+                .body(transform_stream(stream).0);
         }
         #[cfg(feature = "multipart")]
         Some(nyquest_interface::Body::Multipart { parts }) => {
@@ -126,8 +126,12 @@ fn build_request_generic<S>(
                         form = form.part(part.name, part_builder.headers(headers));
                     }
                     nyquest_interface::PartBody::Stream(stream) => {
-                        let mut part_builder =
-                            reqwest::multipart::Part::stream(transform_body(stream).0);
+                        let (stream, size) = transform_stream(stream);
+                        let mut part_builder = if let Some(size) = size {
+                            reqwest::multipart::Part::stream_with_length(stream, size)
+                        } else {
+                            reqwest::multipart::Part::stream(stream)
+                        };
                         if let Some(filename) = part.filename {
                             part_builder = part_builder.file_name(filename);
                         }
@@ -146,11 +150,11 @@ impl ReqwestClient {
     pub fn request<S>(
         &self,
         req: nyquest_interface::Request<S>,
-        transform_body: impl FnMut(S) -> (reqwest::Body, Option<usize>),
+        transform_stream: impl FnMut(S) -> (reqwest::Body, Option<u64>),
     ) -> nyquest_interface::Result<reqwest::RequestBuilder> {
         #[allow(unused_mut)]
         let mut builder =
-            build_request_generic(&self.client, self.base_url.as_ref(), req, transform_body)?;
+            build_request_generic(&self.client, self.base_url.as_ref(), req, transform_stream)?;
         #[cfg(target_arch = "wasm32")]
         if let Some(timeout) = self.timeout {
             builder = builder.timeout(timeout);

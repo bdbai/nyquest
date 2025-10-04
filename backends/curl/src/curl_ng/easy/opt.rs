@@ -171,6 +171,19 @@ impl RawEasy {
         }
     }
 
+    pub fn set_post_field_size(mut self: Pin<&mut Self>, size: u64) -> Result<(), CurlCodeContext> {
+        unsafe {
+            self.as_mut()
+                .setopt_ptr(curl_sys::CURLOPT_POSTFIELDS, null())
+                .with_easy_context("setopt CURLOPT_POSTFIELDS null")?;
+            self.setopt_off_t(
+                curl_sys::CURLOPT_POSTFIELDSIZE_LARGE,
+                size as curl_sys::curl_off_t,
+            )
+            .with_easy_context("setopt CURLOPT_POSTFIELDSIZE_LARGE")
+        }
+    }
+
     pub fn set_post_fields_copy(
         mut self: Pin<&mut Self>,
         data: Option<&[u8]>,

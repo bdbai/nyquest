@@ -1,12 +1,18 @@
 use std::future::poll_fn;
 use std::io;
+use std::ops::ControlFlow;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use futures_util::AsyncRead;
 use nyquest_interface::client::ClientOptions;
-use nyquest_interface::r#async::{futures_io, AsyncBackend, AsyncClient, AsyncResponse};
+use nyquest_interface::r#async::{
+    futures_io, AsyncBackend, AsyncClient, AsyncResponse, BoxedStream,
+};
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::runtime::ProtocolObject;
+use objc2::Message;
 use objc2_foundation::NSURLSessionTaskState;
 use waker::AsyncWaker;
 
@@ -16,6 +22,7 @@ use crate::client::NSUrlSessionClient;
 use crate::datatask::{DataTaskDelegate, GenericWaker};
 use crate::error::IntoNyquestResult;
 use crate::response::NSUrlSessionResponse;
+use crate::stream::InputStream;
 use crate::NSUrlSessionBackend;
 
 #[derive(Clone)]
@@ -125,12 +132,19 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         &self,
         req: nyquest_interface::r#async::Request,
     ) -> NyquestResult<Self::Response> {
-        let task = self.inner.build_data_task(req)?;
+        let waker = GenericWaker::Async(Arc::new(AsyncWaker::new()));
+        let mut stream = None;
+        let task = self.inner.build_data_task(req, |s| {
+            let retained = InputStream::new(waker.clone());
+            let content_length = match &s {
+                BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                BoxedStream::Unsized { .. } => None,
+            };
+            stream = Some((retained.retain(), s));
+            Ok((retained.into_super(), content_length))
+        })?;
         let shared = unsafe {
-            let delegate = DataTaskDelegate::new(
-                GenericWaker::Async(AsyncWaker::new()),
-                self.inner.allow_redirects,
-            );
+            let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
             DataTaskDelegate::into_shared(delegate)
@@ -140,6 +154,16 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         let response = poll_fn(|cx| {
             if let Some(response) = shared.try_take_response().into_nyquest_result().transpose() {
                 return Poll::Ready(response);
+            }
+            if let Some((retained, stream)) = &mut stream {
+                let is_pending =
+                    retained.update_buffer(|buf| match Pin::new(stream).poll_read(cx, buf) {
+                        Poll::Ready(r) => ControlFlow::Continue(r),
+                        Poll::Pending => ControlFlow::Break(()),
+                    });
+                if is_pending.is_some() {
+                    return Poll::Pending;
+                }
             }
             inner_waker.register(cx);
             Poll::Pending

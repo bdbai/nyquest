@@ -32,6 +32,16 @@ pub type Body = crate::body::Body<BoxedStream>;
 impl<S: Read + Seek + Send + 'static + ?Sized> SizedBodyStream for S {}
 impl<S: Read + Send + 'static + ?Sized> UnsizedBodyStream for S {}
 
+impl BoxedStream {
+    /// Get the total content length of the stream, if known.
+    pub fn content_length(&self) -> Option<u64> {
+        match self {
+            BoxedStream::Sized { content_length, .. } => Some(*content_length),
+            BoxedStream::Unsized { .. } => None,
+        }
+    }
+}
+
 impl Read for BoxedStream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {

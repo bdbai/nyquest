@@ -3,13 +3,14 @@ use std::pin::Pin;
 
 use nyquest_interface::{Body, Method, Request, Result as NyquestResult};
 
-use crate::curl_ng::easy::MimeHandle;
+use crate::curl_ng::CurlCodeContext;
 use crate::{
     curl_ng::{
         easy::{
-            AsRawEasyMut, EasyCallback, EasyWithCallback, EasyWithHeaderList,
+            AsRawEasyMut, EasyCallback, EasyWithCallback, EasyWithHeaderList, MimeHandle,
             OwnedEasyWithErrorBuf, RawEasy, Share, ShareHandle,
         },
+        mime::{MimePartContent, MimePartReader},
         CurlStringList,
     },
     url::form_url_encode,
@@ -32,11 +33,14 @@ pub fn create_easy<C: EasyCallback>(callback: C, share: &Share) -> NyquestResult
     Ok(easy)
 }
 
-pub fn populate_request<S, C: EasyCallback>(
+pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
     url: &str,
     mut req: Request<S>,
     options: &nyquest_interface::client::ClientOptions,
     easy: Pin<&mut EasyHandle<C>>,
+    populate_stream: impl FnOnce(Pin<&mut EasyHandle<C>>, S) -> Result<(), CurlCodeContext>,
+    #[cfg_attr(not(feature = "multipart"), allow(unused, unused_mut))]
+    mut populate_mime_stream: impl FnMut(S) -> MimePartContent<R>,
 ) -> NyquestResult<()> {
     let mut headers = CurlStringList::default();
     easy.with_error_message(|mut e| {
@@ -97,9 +101,12 @@ pub fn populate_request<S, C: EasyCallback>(
                 headers.append(format!("content-type: {content_type}"));
                 raw.as_mut().set_post_fields_copy(Some(&*content))?;
             }
-            Some(Body::Stream { .. }) => {
-                raw.as_mut().set_post_fields_copy(None)?;
-                unimplemented!()
+            Some(Body::Stream {
+                stream,
+                content_type,
+            }) => {
+                headers.append(format!("content-type: {}", content_type));
+                populate_stream(e.as_mut(), stream)?;
             }
             Some(Body::Form { fields }) => {
                 let mut buf =
@@ -136,10 +143,7 @@ pub fn populate_request<S, C: EasyCallback>(
                         },
                         content: match p.body {
                             PartBody::Bytes { content } => mime::MimePartContent::Data(content),
-                            _ => mime::MimePartContent::Reader {
-                                reader: crate::mime_reader::DummyMimeReader,
-                                size: None,
-                            },
+                            PartBody::Stream(s) => populate_mime_stream(s),
                         },
                     }
                 }))?;

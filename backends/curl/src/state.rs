@@ -10,7 +10,7 @@ pub(crate) struct RequestState {
 impl RequestState {
     pub(crate) fn push_header_data(&mut self, data: &[u8]) -> bool {
         if data == b"\r\n" {
-            let is_redirect = [301, 302, 303, 307, 308].contains(&self.temp_status_code);
+            let is_redirect = [100, 301, 302, 303, 307, 308].contains(&self.temp_status_code);
             // TODO: handle direct
             if !is_redirect && !self.is_established {
                 self.header_finished = true;

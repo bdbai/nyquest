@@ -13,8 +13,6 @@ mod r#async;
 mod blocking;
 mod curl_ng;
 mod error;
-#[cfg(feature = "multipart")]
-mod mime_reader;
 mod request;
 mod state;
 mod url;

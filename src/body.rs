@@ -89,7 +89,6 @@ impl<S> Body<S> {
         }
     }
 
-    #[doc(hidden)]
     /// Constructs a streaming body from the given seekable stream, content
     /// length and content type.
     pub fn stream(
@@ -105,7 +104,6 @@ impl<S> Body<S> {
         }
     }
 
-    #[doc(hidden)]
     /// Constructs a streaming non-seekable body from the given stream and
     /// content type.
     ///
@@ -225,7 +223,6 @@ impl<S> PartBody<S> {
         }
     }
 
-    #[doc(hidden)]
     /// Constructs a part body from a seekable stream with a specified content
     /// length.
     pub fn stream(stream: impl private::IntoSizedStream<S>, content_length: u64) -> Self {
@@ -234,7 +231,6 @@ impl<S> PartBody<S> {
         }
     }
 
-    #[doc(hidden)]
     /// Constructs a part body from a non-seekable stream.
     ///
     /// This enables chunked transfer encoding for the whole request body.
