@@ -10,6 +10,8 @@ use crate::client::ReqwestClient;
 use crate::error::ReqwestBackendError;
 use crate::response::ReqwestResponse;
 
+mod stream;
+
 #[derive(Clone)]
 pub struct ReqwestBlockingClient {
     inner: ReqwestClient,
@@ -40,7 +42,13 @@ async fn execute_request(
     this: &ReqwestBlockingClient,
     req: Request,
 ) -> NyquestResult<ReqwestBlockingResponse> {
-    let request_builder = this.inner.request(req, |_body| unimplemented!())?;
+    let request_builder = this.inner.request(req, |body| {
+        let size = body.content_length();
+        (
+            reqwest::Body::wrap(stream::BlockingStreamBody::new(body)),
+            size,
+        )
+    })?;
 
     let response = request_builder
         .send()
