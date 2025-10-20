@@ -39,7 +39,11 @@ impl AsyncClient for ReqwestAsyncClient {
     async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
         let mut stream_task_collection = stream::StreamTaskCollection::default();
         let request_builder = self.inner.request(req, |stream| {
-            let size = stream.content_length();
+            use nyquest_interface::r#async::BoxedStream;
+            let size = match &stream {
+                BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                BoxedStream::Unsized { .. } => None,
+            };
             let stream = stream_task_collection.add_stream(stream);
             (reqwest::Body::wrap(stream), size)
         })?;

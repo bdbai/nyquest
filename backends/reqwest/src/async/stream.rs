@@ -83,7 +83,10 @@ impl StreamTask {
 
 impl StreamTaskCollection {
     pub fn add_stream(&mut self, stream: BoxedStream) -> AsyncStreamBody {
-        let size = stream.content_length();
+        let size = match &stream {
+            BoxedStream::Sized { content_length, .. } => Some(*content_length),
+            BoxedStream::Unsized { .. } => None,
+        };
 
         let (chan, recv) = mpsc::channel(1);
         let open_state = Arc::new(ChannelOpenState::default());
