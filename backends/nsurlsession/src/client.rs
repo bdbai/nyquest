@@ -155,14 +155,6 @@ impl NSUrlSessionClient {
     }
 }
 
-impl Drop for NSUrlSessionClient {
-    fn drop(&mut self) {
-        unsafe {
-            self.session.finishTasksAndInvalidate();
-        }
-    }
-}
-
 struct FormUrlEncoder(Retained<NSCharacterSet>);
 impl FormUrlEncoder {
     fn new() -> Self {
