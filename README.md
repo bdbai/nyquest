@@ -64,13 +64,14 @@ The following items are planned in MVP:
 - [x] Backend: reqwest (with WASM support)
 - [x] Client Options
 - [x] Streaming download
-- [x] Streaming upload (WIP)
+- [x] Streaming upload
 - [x] Test framework for backends
 - [x] Presets
 - [x] Documentation
 
 Future work may include:
 
+- [ ] WebSocket
 - [ ] Backend: WASM fetch
 - [ ] Cookie management
 - [ ] Progress tracking
