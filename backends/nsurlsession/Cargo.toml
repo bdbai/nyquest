@@ -61,5 +61,6 @@ objc2-security = { version = "0.3", default-features = false, features = [
 ] }
 futures-util = { version = "0.3", optional = true, default-features = false, features = [
     "std",
+    "io",
 ] }
 arc-swap.workspace = true
