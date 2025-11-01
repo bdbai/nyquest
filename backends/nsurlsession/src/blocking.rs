@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
+use nyquest_interface::blocking::{
+    BlockingBackend, BlockingClient, BlockingResponse, BoxedStream, Request,
+};
 use nyquest_interface::client::ClientOptions;
-use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
+use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
-use objc2_foundation::NSURLSessionTaskState;
-use waker::BlockingWaker;
 
 pub(crate) mod waker;
 
+use crate::blocking::waker::BlockingWaker;
 use crate::client::NSUrlSessionClient;
 use crate::datatask::{DataTaskDelegate, GenericWaker};
 use crate::error::IntoNyquestResult;
@@ -29,34 +30,8 @@ impl std::io::Read for NSUrlSessionBlockingResponse {
         let inner = &mut self.inner;
 
         loop {
-            let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
-                let read_len = if data.len() > buf.len() {
-                    unsafe {
-                        // Triggering a suspend when the task is already suspended can cause it to
-                        // not wake up.
-                        if inner.task.state() == NSURLSessionTaskState::Running {
-                            inner.task.suspend();
-                        }
-                    }
-                    buf.len()
-                } else {
-                    data.len()
-                };
-                buf[..read_len].copy_from_slice(&data[..read_len]);
-                data.drain(..read_len);
-                read_len
-            });
-            match read_len {
-                Ok(read_len @ 1..) => {
-                    return Ok(read_len);
-                }
-                Err(NyquestError::RequestTimeout) => {
-                    return Err(std::io::ErrorKind::TimedOut.into())
-                }
-                Err(NyquestError::Io(e)) => return Err(e),
-                Err(e) => unreachable!("Unexpected error: {e}"),
-                Ok(0) if inner.shared.is_completed() => return Ok(0),
-                Ok(0) => {}
+            if let Some(result) = inner.consume_response_to_buffer(buf) {
+                return result;
             }
 
             let inner_waker = coerce_waker(inner.shared.waker_ref());
@@ -113,7 +88,10 @@ impl BlockingClient for NSUrlSessionBlockingClient {
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
         let waker = GenericWaker::Blocking(Arc::new(BlockingWaker::new_from_current_thread()));
-        let task = self.inner.build_data_task(req, |_| todo!())?;
+        let (task, mut writer) = self.inner.build_data_task(req, &waker, |s| match &s {
+            BoxedStream::Sized { content_length, .. } => Some(*content_length),
+            BoxedStream::Unsized { .. } => None,
+        })?;
         let shared = unsafe {
             let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
@@ -121,6 +99,8 @@ impl BlockingClient for NSUrlSessionBlockingClient {
             DataTaskDelegate::into_shared(delegate)
         };
         loop {
+            use std::io::Read as _;
+
             if let Some(response) = shared.try_take_response().into_nyquest_result()? {
                 return Ok(NSUrlSessionBlockingResponse {
                     inner: NSUrlSessionResponse {
@@ -133,6 +113,17 @@ impl BlockingClient for NSUrlSessionBlockingClient {
             }
             unsafe {
                 task.error().into_nyquest_result()?;
+            }
+
+            // FIXME: use dispatch2 to perform blocking read in background
+            if let Some(stream_writer) = &mut writer {
+                let write_result = stream_writer
+                    .poll_progress(|stream, buf| std::task::Poll::Ready(stream.read(buf)));
+                match write_result {
+                    Ok(true) => {}
+                    Ok(false) => writer = None,
+                    Err(e) => return Err(nyquest_interface::Error::Io(e)),
+                }
             }
             std::thread::park();
         }

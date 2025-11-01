@@ -41,7 +41,6 @@ struct BlockingReadRandomAccessStream(BlockingReadStreamBase);
 unsafe impl Send for IBlockingReadStreamBaseAccess {}
 
 impl BlockingReadStreamBase {
-    // TODO: do work on caller thread
     fn read_async(
         &self,
         base_accessor: IBlockingReadStreamBaseAccess,

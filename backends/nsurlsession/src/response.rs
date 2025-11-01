@@ -87,6 +87,40 @@ impl NSUrlSessionResponse {
             };
         }
     }
+
+    pub(crate) fn consume_response_to_buffer(
+        &mut self,
+        buf: &mut [u8],
+    ) -> Option<std::io::Result<usize>> {
+        use nyquest_interface::Error as NyquestError;
+        use objc2_foundation::NSURLSessionTaskState;
+
+        let read_len = self.shared.with_response_buffer_for_stream_mut(|data| {
+            let read_len = if data.len() > buf.len() {
+                unsafe {
+                    // Triggering a suspend when the task is already suspended can cause it to not
+                    // wake up.
+                    if self.task.state() == NSURLSessionTaskState::Running {
+                        self.task.suspend();
+                    }
+                }
+                buf.len()
+            } else {
+                data.len()
+            };
+            buf[..read_len].copy_from_slice(&data[..read_len]);
+            data.drain(..read_len);
+            read_len
+        });
+        Some(match read_len {
+            Ok(0) if self.shared.is_completed() => Ok(0),
+            Ok(0) => return None,
+            Ok(read_len) => Ok(read_len),
+            Err(NyquestError::Io(e)) => Err(e),
+            Err(NyquestError::RequestTimeout) => Err(std::io::ErrorKind::TimedOut.into()),
+            Err(e) => unreachable!("Unexpected error: {e}"),
+        })
+    }
 }
 
 impl Drop for NSUrlSessionResponse {

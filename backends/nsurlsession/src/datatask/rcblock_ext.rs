@@ -3,6 +3,7 @@ use std::ops::Deref;
 use arc_swap::RefCnt;
 use block2::{Block, RcBlock};
 
+#[allow(dead_code)]
 pub(super) struct SwappableRcBlock<T: ?Sized>(RcBlock<T>);
 
 impl<T: ?Sized> Clone for SwappableRcBlock<T> {
