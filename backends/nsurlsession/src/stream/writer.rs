@@ -59,11 +59,12 @@ impl<S> StreamWriter<S> {
                         buf = &mut buf[n..];
                     }
                     Poll::Ready(Err(e)) => return ControlFlow::Continue(Err(e)),
+                    Poll::Pending if total_written == 0 => return ControlFlow::Break(()),
                     Poll::Pending => break,
                 }
             }
             ControlFlow::Continue(Ok(total_written))
         })?;
-        Ok(self.data_parts.is_empty())
+        Ok(!self.data_parts.is_empty())
     }
 }

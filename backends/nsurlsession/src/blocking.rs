@@ -120,8 +120,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
                 let write_result = stream_writer
                     .poll_progress(|stream, buf| std::task::Poll::Ready(stream.read(buf)));
                 match write_result {
-                    Ok(true) => {}
-                    Ok(false) => writer = None,
+                    Ok(_) => {}
                     Err(e) => return Err(nyquest_interface::Error::Io(e)),
                 }
             }
