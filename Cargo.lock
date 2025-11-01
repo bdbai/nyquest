@@ -1098,7 +1098,7 @@ checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
 [[package]]
 name = "nyquest"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "nyquest-interface",
  "serde",
@@ -1108,7 +1108,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest-backend-curl"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "curl",
  "curl-sys",
@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest-backend-nsurlsession"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arc-swap",
  "block2",
@@ -1183,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "nyquest-backend-winrt"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cfg-if",
  "futures-util",
