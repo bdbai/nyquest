@@ -60,6 +60,12 @@ impl RawEasy {
         }
     }
 
+    pub fn pause_send(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
+        unsafe {
+            curl_sys::curl_easy_pause(self.raw(), curl_sys::CURLPAUSE_SEND)
+                .with_easy_context("curl_easy_pause SEND")
+        }
+    }
     pub fn unpause_send(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         unsafe {
             curl_sys::curl_easy_pause(self.raw(), curl_sys::CURLPAUSE_SEND_CONT)

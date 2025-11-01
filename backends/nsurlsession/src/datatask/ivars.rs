@@ -8,7 +8,7 @@ use objc2_foundation::NSURLResponse;
 use crate::error::IntoNyquestResult;
 
 use super::generic_waker::GenericWaker;
-use super::retained_ext::SwappableRetained;
+use crate::retained_ext::SwappableRetained;
 
 pub(crate) struct DataTaskIvars {
     // pub(super) continue_response_block:

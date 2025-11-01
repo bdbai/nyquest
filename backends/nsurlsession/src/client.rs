@@ -12,6 +12,8 @@ use objc2_foundation::{
 };
 
 use crate::challenge::BypassServerVerifyDelegate;
+use crate::datatask::GenericWaker;
+use crate::stream::{DataOrStream, StreamWriter};
 
 #[derive(Clone)]
 pub struct NSUrlSessionClient {
@@ -85,7 +87,12 @@ impl NSUrlSessionClient {
     pub(crate) fn build_data_task<S>(
         &self,
         req: Request<S>,
-    ) -> NyquestResult<Retained<objc2_foundation::NSURLSessionDataTask>> {
+        waker: &GenericWaker,
+        get_stream_len: impl Fn(&S) -> Option<u64>,
+    ) -> NyquestResult<(
+        Retained<objc2_foundation::NSURLSessionDataTask>,
+        Option<StreamWriter<S>>,
+    )> {
         let nsreq = NSMutableURLRequest::alloc();
         unsafe {
             let url = NSURL::URLWithString_relativeToURL(
@@ -112,6 +119,7 @@ impl NSUrlSessionClient {
                     &NSString::from_str(name),
                 );
             }
+            let mut stream_parts = None;
             if let Some(body) = req.body {
                 match body {
                     Body::Bytes {
@@ -145,12 +153,33 @@ impl NSUrlSessionClient {
                             Some(&NSString::from_str(&content_type)),
                             ns_string!("content-type"),
                         );
-                        nsreq.setHTTPBody(Some(&generate_multipart_body(&boundary, parts)));
+                        stream_parts = Some(generate_multipart_body(&boundary, parts));
                     }
-                    _ => todo!("body types"),
+                    Body::Stream {
+                        stream,
+                        content_type,
+                    } => {
+                        nsreq.setValue_forHTTPHeaderField(
+                            Some(&NSString::from_str(&content_type)),
+                            ns_string!("content-type"),
+                        );
+                        if let Some(len) = get_stream_len(&stream) {
+                            nsreq.setValue_forHTTPHeaderField(
+                                Some(&NSString::from_str(&len.to_string())),
+                                ns_string!("content-length"),
+                            );
+                        }
+                        stream_parts = Some(vec![DataOrStream::Stream(stream)]);
+                    }
                 }
             }
-            Ok(self.session.dataTaskWithRequest(&nsreq))
+            let writer = stream_parts.map(|stream_parts| {
+                let input_stream = crate::stream::InputStream::new(waker.clone());
+                nsreq.setHTTPBodyStream(Some(&input_stream));
+                let writer = StreamWriter::new(&input_stream, stream_parts);
+                writer
+            });
+            Ok((self.session.dataTaskWithRequest(&nsreq), writer))
         }
     }
 }

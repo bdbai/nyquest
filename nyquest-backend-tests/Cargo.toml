@@ -47,6 +47,7 @@ multer = "3"
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 cfg-if.workspace = true
+futures-util = "0.3"
 
 [dependencies]
 nyquest = { path = "../", features = ["json"] }

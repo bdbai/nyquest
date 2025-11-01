@@ -6,6 +6,7 @@ use nyquest_interface::Result as NyquestResult;
 use timer_ext::BlockingTimeoutExt;
 use windows::Web::Http::HttpCompletionOption;
 
+mod stream_content;
 mod timer_ext;
 
 use crate::client::WinrtClient;
@@ -29,9 +30,8 @@ impl crate::WinrtBackend {
 impl WinrtClient {
     fn send_request(&self, req: Request) -> NyquestResult<WinrtBlockingResponse> {
         let req_msg = self.create_request(&req)?;
-        // TODO: stream
         if let Some(body) = req.body {
-            let body = create_body(body, &mut |_| unimplemented!())?;
+            let body = create_body(body, &mut stream_content::transform_stream)?;
             self.append_content_headers(&body, &req.additional_headers)?;
             req_msg.SetContent(&body).into_nyquest_result()?;
         }

@@ -17,7 +17,7 @@ targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-async = ["nyquest-interface/async"]
+async = ["nyquest-interface/async", "dep:futures-util"]
 blocking = ["nyquest-interface/blocking"]
 multipart = ["nyquest-interface/multipart"]
 
@@ -41,3 +41,6 @@ features = [
 [dependencies]
 nyquest-interface = { version = "0.3.0", path = "../../nyquest-interface", default-features = false }
 cfg-if.workspace = true
+futures-util = { version = "0.3", optional = true, default-features = false, features = [
+    "io",
+] }

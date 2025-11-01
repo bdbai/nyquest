@@ -4,6 +4,7 @@ use std::pin::{pin, Pin};
 use std::sync::OnceLock;
 use std::task::{ready, Context, Poll};
 
+use futures::future::{select, Either};
 use futures::AsyncRead;
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncClient, AsyncResponse, Request};
@@ -13,6 +14,8 @@ use tokio::runtime::{Handle, Runtime};
 use crate::client::ReqwestClient;
 use crate::error::{ReqwestBackendError, Result};
 use crate::response::ReqwestResponse;
+
+mod stream;
 
 #[derive(Clone)]
 pub struct ReqwestAsyncClient {
@@ -34,18 +37,34 @@ impl AsyncClient for ReqwestAsyncClient {
     }
 
     async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
-        let request_builder = self.inner.request(req, |_body| unimplemented!())?;
+        let mut stream_task_collection = stream::StreamTaskCollection::default();
+        let request_builder = self.inner.request(req, |stream| {
+            use nyquest_interface::r#async::BoxedStream;
+            let size = match &stream {
+                BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                BoxedStream::Unsized { .. } => None,
+            };
+            let stream = stream_task_collection.add_stream(stream);
+            (reqwest::Body::wrap(stream), size)
+        })?;
 
         // Execute the request using shared runtime handling
-        let (response, handle) =
-            execute_with_runtime_async(&self.inner.managed_runtime, || async {
+        let req_task = pin!(execute_with_runtime_async(
+            &self.inner.managed_runtime,
+            || async {
                 request_builder
                     .send()
                     .await
                     .map_err(ReqwestBackendError::Reqwest)
-            })
-            .await;
-
+            }
+        ));
+        let stream_task = pin!(stream_task_collection.execute());
+        let (response, handle) = if let Either::Left((res, _)) = select(req_task, stream_task).await
+        {
+            res
+        } else {
+            unreachable!()
+        };
         ReqwestAsyncResponse::new(response?, self.inner.max_response_buffer_size, handle)
             .await
             .map_err(Into::into)

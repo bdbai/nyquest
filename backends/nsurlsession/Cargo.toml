@@ -34,6 +34,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSError",
     "NSObject",
     "NSCharacterSet",
+    "NSArray",
     "NSString",
     "NSData",
     "NSDate",
@@ -46,6 +47,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSURLRequest",
     "NSURLResponse",
     "NSURLSession",
+    "NSStream",
+    "NSObjCRuntime",
+    "NSRunLoop",
     "NSOperation",
 ] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
@@ -57,5 +61,6 @@ objc2-security = { version = "0.3", default-features = false, features = [
 ] }
 futures-util = { version = "0.3", optional = true, default-features = false, features = [
     "std",
+    "io",
 ] }
 arc-swap.workspace = true

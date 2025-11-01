@@ -7,6 +7,7 @@ use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 mod handler;
 mod multi_easy;
+mod part_reader;
 mod set;
 
 use crate::curl_ng::easy::Share;

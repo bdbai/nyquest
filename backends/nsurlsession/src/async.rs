@@ -1,20 +1,22 @@
 use std::future::poll_fn;
-use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use futures_util::AsyncRead;
 use nyquest_interface::client::ClientOptions;
-use nyquest_interface::r#async::{futures_io, AsyncBackend, AsyncClient, AsyncResponse};
-use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
+use nyquest_interface::r#async::{
+    futures_io, AsyncBackend, AsyncClient, AsyncResponse, BoxedStream,
+};
+use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
-use objc2_foundation::NSURLSessionTaskState;
-use waker::AsyncWaker;
 
 pub(crate) mod waker;
 
 use crate::client::NSUrlSessionClient;
 use crate::datatask::{DataTaskDelegate, GenericWaker};
 use crate::error::IntoNyquestResult;
+use crate::r#async::waker::AsyncWaker;
 use crate::response::NSUrlSessionResponse;
 use crate::NSUrlSessionBackend;
 
@@ -79,34 +81,8 @@ impl futures_io::AsyncRead for NSUrlSessionAsyncResponse {
     ) -> Poll<futures_io::Result<usize>> {
         let inner = &mut self.inner;
 
-        let read_len = inner.shared.with_response_buffer_for_stream_mut(|data| {
-            let read_len = if data.len() > buf.len() {
-                unsafe {
-                    // Triggering a suspend when the task is already suspended can cause it to not
-                    // wake up.
-                    if inner.task.state() == NSURLSessionTaskState::Running {
-                        inner.task.suspend();
-                    }
-                }
-                buf.len()
-            } else {
-                data.len()
-            };
-            buf[..read_len].copy_from_slice(&data[..read_len]);
-            data.drain(..read_len);
-            read_len
-        });
-        match read_len {
-            Ok(read_len @ 1..) => {
-                return Poll::Ready(Ok(read_len));
-            }
-            Err(NyquestError::Io(e)) => return Poll::Ready(Err(e)),
-            Err(NyquestError::RequestTimeout) => {
-                return Poll::Ready(Err(io::ErrorKind::TimedOut.into()));
-            }
-            Err(e) => unreachable!("Unexpected error: {e}"),
-            Ok(0) if inner.shared.is_completed() => return Poll::Ready(Ok(0)),
-            Ok(0) => {}
+        if let Some(result) = inner.consume_response_to_buffer(buf) {
+            return Poll::Ready(result);
         }
 
         let inner_waker = coerce_waker(inner.shared.waker_ref());
@@ -125,12 +101,13 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         &self,
         req: nyquest_interface::r#async::Request,
     ) -> NyquestResult<Self::Response> {
-        let task = self.inner.build_data_task(req)?;
+        let waker = GenericWaker::Async(Arc::new(AsyncWaker::new()));
+        let (task, mut writer) = self.inner.build_data_task(req, &waker, |s| match &s {
+            BoxedStream::Sized { content_length, .. } => Some(*content_length),
+            BoxedStream::Unsized { .. } => None,
+        })?;
         let shared = unsafe {
-            let delegate = DataTaskDelegate::new(
-                GenericWaker::Async(AsyncWaker::new()),
-                self.inner.allow_redirects,
-            );
+            let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
             DataTaskDelegate::into_shared(delegate)
@@ -140,6 +117,9 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         let response = poll_fn(|cx| {
             if let Some(response) = shared.try_take_response().into_nyquest_result().transpose() {
                 return Poll::Ready(response);
+            }
+            if let Some(writer) = &mut writer {
+                writer.poll_progress(|stream, buf| Pin::new(stream).poll_read(cx, buf))?;
             }
             inner_waker.register(cx);
             Poll::Pending

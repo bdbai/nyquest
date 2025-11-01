@@ -1166,6 +1166,7 @@ dependencies = [
  "cfg-if",
  "form_urlencoded",
  "futures",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -1185,6 +1186,7 @@ name = "nyquest-backend-winrt"
 version = "0.3.0"
 dependencies = [
  "cfg-if",
+ "futures-util",
  "nyquest-interface",
  "windows",
  "windows-collections",

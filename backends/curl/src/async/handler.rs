@@ -3,19 +3,18 @@ use std::sync::Arc;
 use curl::easy::WriteError;
 
 use super::pause::EasyPause;
-use super::r#loop::SharedRequestContext;
+use super::shared::SharedRequestStates;
 use crate::curl_ng::easy::EasyCallback;
 
 #[derive(Default)]
 pub(super) struct AsyncHandler {
-    // To be filled in the loop
-    pub(super) ctx: Arc<SharedRequestContext>,
+    pub(super) ctx: Arc<SharedRequestStates>,
     // To be filled after Easy2 is constructed
     pub(super) pause: Option<EasyPause>,
 }
 
 struct AsyncHandlerRef<'a> {
-    ctx: &'a SharedRequestContext,
+    ctx: &'a SharedRequestStates,
     pause: &'a mut EasyPause,
 }
 
@@ -63,11 +62,20 @@ impl EasyCallback for AsyncHandler {
         true
     }
 
-    fn read(&mut self, _buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
-        unimplemented!()
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
+        let mut state = self.ctx.state.lock().unwrap();
+        let stream = state
+            .req_streams
+            .get_mut(0)
+            .ok_or(curl::easy::ReadError::Abort)?;
+        stream.read(buf, &self.ctx)
     }
 
-    fn seek(&mut self, _whence: std::io::SeekFrom) -> curl::easy::SeekResult {
-        unimplemented!()
+    fn seek(&mut self, whence: std::io::SeekFrom) -> curl::easy::SeekResult {
+        let mut state = self.ctx.state.lock().unwrap();
+        let Some(stream) = state.req_streams.get_mut(0) else {
+            return curl::easy::SeekResult::Fail;
+        };
+        stream.seek(whence, &self.ctx)
     }
 }
