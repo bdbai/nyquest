@@ -18,9 +18,11 @@ declare this crate as a dependency. Libraries should use [`nyquest`] instead.
 ## Quick Start
 
 Add the following at your program startup:
+
 ```rust
 nyquest_backend::register();
 ```
+
 Based on the target platform, a [`nyquest`] backend will be registered as the default. Refer to
 the documentation of [`nyquest`] for usages.
 
@@ -37,6 +39,7 @@ the documentation of [`nyquest`] for usages.
 - `async`: Enable async support for backends and [`nyquest`].
 - `blocking`: Enable blocking support for backends and [`nyquest`].
 - `multipart`: Enable multipart form support for backends and [`nyquest`].
+- `auto-register`: Automatically register the backend before program startup using [`ctor`](https://docs.rs/ctor). Recommended to be used in tests and examples.
 
 Refer to the backends' documentation for more optional features. For example, enable
 `charset-defaults` for [`nyquest-backend-curl`] to perform encoding conversion automatically

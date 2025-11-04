@@ -30,10 +30,12 @@ multipart = [
     "nyquest-backend-winrt/multipart",
     "nyquest-backend-nsurlsession/multipart",
 ]
+auto-register = ["dep:ctor"]
 
 [dependencies]
 nyquest = { version = "0.3.0", path = "../..", default-features = false }
 cfg-if = "1"
+ctor = { version = "0.6", optional = true, default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 nyquest-backend-winrt = { version = "0.3.0", path = "../../backends/winrt", default-features = false }

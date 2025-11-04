@@ -50,3 +50,11 @@ pub use nyquest;
 pub use sys::register;
 #[doc(no_inline)]
 pub use sys::Backend;
+
+#[cfg(feature = "auto-register")]
+ctor::declarative::ctor! {
+    #[ctor]
+    fn auto_register() {
+        register();
+    }
+}

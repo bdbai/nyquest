@@ -63,3 +63,21 @@ async fn query_address(client: &AsyncClient, domain_name: &str) -> nyquest::Resu
         .unwrap_or_default();
     Ok(first_answer)
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_connectivity() {
+        // Since `auto-register` feature is enabled, the backend should be registered automatically.
+
+        let client = nyquest::ClientBuilder::default()
+            .build_blocking()
+            .expect("Failed to build client");
+        let res = client
+            .request(nyquest::Request::get(
+                "http://cp.cloudflare.com/generate_204",
+            ))
+            .expect("Failed to build request");
+        res.with_successful_status().expect("Request failed");
+    }
+}
