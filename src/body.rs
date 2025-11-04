@@ -91,6 +91,12 @@ impl<S> Body<S> {
 
     /// Constructs a streaming body from the given seekable stream, content
     /// length and content type.
+    ///
+    /// `stream` must implement [`Read`](std::io::Read) +
+    /// [`Seek`](std::io::Seek) + [`Send`] + `'static` for blocking clients, or
+    /// [`AsyncRead`](nyquest_interface::async::futures_io::AsyncRead) +
+    /// [`AsyncSeek`](nyquest_interface::async::futures_io::AsyncSeek) +
+    /// [`Send`] + `'static` for async clients.
     pub fn stream(
         stream: impl private::IntoSizedStream<S>,
         content_type: impl Into<Cow<'static, str>>,
@@ -106,6 +112,11 @@ impl<S> Body<S> {
 
     /// Constructs a streaming non-seekable body from the given stream and
     /// content type.
+    ///
+    /// `stream` must implement [`Read`](std::io::Read) + `'static` for
+    /// blocking clients, or
+    /// [`AsyncRead`](nyquest_interface::async::futures_io::AsyncRead) +
+    /// [`Send`] + `'static` for async clients.
     ///
     /// This enables chunked transfer encoding.
     pub fn stream_unsized(
@@ -152,7 +163,11 @@ macro_rules! body_form {
 
 #[cfg(feature = "multipart")]
 impl<S> Part<S> {
-    /// Constructs a part with the given name and body of the given content type.
+    /// Constructs a data part with the given name and body of the given
+    /// content type.
+    ///
+    /// To turn the part into a file upload, use
+    /// [`with_filename`](Self::with_filename).
     pub fn new_with_content_type(
         name: impl Into<Cow<'static, str>>,
         content_type: impl Into<Cow<'static, str>>,
@@ -185,6 +200,8 @@ impl<S> Part<S> {
     }
 
     /// Specify the filename of the part.
+    ///
+    /// This turns the part into a file upload.
     pub fn with_filename(mut self, filename: impl Into<Cow<'static, str>>) -> Self {
         self.inner.filename = Some(filename.into());
         self
@@ -225,6 +242,12 @@ impl<S> PartBody<S> {
 
     /// Constructs a part body from a seekable stream with a specified content
     /// length.
+    ///
+    /// `stream` must implement [`Read`](std::io::Read) +
+    /// [`Seek`](std::io::Seek) + [`Send`] + `'static` for blocking clients, or
+    /// [`AsyncRead`](nyquest_interface::async::futures_io::AsyncRead) +
+    /// [`AsyncSeek`](nyquest_interface::async::futures_io::AsyncSeek) +
+    /// [`Send`] + `'static` for async clients.
     pub fn stream(stream: impl private::IntoSizedStream<S>, content_length: u64) -> Self {
         Self {
             inner: PartBodyImpl::Stream(stream.into_stream(content_length)),
@@ -232,6 +255,11 @@ impl<S> PartBody<S> {
     }
 
     /// Constructs a part body from a non-seekable stream.
+    ///
+    /// `stream` must implement [`Read`](std::io::Read) + `'static` for
+    /// blocking clients, or
+    /// [`AsyncRead`](nyquest_interface::async::futures_io::AsyncRead) +
+    /// [`Send`] + `'static` for async clients.
     ///
     /// This enables chunked transfer encoding for the whole request body.
     pub fn stream_unsized(stream: impl private::IntoUnsizedStream<S>) -> Self {
