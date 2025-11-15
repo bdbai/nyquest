@@ -10,6 +10,7 @@
 use std::any::Any;
 use std::fmt;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use futures_core::future::BoxFuture;
 use futures_io::AsyncRead;
@@ -27,7 +28,7 @@ pub trait AnyAsyncBackend: Send + Sync + 'static {
     fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> BoxFuture<'_, Result<Box<dyn AnyAsyncClient>>>;
+    ) -> BoxFuture<'_, Result<Arc<dyn AnyAsyncClient>>>;
 }
 
 /// Trait for type-erased async HTTP clients.
@@ -36,8 +37,6 @@ pub trait AnyAsyncBackend: Send + Sync + 'static {
 pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     /// Provides a textual description of this client.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
-    /// Creates a cloned boxed version of this client.
-    fn clone_boxed(&self) -> Box<dyn AnyAsyncClient>;
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>>;
 }
@@ -100,11 +99,11 @@ where
     fn create_async_client(
         &self,
         options: ClientOptions,
-    ) -> BoxFuture<'_, Result<Box<dyn AnyAsyncClient>>> {
+    ) -> BoxFuture<'_, Result<Arc<dyn AnyAsyncClient>>> {
         Box::pin(async {
             super::backend::AsyncBackend::create_async_client(self, options)
                 .await
-                .map(|client| Box::new(client) as Box<dyn AnyAsyncClient>)
+                .map(|client| Arc::new(client) as Arc<dyn AnyAsyncClient>)
         }) as _
     }
 }
@@ -115,10 +114,6 @@ where
 {
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         super::backend::AsyncClient::describe(self, f)
-    }
-
-    fn clone_boxed(&self) -> Box<dyn AnyAsyncClient> {
-        Box::new(self.clone())
     }
 
     fn request(&self, req: Request) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>> {

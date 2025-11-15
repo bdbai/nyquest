@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use nyquest_interface::{blocking::AnyBlockingClient, register::BACKEND};
 
@@ -19,8 +20,9 @@ use crate::client::ClientBuilder;
 ///
 /// Requests can be made and executed from multiple thread concurrently. The session, if any, will
 /// be shared and synchronized between threads.
+#[derive(Clone)]
 pub struct BlockingClient {
-    pub(super) client: Box<dyn AnyBlockingClient>,
+    pub(super) client: Arc<dyn AnyBlockingClient>,
 }
 
 impl ClientBuilder {
@@ -48,14 +50,6 @@ impl BlockingClient {
     }
 
     // TODO: request file
-}
-
-impl Clone for BlockingClient {
-    fn clone(&self) -> Self {
-        Self {
-            client: self.client.clone_boxed(),
-        }
-    }
 }
 
 impl Debug for BlockingClient {

@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use nyquest_interface::{r#async::AnyAsyncClient, register::BACKEND};
 
@@ -12,8 +13,9 @@ use crate::ClientBuilder;
 /// Depending on the backend implementation, it might holds a connection pool, a thread pool or
 /// other kind of resources internally, so it is advised that you create one and reuse it to avoid
 /// unnecessary overhead.
+#[derive(Clone)]
 pub struct AsyncClient {
-    pub(super) client: Box<dyn AnyAsyncClient>,
+    pub(super) client: Arc<dyn AnyAsyncClient>,
 }
 
 impl ClientBuilder {
@@ -38,14 +40,6 @@ impl AsyncClient {
     pub async fn request(&self, req: super::Request) -> crate::Result<Response> {
         let res = self.client.request(req.inner).await?;
         Ok(res.into())
-    }
-}
-
-impl Clone for AsyncClient {
-    fn clone(&self) -> Self {
-        Self {
-            client: self.client.clone_boxed(),
-        }
     }
 }
 

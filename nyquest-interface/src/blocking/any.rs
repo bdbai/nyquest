@@ -7,8 +7,10 @@
 //! corresponding traits from the `blocking::backend` module, so backend developers don't need
 //! to implement them directly.
 
+use std::any::Any;
 use std::fmt;
-use std::{any::Any, io};
+use std::io;
+use std::sync::Arc;
 
 use super::backend::BlockingResponse;
 use super::Request;
@@ -20,7 +22,7 @@ use crate::Result;
 /// Automatically implemented for types implementing `BlockingBackend`.
 pub trait AnyBlockingBackend: Send + Sync + 'static {
     /// Creates a new blocking client with the given options.
-    fn create_blocking_client(&self, options: ClientOptions) -> Result<Box<dyn AnyBlockingClient>>;
+    fn create_blocking_client(&self, options: ClientOptions) -> Result<Arc<dyn AnyBlockingClient>>;
 }
 
 /// Trait for type-erased blocking HTTP clients.
@@ -29,8 +31,6 @@ pub trait AnyBlockingBackend: Send + Sync + 'static {
 pub trait AnyBlockingClient: Any + Send + Sync + 'static {
     /// Provides a textual description of this client.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
-    /// Creates a cloned boxed version of this client.
-    fn clone_boxed(&self) -> Box<dyn AnyBlockingClient>;
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> crate::Result<Box<dyn AnyBlockingResponse>>;
 }
@@ -61,8 +61,8 @@ impl<B> AnyBlockingBackend for B
 where
     B: super::backend::BlockingBackend,
 {
-    fn create_blocking_client(&self, options: ClientOptions) -> Result<Box<dyn AnyBlockingClient>> {
-        Ok(Box::new(self.create_blocking_client(options)?))
+    fn create_blocking_client(&self, options: ClientOptions) -> Result<Arc<dyn AnyBlockingClient>> {
+        Ok(Arc::new(self.create_blocking_client(options)?))
     }
 }
 
@@ -101,9 +101,6 @@ where
 {
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         super::backend::BlockingClient::describe(self, f)
-    }
-    fn clone_boxed(&self) -> Box<dyn AnyBlockingClient> {
-        Box::new(self.clone())
     }
     fn request(&self, req: Request) -> crate::Result<Box<dyn AnyBlockingResponse>> {
         Ok(Box::new(self.request(req)?))
