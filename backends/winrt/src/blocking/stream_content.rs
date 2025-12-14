@@ -75,15 +75,18 @@ impl BlockingReadStreamBase {
             let iba = buffer.cast::<IBufferByteAccess>()?;
             unsafe {
                 let buf = iba.Buffer()?;
-                let buf = std::slice::from_raw_parts_mut(buf, to_read);
-                let read_len = if options == InputStreamOptions::None {
-                    stream.read_exact(buf).map_err(windows_core::Error::from)?;
-                    to_read
-                } else {
-                    stream.read(buf).map_err(windows_core::Error::from)?
-                };
-                base.pos.fetch_add(read_len as u64, Ordering::Relaxed);
-                buffer.SetLength(read_len as u32)?;
+                let mut buf = std::slice::from_raw_parts_mut(buf, to_read);
+                let mut total_read_len = 0;
+                while !buf.is_empty() {
+                    let read_len = stream.read(buf).map_err(windows_core::Error::from)?;
+                    total_read_len += read_len;
+                    if read_len == 0 || options == InputStreamOptions::Partial {
+                        break;
+                    }
+                    buf = &mut buf[read_len..];
+                }
+                base.pos.fetch_add(total_read_len as u64, Ordering::Relaxed);
+                buffer.SetLength(total_read_len as u32)?;
             }
             Ok(buffer)
         }))

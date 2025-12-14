@@ -75,6 +75,7 @@ impl AsyncReadStreamBase {
         let Some(buffer) = buffer.as_ref() else {
             return Err(windows_core::Error::empty());
         };
+        buffer.SetLength(0)?;
         let Some(task_collection) = self.task_collection.upgrade() else {
             return Err(windows_core::Error::new(
                 ERROR_CANCELLED.into(),
@@ -92,7 +93,7 @@ impl AsyncReadStreamBase {
             base_accessor,
             read_count: count,
             options,
-            buffer: buffer.clone(),
+            buffer,
             inner: Mutex::new(AsyncReadInputStreamReadTaskInner {
                 status: Ok(false),
                 completed: None,
@@ -439,31 +440,38 @@ fn poll_retain_read_task(
         }
     }
     let buffer = AgileReference::resolve(&task.buffer)?;
+    let offset = buffer.Length()? as usize;
+    let capacity = buffer.Capacity()? as usize;
     let to_read = if (task.options.0 & InputStreamOptions::ReadAhead.0) != 0 {
-        buffer.Capacity()?
+        capacity
     } else {
-        task.read_count.min(buffer.Capacity()?)
-    } as usize;
+        (task.read_count as usize).min(capacity)
+    } - offset;
     let iba = buffer.cast::<IBufferByteAccess>()?;
     unsafe {
         let buf = iba.Buffer()?;
-        let buf = std::slice::from_raw_parts_mut(buf, to_read);
-        let read_res = Pin::new(stream)
-            .poll_read(cx, buf)
-            .map_err(windows_core::Error::from)?;
-        match read_res {
-            Poll::Pending => Ok(true),
-            Poll::Ready(read_len)
-                if task.options == InputStreamOptions::None && read_len < to_read =>
-            {
-                buffer.SetLength(read_len as u32)?;
-                Ok(true)
+        let mut buf = &mut std::slice::from_raw_parts_mut(buf, capacity)[offset..][..to_read];
+        let mut total_read_len = 0;
+        let mut is_eof = false;
+        while !buf.is_empty() {
+            let read_res = Pin::new(&mut *stream)
+                .poll_read(cx, buf)
+                .map_err(windows_core::Error::from)?;
+            if let Poll::Ready(read_len) = read_res {
+                total_read_len += read_len;
+                if read_len == 0 {
+                    is_eof = true;
+                } else if task.options != InputStreamOptions::Partial {
+                    buf = &mut buf[read_len..];
+                    continue;
+                }
             }
-            Poll::Ready(read_len) => {
-                buffer.SetLength(read_len as u32)?;
-                Ok(false)
-            }
+            break;
         }
+        let new_length = offset + total_read_len;
+        buffer.SetLength(new_length as u32)?;
+        base.pos.fetch_add(total_read_len as u64, Ordering::Relaxed);
+        Ok(total_read_len < to_read && !is_eof)
     }
 }
 
