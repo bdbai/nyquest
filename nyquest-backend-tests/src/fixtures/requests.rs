@@ -262,6 +262,9 @@ mod tests {
                 if content_length != "10" {
                     *res.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
                 }
+                if req.method() != Method::PUT {
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                }
                 let body = req.into_body().collect().await.unwrap().to_bytes();
                 if body != CONTENTS.as_bytes() {
                     *res.status_mut() = StatusCode::BAD_REQUEST;
@@ -293,6 +296,56 @@ mod tests {
                 );
                 let response = client
                     .request(NyquestRequest::put(PATH).with_body(body))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200);
+            });
+        }
+    }
+
+    #[test]
+    fn test_post_stream_upload() {
+        const PATH: &str = "requests/post_stream_upload";
+        const CONTENT_TYPE: &str = "text/plain";
+        const CONTENTS: &str = "1234567890";
+
+        let _handle = crate::add_hyper_fixture(PATH, {
+            move |req| async move {
+                let mut res = Response::new(Full::default());
+                if req.method() != Method::POST {
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                }
+                let body = req.into_body().collect().await.unwrap().to_bytes();
+                if body != CONTENTS.as_bytes() {
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                }
+                (res, Ok(()))
+            }
+        });
+
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
+            let body = NyquestBlockingBody::stream(Cursor::new(CONTENTS), CONTENT_TYPE, 10);
+            let response = client
+                .request(NyquestRequest::post(PATH).with_body(body))
+                .unwrap();
+            assert_eq!(response.status(), 200);
+        }
+
+        #[cfg(feature = "async")]
+        {
+            TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder.build_async().await.unwrap();
+                let body = NyquestAsyncBody::stream(
+                    futures_util::io::Cursor::new(CONTENTS),
+                    CONTENT_TYPE,
+                    10,
+                );
+                let response = client
+                    .request(NyquestRequest::post(PATH).with_body(body))
                     .await
                     .unwrap();
                 assert_eq!(response.status(), 200);

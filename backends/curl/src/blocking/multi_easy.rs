@@ -131,7 +131,7 @@ impl MultiEasy {
                     if let BoxedStream::Sized { content_length, .. } = &stream {
                         easy.as_mut()
                             .as_raw_easy_mut()
-                            .set_post_field_size(*content_length)?;
+                            .set_infile_size(*content_length)?;
                     }
                     easy.as_callback_mut().set_body_stream(stream);
                     Ok(())

@@ -75,7 +75,7 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
             Method::Get => raw.as_mut().set_custom_request("get")?,
             Method::Post => raw.as_mut().set_post(true)?,
             Method::Put if req.body.is_none() => raw.as_mut().set_custom_request("PUT")?,
-            Method::Put => raw.as_mut().set_put(true)?,
+            Method::Put => raw.as_mut().set_upload(true)?,
             Method::Delete => raw.as_mut().set_custom_request("delete")?,
             Method::Patch => raw.as_mut().set_custom_request("patch")?,
             Method::Head => raw.as_mut().set_nobody(true)?,

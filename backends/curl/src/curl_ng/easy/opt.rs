@@ -147,10 +147,10 @@ impl RawEasy {
         }
     }
 
-    pub fn set_put(self: Pin<&mut Self>, put: bool) -> Result<(), CurlCodeContext> {
+    pub fn set_upload(self: Pin<&mut Self>, put: bool) -> Result<(), CurlCodeContext> {
         unsafe {
-            self.setopt_long(curl_sys::CURLOPT_PUT, put as c_long)
-                .with_easy_context("setopt CURLOPT_PUT")
+            self.setopt_long(curl_sys::CURLOPT_UPLOAD, put as c_long)
+                .with_easy_context("setopt CURLOPT_UPLOAD")
         }
     }
 
@@ -171,16 +171,13 @@ impl RawEasy {
         }
     }
 
-    pub fn set_post_field_size(mut self: Pin<&mut Self>, size: u64) -> Result<(), CurlCodeContext> {
+    pub fn set_infile_size(self: Pin<&mut Self>, size: u64) -> Result<(), CurlCodeContext> {
         unsafe {
-            self.as_mut()
-                .setopt_ptr(curl_sys::CURLOPT_POSTFIELDS, null())
-                .with_easy_context("setopt CURLOPT_POSTFIELDS null")?;
             self.setopt_off_t(
-                curl_sys::CURLOPT_POSTFIELDSIZE_LARGE,
+                curl_sys::CURLOPT_INFILESIZE_LARGE,
                 size as curl_sys::curl_off_t,
             )
-            .with_easy_context("setopt CURLOPT_POSTFIELDSIZE_LARGE")
+            .with_easy_context("setopt CURLOPT_INFILESIZE_LARGE")
         }
     }
 
