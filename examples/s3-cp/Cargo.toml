@@ -1,0 +1,10 @@
+[package]
+name = "s3-cp"
+description = "Copy a file from/to S3"
+edition.workspace = true
+
+[dependencies]
+nyquest = { path = "../..", features = ["blocking"] }
+nyquest-preset = { path = "../../presets/default", features = ["blocking"] }
+rusty-s3 = { version = "0.8", default-features = false }
+mime_guess = { version = "2", default-features = false }
