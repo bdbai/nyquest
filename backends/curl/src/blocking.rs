@@ -63,7 +63,10 @@ impl<S: AsRef<MultiEasySlot>> Drop for EasyHandleGuard<S> {
         // Safety: the handle is only taken out once which is here, except in `into_owned` where a `ManuallyDrop` is
         // used to suppress our Drop
         let mut handle = unsafe { ManuallyDrop::take(&mut self.handle) };
-        let mut slot = self.slot.as_ref().multi_easy.lock().unwrap();
+        let Ok(mut slot) = self.slot.as_ref().multi_easy.try_lock() else {
+            // Another thread will be putting back their handle, so we just give up.
+            return;
+        };
         if slot.is_none() && handle.get_mut().unwrap().reset_state().is_ok() {
             *slot = Some(handle.into_inner().unwrap());
         }
