@@ -80,6 +80,7 @@ impl Response {
 
     /// Turn the response body into a [`std::io::Read`] stream.
     #[cfg(feature = "blocking-stream")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "blocking-stream")))]
     pub fn into_read(self) -> ReadStream {
         ReadStream::new(self.inner)
     }

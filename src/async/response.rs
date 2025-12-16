@@ -82,6 +82,7 @@ impl Response {
 
     /// Turn the response body into a [`futures_io::AsyncRead`] stream.
     #[cfg(feature = "async-stream")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "async-stream")))]
     pub fn into_async_read(self) -> AsyncReadStream {
         AsyncReadStream::new(self.inner)
     }
