@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::pin::Pin;
 
-#[cfg(doc)]
+#[cfg(all(doc, feature = "async-stream"))]
 use nyquest_interface::r#async::futures_io;
 use nyquest_interface::r#async::AnyAsyncResponse;
 

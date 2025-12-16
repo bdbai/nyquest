@@ -99,8 +99,12 @@
 //!
 //! - `async`: Enable async support. The registered backend must implement the async interface
 //!   to compile.
+//! - `async-stream`: Enable async support and streaming upload/download. The registered backend
+//!   must implement the async-stream interface to compile.
 //! - `blocking`: Enable blocking support. The registered backend must implement the blocking
 //!   interface to compile.
+//! - `blocking-stream`: Enable blocking support and streaming upload/download. The registered
+//!   backend must implement the blocking-stream interface to compile.
 //! - `multipart`: Enable multipart form support. The registered backend must implement the
 //!   multipart interface to compile.
 //! - `json`: Enable JSON request/response shorthand methods.

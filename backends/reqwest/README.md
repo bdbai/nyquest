@@ -22,7 +22,9 @@ While mixing async and blocking code is generally discouraged, some situations m
 ## Features
 
 - **async**: Enable async interface support using reqwest's async client
+- **async-stream**: Enable async interface and streaming upload/download support
 - **blocking**: Enable blocking interface support using reqwest's blocking client on a background thread
+- **blocking-stream**: Enable blocking interface and streaming upload/download support using reqwest's blocking client on a background thread
 - **multipart**: Enable multipart form support
 - **charset**: Enable charset conversion support using the `encoding_rs` crate
 

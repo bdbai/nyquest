@@ -12,7 +12,9 @@ libcurl backend for [`nyquest`].
 
 - `ssl`: Enable SSL support. This is enabled by default.
 - `blocking`
+- `blocking-stream`
 - `async`
+- `async-stream`
 - `multipart`
 - `charset-defaults`: Enable encoding conversion via [`iconv-native`] with its default features
   enabled.
