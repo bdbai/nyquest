@@ -90,7 +90,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
         let (task, mut writer) = self.inner.build_data_task(req, &waker, |s| {
             #[cfg(feature = "blocking-stream")]
             {
-                use nyquest_interface::blocking_stream::BoxedStream;
+                use nyquest_interface::blocking::BoxedStream;
                 match &s {
                     BoxedStream::Sized { content_length, .. } => Some(*content_length),
                     BoxedStream::Unsized { .. } => None,
