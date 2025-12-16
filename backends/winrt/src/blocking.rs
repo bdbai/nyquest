@@ -6,6 +6,7 @@ use nyquest_interface::Result as NyquestResult;
 use timer_ext::BlockingTimeoutExt;
 use windows::Web::Http::HttpCompletionOption;
 
+#[cfg(feature = "blocking-stream")]
 mod stream_content;
 mod timer_ext;
 
@@ -31,7 +32,12 @@ impl WinrtClient {
     fn send_request(&self, req: Request) -> NyquestResult<WinrtBlockingResponse> {
         let req_msg = self.create_request(&req)?;
         if let Some(body) = req.body {
+            #[cfg(feature = "blocking-stream")]
             let body = create_body(body, &mut stream_content::transform_stream)?;
+            #[cfg(not(feature = "blocking-stream"))]
+            let body = create_body(body, &mut |_| {
+                unreachable!("blocking-stream feature is disabled")
+            })?;
             self.append_content_headers(&body, &req.additional_headers)?;
             req_msg.SetContent(&body).into_nyquest_result()?;
         }
@@ -111,6 +117,7 @@ impl BlockingResponse for WinrtBlockingResponse {
     }
 }
 
+#[cfg(feature = "blocking-stream")]
 impl io::Read for WinrtBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let reader = self.inner.reader_mut()?;

@@ -183,6 +183,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     fn test_stream_download() {
         const PATH: &str = "responses/stream_download";
 

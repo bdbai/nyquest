@@ -238,6 +238,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     fn test_stream_upload() {
         const PATH: &str = "requests/stream_upload";
         const CONTENT_TYPE: &str = "text/plain";
@@ -304,6 +305,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     fn test_post_stream_upload() {
         const PATH: &str = "requests/post_stream_upload";
         const CONTENT_TYPE: &str = "text/plain";
@@ -354,6 +356,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     fn test_unsized_stream_upload() {
         const PATH: &str = "requests/unsized_stream_upload";
         const CONTENT_TYPE: &str = "text/plain";

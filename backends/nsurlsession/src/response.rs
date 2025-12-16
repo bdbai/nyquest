@@ -88,6 +88,7 @@ impl NSUrlSessionResponse {
         }
     }
 
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     pub(crate) fn consume_response_to_buffer(
         &mut self,
         buf: &mut [u8],

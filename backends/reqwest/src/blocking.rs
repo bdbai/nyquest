@@ -1,3 +1,4 @@
+#[cfg(feature = "blocking-stream")]
 use std::io::{self, Read};
 use std::sync::{Arc, OnceLock};
 
@@ -10,6 +11,7 @@ use crate::client::ReqwestClient;
 use crate::error::ReqwestBackendError;
 use crate::response::ReqwestResponse;
 
+#[cfg(feature = "blocking-stream")]
 mod stream;
 
 #[derive(Clone)]
@@ -43,15 +45,23 @@ async fn execute_request(
     req: Request,
 ) -> NyquestResult<ReqwestBlockingResponse> {
     let request_builder = this.inner.request(req, |stream| {
-        use nyquest_interface::blocking::BoxedStream;
-        let size = match &stream {
-            BoxedStream::Sized { content_length, .. } => Some(*content_length),
-            BoxedStream::Unsized { .. } => None,
-        };
-        (
-            reqwest::Body::wrap(stream::BlockingStreamBody::new(stream)),
-            size,
-        )
+        #[cfg(feature = "blocking-stream")]
+        {
+            use nyquest_interface::blocking::BoxedStream;
+            let size = match &stream {
+                BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                BoxedStream::Unsized { .. } => None,
+            };
+            (
+                reqwest::Body::wrap(stream::BlockingStreamBody::new(stream)),
+                size,
+            )
+        }
+        #[cfg(not(feature = "blocking-stream"))]
+        {
+            let _ = stream;
+            unreachable!("blocking-stream feature is disabled")
+        }
     })?;
 
     let response = request_builder
@@ -150,6 +160,7 @@ impl BlockingResponse for ReqwestBlockingResponse {
     }
 }
 
+#[cfg(feature = "blocking-stream")]
 impl Read for ReqwestBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {

@@ -135,6 +135,7 @@ impl InputStream {
 
         unsafe { msg_send![super(this), init] }
     }
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     pub(crate) fn update_buffer(
         &self,
         cb: impl FnOnce(&mut [u8]) -> ControlFlow<(), io::Result<usize>>,
@@ -188,10 +189,12 @@ impl InputStream {
         Ok(())
     }
 
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     pub(crate) fn is_open(&self) -> bool {
         self.ivars().is_open.load(Ordering::Relaxed)
     }
 
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     fn notify_stream_state(&self, event: NSStreamEvent) {
         let ivars = self.ivars();
         let Some(delegate) = ivars.delegate.load_full() else {

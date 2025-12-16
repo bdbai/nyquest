@@ -18,7 +18,13 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["default-tls", "reqwest/system-proxy"]
 async = ["nyquest-interface/async"]
+async-stream = ["async", "nyquest-interface/async-stream", "reqwest/stream"]
 blocking = ["nyquest-interface/blocking"]
+blocking-stream = [
+    "blocking",
+    "nyquest-interface/blocking-stream",
+    "reqwest/stream",
+]
 multipart = ["nyquest-interface/multipart", "reqwest/multipart"]
 charset = ["dep:encoding_rs", "dep:mime"]
 default-tls = ["reqwest/default-tls"]
@@ -53,7 +59,7 @@ features = ["web-encoding"]
 [target.'cfg(target_arch = "wasm32")'.dependencies.reqwest]
 version = "0.12"
 default-features = false
-features = ["stream", "cookies"]
+features = ["cookies"]
 
 [dev-dependencies]
 nyquest-backend-tests = { path = "../../nyquest-backend-tests" }

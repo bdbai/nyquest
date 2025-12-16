@@ -18,11 +18,23 @@ async = [
     "nyquest-backend-winrt/async",
     "nyquest-backend-nsurlsession/async",
 ]
+async-stream = [
+    "nyquest/async-stream",
+    "nyquest-backend-curl/async-stream",
+    "nyquest-backend-winrt/async-stream",
+    "nyquest-backend-nsurlsession/async-stream",
+]
 blocking = [
     "nyquest/blocking",
     "nyquest-backend-curl/blocking",
     "nyquest-backend-winrt/blocking",
     "nyquest-backend-nsurlsession/blocking",
+]
+blocking-stream = [
+    "nyquest/blocking-stream",
+    "nyquest-backend-curl/blocking-stream",
+    "nyquest-backend-winrt/blocking-stream",
+    "nyquest-backend-nsurlsession/blocking-stream",
 ]
 multipart = [
     "nyquest/multipart",

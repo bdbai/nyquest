@@ -5,6 +5,7 @@ use std::pin::Pin;
 use nyquest_interface::r#async::futures_io;
 use nyquest_interface::r#async::AnyAsyncResponse;
 
+#[cfg(feature = "async-stream")]
 use super::AsyncReadStream;
 use crate::StatusCode;
 
@@ -80,6 +81,7 @@ impl Response {
     }
 
     /// Turn the response body into a [`futures_io::AsyncRead`] stream.
+    #[cfg(feature = "async-stream")]
     pub fn into_async_read(self) -> AsyncReadStream {
         AsyncReadStream::new(self.inner)
     }

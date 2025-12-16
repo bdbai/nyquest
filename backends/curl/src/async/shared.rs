@@ -3,11 +3,14 @@ use std::sync::Mutex;
 use futures_util::task::AtomicWaker;
 use nyquest_interface::Result as NyquestResult;
 
-use crate::{r#async::read_task::SharedStreamState, state::RequestState};
+#[cfg(feature = "async-stream")]
+use crate::r#async::read_task::SharedStreamState;
+use crate::state::RequestState;
 
 #[derive(Default)]
 pub(super) struct SharedRequestStatesInner {
     pub(super) state: RequestState,
+    #[cfg(feature = "async-stream")]
     pub(super) req_streams: Vec<SharedStreamState>,
     pub(super) result: RequestResult,
     pub(super) response: Option<super::CurlAsyncResponse>,

@@ -171,6 +171,10 @@ impl RawEasy {
         }
     }
 
+    #[cfg_attr(
+        not(any(feature = "blocking-stream", feature = "async-stream")),
+        allow(dead_code)
+    )]
     pub fn set_infile_size(self: Pin<&mut Self>, size: u64) -> Result<(), CurlCodeContext> {
         unsafe {
             self.setopt_off_t(

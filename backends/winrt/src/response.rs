@@ -1,6 +1,7 @@
 use std::io;
 
 use windows::core::HSTRING;
+#[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
 use windows::Storage::Streams::{DataReader, InputStreamOptions};
 use windows::Web::Http::{HttpResponseMessage, IHttpContent};
 
@@ -12,6 +13,7 @@ pub struct WinrtResponse {
     pub(crate) max_response_buffer_size: Option<u64>,
     pub(crate) request_timer: Timer,
     pub(crate) response: HttpResponseMessage,
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     pub(crate) reader: Option<DataReader>,
 }
 
@@ -35,6 +37,7 @@ impl WinrtResponse {
             max_response_buffer_size: response_size_limit,
             request_timer,
             response: res,
+            #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
             reader: None,
         })
     }
@@ -53,6 +56,7 @@ impl WinrtResponse {
         Ok(self.response.Content()?)
     }
 
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     pub(crate) fn reader_mut(&mut self) -> io::Result<&mut DataReader> {
         if self.reader.is_none() {
             let content = self.content()?;

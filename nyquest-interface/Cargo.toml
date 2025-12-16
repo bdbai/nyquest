@@ -16,9 +16,11 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-async = ["dep:futures-core", "dep:futures-io"]
+async = ["dep:futures-core"]
 blocking = []
 multipart = []
+async-stream = ["async", "dep:futures-io"]
+blocking-stream = ["blocking"]
 
 [dependencies]
 thiserror.workspace = true

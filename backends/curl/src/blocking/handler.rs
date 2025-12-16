@@ -1,17 +1,18 @@
-use std::io::Read as _;
-
 use curl::easy::{ReadError, SeekResult, WriteError};
 
 use crate::{curl_ng::easy::EasyCallback, state::RequestState};
+#[cfg(feature = "blocking-stream")]
 use nyquest_interface::blocking::BoxedStream;
 
 #[derive(Default)]
 pub struct BlockingHandler {
     pub(super) state: RequestState,
+    #[cfg(feature = "blocking-stream")]
     body_stream: Option<BoxedStream>,
 }
 
 impl BlockingHandler {
+    #[cfg(feature = "blocking-stream")]
     pub fn set_body_stream(&mut self, body_stream: BoxedStream) {
         self.body_stream = Some(body_stream);
     }
@@ -28,7 +29,10 @@ impl EasyCallback for BlockingHandler {
         true
     }
 
+    #[cfg(feature = "blocking-stream")]
     fn read(&mut self, data: &mut [u8]) -> Result<usize, ReadError> {
+        use std::io::Read as _;
+
         let Some(stream) = &mut self.body_stream else {
             return Ok(0);
         };
@@ -39,6 +43,7 @@ impl EasyCallback for BlockingHandler {
         }
     }
 
+    #[cfg(feature = "blocking-stream")]
     fn seek(&mut self, whence: std::io::SeekFrom) -> SeekResult {
         let Some(stream) = &mut self.body_stream else {
             return SeekResult::Fail;
@@ -51,5 +56,15 @@ impl EasyCallback for BlockingHandler {
             // FIXME: propagate IO errors
             Err(_e) => SeekResult::Fail,
         }
+    }
+
+    #[cfg(not(feature = "blocking-stream"))]
+    fn read(&mut self, _data: &mut [u8]) -> Result<usize, ReadError> {
+        Err(ReadError::Abort)
+    }
+
+    #[cfg(not(feature = "blocking-stream"))]
+    fn seek(&mut self, _whence: std::io::SeekFrom) -> SeekResult {
+        SeekResult::Fail
     }
 }

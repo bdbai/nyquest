@@ -1,16 +1,18 @@
 use std::cell::RefCell;
-use std::io;
 use std::pin::pin;
-use std::task::{ready, Poll};
-use std::{pin::Pin, sync::Arc, task::Context};
+use std::{pin::Pin, sync::Arc};
 
 use futures_util::future::{select, Either};
-use nyquest_interface::r#async::{futures_io, AsyncResponse};
+use nyquest_interface::r#async::AsyncResponse;
 use nyquest_interface::Error as NyquestError;
 
 mod handler;
 mod r#loop;
 mod pause;
+#[cfg(feature = "async-stream")]
+mod read_task;
+#[cfg(not(feature = "async-stream"))]
+#[path = "async/dummy_read_task.rs"]
 mod read_task;
 mod set;
 mod shared;
@@ -98,12 +100,15 @@ impl AsyncResponse for CurlAsyncResponse {
     }
 }
 
-impl futures_io::AsyncRead for CurlAsyncResponse {
+#[cfg(feature = "async-stream")]
+impl nyquest_interface::r#async::futures_io::AsyncRead for CurlAsyncResponse {
     fn poll_read(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        use std::task::{ready, Poll};
+
         let this = self.get_mut();
         let poll_res = ready!(this.handle.poll_bytes(cx, |data| {
             let read_len = data.len().min(buf.len());
@@ -115,7 +120,7 @@ impl futures_io::AsyncRead for CurlAsyncResponse {
             Ok(None) => Ok(0),
             Ok(Some(read_len)) => Ok(read_len),
             Err(NyquestError::RequestTimeout) => {
-                return Poll::Ready(Err(io::ErrorKind::TimedOut.into()))
+                return Poll::Ready(Err(std::io::ErrorKind::TimedOut.into()))
             }
             Err(NyquestError::Io(e)) => return Poll::Ready(Err(e)),
             Err(e) => unreachable!("Unexpected error: {}", e),

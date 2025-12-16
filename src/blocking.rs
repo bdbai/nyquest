@@ -5,11 +5,16 @@
 
 use std::borrow::Cow;
 
+#[cfg(feature = "blocking-stream")]
 use nyquest_interface::blocking::{BoxedStream, SizedBodyStream, UnsizedBodyStream};
 
 pub(crate) mod client;
+#[cfg(feature = "blocking-stream")]
 mod read_stream;
 mod response;
+
+#[cfg(not(feature = "blocking-stream"))]
+type BoxedStream = std::convert::Infallible;
 
 /// The Request Body type for blocking requests.
 pub type Body = crate::body::Body<BoxedStream>;
@@ -21,9 +26,11 @@ pub type Part = crate::body::Part<BoxedStream>;
 /// The multipart form part body type for blocking requests.
 #[cfg(feature = "multipart")]
 pub type PartBody = crate::body::PartBody<BoxedStream>;
+#[cfg(feature = "blocking-stream")]
 pub use read_stream::ReadStream;
 pub use response::Response;
 
+#[cfg(feature = "blocking-stream")]
 use crate::body::private::{IntoSizedStream, IntoUnsizedStream};
 
 /// Shortcut method to quickly make a `GET` request.
@@ -39,6 +46,7 @@ pub fn get(uri: impl Into<Cow<'static, str>>) -> crate::Result<Response> {
     client.request(Request::get(uri))
 }
 
+#[cfg(feature = "blocking-stream")]
 impl<S: SizedBodyStream> IntoSizedStream<BoxedStream> for S {
     fn into_stream(self, size: u64) -> BoxedStream {
         BoxedStream::Sized {
@@ -48,6 +56,7 @@ impl<S: SizedBodyStream> IntoSizedStream<BoxedStream> for S {
     }
 }
 
+#[cfg(feature = "blocking-stream")]
 impl<S: UnsizedBodyStream> IntoUnsizedStream<BoxedStream> for S {
     fn into_stream(self) -> BoxedStream {
         BoxedStream::Unsized {

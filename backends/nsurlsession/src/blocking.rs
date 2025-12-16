@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use nyquest_interface::blocking::{
-    BlockingBackend, BlockingClient, BlockingResponse, BoxedStream, Request,
-};
+use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
@@ -25,6 +23,7 @@ pub struct NSUrlSessionBlockingResponse {
     max_response_buffer_size: u64,
 }
 
+#[cfg(feature = "blocking-stream")]
 impl std::io::Read for NSUrlSessionBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let inner = &mut self.inner;
@@ -88,9 +87,20 @@ impl BlockingClient for NSUrlSessionBlockingClient {
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
         let waker = GenericWaker::Blocking(Arc::new(BlockingWaker::new_from_current_thread()));
-        let (task, mut writer) = self.inner.build_data_task(req, &waker, |s| match &s {
-            BoxedStream::Sized { content_length, .. } => Some(*content_length),
-            BoxedStream::Unsized { .. } => None,
+        let (task, mut writer) = self.inner.build_data_task(req, &waker, |s| {
+            #[cfg(feature = "blocking-stream")]
+            {
+                use nyquest_interface::blocking_stream::BoxedStream;
+                match &s {
+                    BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                    BoxedStream::Unsized { .. } => None,
+                }
+            }
+            #[cfg(not(feature = "blocking-stream"))]
+            {
+                let _ = s;
+                unreachable!("blocking-stream feature is disabled")
+            }
         })?;
         let shared = unsafe {
             let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
@@ -99,8 +109,6 @@ impl BlockingClient for NSUrlSessionBlockingClient {
             DataTaskDelegate::into_shared(delegate)
         };
         loop {
-            use std::io::Read as _;
-
             if let Some(response) = shared.try_take_response().into_nyquest_result()? {
                 return Ok(NSUrlSessionBlockingResponse {
                     inner: NSUrlSessionResponse {
@@ -116,13 +124,20 @@ impl BlockingClient for NSUrlSessionBlockingClient {
             }
 
             // FIXME: use dispatch2 to perform blocking read in background
+            #[cfg(feature = "blocking-stream")]
             if let Some(stream_writer) = &mut writer {
+                use std::io::Read as _;
+
                 let write_result = stream_writer
                     .poll_progress(|stream, buf| std::task::Poll::Ready(stream.read(buf)));
                 match write_result {
                     Ok(_) => {}
                     Err(e) => return Err(nyquest_interface::Error::Io(e)),
                 }
+            }
+            #[cfg(not(feature = "blocking-stream"))]
+            {
+                let _ = &mut writer;
             }
             std::thread::park();
         }

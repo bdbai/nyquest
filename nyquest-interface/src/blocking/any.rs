@@ -9,7 +9,6 @@
 
 use std::any::Any;
 use std::fmt;
-use std::io;
 use std::sync::Arc;
 
 use super::backend::BlockingResponse;
@@ -39,7 +38,7 @@ pub trait AnyBlockingClient: Any + Send + Sync + 'static {
 ///
 /// Automatically implemented for types implementing `BlockingResponse`.
 /// It extends io::Read to allow streaming the response body.
-pub trait AnyBlockingResponse: io::Read + Any + Send + Sync + 'static {
+pub trait AnyBlockingResponse: super::MaybeRead + Any + Send + Sync + 'static {
     /// Provides a textual description of this response.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     /// Returns the HTTP status code of this response.

@@ -17,6 +17,7 @@ impl<S> StreamWriter<S> {
         }
     }
 
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     pub fn poll_progress(
         &mut self,
         mut read_cb: impl FnMut(&mut S, &mut [u8]) -> Poll<io::Result<usize>>,

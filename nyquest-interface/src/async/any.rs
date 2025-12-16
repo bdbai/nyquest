@@ -13,7 +13,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use futures_core::future::BoxFuture;
-use futures_io::AsyncRead;
 
 use super::backend::AsyncResponse;
 use super::Request;
@@ -44,7 +43,7 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
 /// Trait for type-erased async HTTP responses.
 ///
 /// Automatically implemented for types implementing `AsyncResponse`.
-pub trait AnyAsyncResponse: AsyncRead + Any + Send + Sync + 'static {
+pub trait AnyAsyncResponse: super::MaybeAsyncRead + Any + Send + Sync + 'static {
     /// Provides a textual description of this response.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     /// Returns the HTTP status code of this response.
