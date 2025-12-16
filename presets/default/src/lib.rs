@@ -31,7 +31,11 @@
 //! ## Features
 //!
 //! - `async`: Enable async support for backends and [`nyquest`].
+//! - `async-stream`: Enable async support and streaming upload/download for backends and
+//!   [`nyquest`].
 //! - `blocking`: Enable blocking support for backends and [`nyquest`].
+//! - `blocking-stream`: Enable blocking support and streaming upload/download for backends and
+//!   [`nyquest`].
 //! - `multipart`: Enable multipart form support for backends and [`nyquest`].
 //!
 //! Refer to the backends' documentation for more optional features. For example, enable

@@ -12,7 +12,9 @@
 //! ## Features
 //!
 //! - `async`: Enable async interface support
+//! - `async-stream`: Enable async interface and streaming upload/download support
 //! - `blocking`: Enable blocking interface support
+//! - `blocking-stream`: Enable blocking interface and streaming upload/download support
 //! - `multipart`: Enable multipart form support
 //!
 //! [`nyquest`]: https://docs.rs/nyquest

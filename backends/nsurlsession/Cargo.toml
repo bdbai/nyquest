@@ -18,7 +18,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 async = ["nyquest-interface/async", "dep:futures-util"]
+async-stream = ["async", "nyquest-interface/async-stream"]
 blocking = ["nyquest-interface/blocking"]
+blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
 multipart = ["nyquest-interface/multipart"]
 
 [dependencies]

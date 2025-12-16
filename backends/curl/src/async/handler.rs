@@ -62,6 +62,7 @@ impl EasyCallback for AsyncHandler {
         true
     }
 
+    #[cfg(feature = "async-stream")]
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
         let mut state = self.ctx.state.lock().unwrap();
         let stream = state
@@ -71,11 +72,22 @@ impl EasyCallback for AsyncHandler {
         stream.read(buf, &self.ctx)
     }
 
+    #[cfg(feature = "async-stream")]
     fn seek(&mut self, whence: std::io::SeekFrom) -> curl::easy::SeekResult {
         let mut state = self.ctx.state.lock().unwrap();
         let Some(stream) = state.req_streams.get_mut(0) else {
             return curl::easy::SeekResult::Fail;
         };
         stream.seek(whence, &self.ctx)
+    }
+
+    #[cfg(not(feature = "async-stream"))]
+    fn read(&mut self, _buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
+        Err(curl::easy::ReadError::Abort)
+    }
+
+    #[cfg(not(feature = "async-stream"))]
+    fn seek(&mut self, _whence: std::io::SeekFrom) -> curl::easy::SeekResult {
+        curl::easy::SeekResult::Fail
     }
 }

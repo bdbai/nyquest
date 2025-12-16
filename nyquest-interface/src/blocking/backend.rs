@@ -6,7 +6,7 @@
 //! Backend developers need to implement the `BlockingBackend` and `BlockingClient` traits,
 //! along with a custom `BlockingResponse` type.
 
-use std::{fmt, io};
+use std::fmt;
 
 use super::Request;
 use crate::client::ClientOptions;
@@ -54,7 +54,7 @@ pub trait BlockingBackend: Send + Sync + 'static {
 /// Backend implementors should design their implementations with the understanding that
 /// these methods may be called only once per response instance, even though the signature allows
 /// multiple calls. The nyquest facade enforces this by consuming the response.
-pub trait BlockingResponse: io::Read + Send + Sync + 'static {
+pub trait BlockingResponse: super::MaybeRead + Send + Sync + 'static {
     /// Provides a textual description of this response.
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BlockingResponse")

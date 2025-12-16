@@ -9,7 +9,9 @@
 ## Features
 
 - `blocking`
+- `blocking-stream`
 - `async`
+- `async-stream`
 - `multipart`
 
 [`nyquest`]: https://docs.rs/nyquest

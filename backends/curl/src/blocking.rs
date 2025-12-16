@@ -1,3 +1,4 @@
+#[cfg(feature = "blocking-stream")]
 use std::io;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
@@ -7,6 +8,7 @@ use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 mod handler;
 mod multi_easy;
+#[cfg(feature = "blocking-stream")]
 mod part_reader;
 mod set;
 
@@ -100,6 +102,7 @@ impl CurlEasyClient {
     }
 }
 
+#[cfg(feature = "blocking-stream")]
 impl io::Read for CurlBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let handle = self.handle.handle_mut();

@@ -12,6 +12,11 @@ use crate::curl_ng::{
     easy::RawEasy, ffi::transform_cow_str_to_c_str, CurlCodeContext, WithCurlCodeContext,
 };
 pub(super) use ffi::CURLOPT_MIMEPOST;
+#[cfg(any(
+    all(feature = "blocking", not(feature = "blocking-stream")),
+    all(feature = "async", not(feature = "async-stream"))
+))]
+pub use part::DummyMimePartReader;
 pub use part::{MimePart, MimePartContent, MimePartReader};
 use raw::RawMime;
 

@@ -22,7 +22,14 @@ pub struct MimePart<R> {
 #[derive(Debug)]
 pub enum MimePartContent<R> {
     Data(Cow<'static, [u8]>),
-    Reader { reader: R, size: Option<i64> },
+    #[cfg_attr(
+        not(any(feature = "blocking-stream", feature = "async-stream")),
+        allow(dead_code)
+    )]
+    Reader {
+        reader: R,
+        size: Option<i64>,
+    },
 }
 
 pub trait MimePartReader {
@@ -69,4 +76,24 @@ pub(super) extern "C" fn free_cb<P: MimePartReader + Send + 'static>(data: *mut 
         let _ = Box::from_raw(data as *mut P);
     })
     .unwrap_or(());
+}
+
+#[cfg(any(
+    all(feature = "blocking", not(feature = "blocking-stream")),
+    all(feature = "async", not(feature = "async-stream"))
+))]
+pub enum DummyMimePartReader {}
+
+#[cfg(any(
+    all(feature = "blocking", not(feature = "blocking-stream")),
+    all(feature = "async", not(feature = "async-stream"))
+))]
+impl MimePartReader for DummyMimePartReader {
+    fn read(&mut self, _: &mut [u8]) -> Result<usize, ReadError> {
+        unreachable!("stream feature is disabled")
+    }
+
+    fn seek(&mut self, _: SeekFrom) -> SeekResult {
+        unreachable!("stream feature is disabled");
+    }
 }

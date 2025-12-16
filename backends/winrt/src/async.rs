@@ -1,14 +1,16 @@
-use std::future::{Future, IntoFuture};
+#[cfg(feature = "async-stream")]
+use std::future::IntoFuture;
 use std::io;
 use std::pin::{pin, Pin};
-use std::task::{ready, Context, Poll};
 
 use nyquest_interface::client::ClientOptions;
-use nyquest_interface::r#async::{futures_io, AsyncBackend, AsyncClient, AsyncResponse, Request};
+use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse, Request};
 use nyquest_interface::Result as NyquestResult;
 use windows::Web::Http::HttpCompletionOption;
+#[cfg(feature = "async-stream")]
 use windows_future::IAsyncOperation;
 
+#[cfg(feature = "async-stream")]
 mod stream_content;
 mod timer_ext;
 
@@ -23,6 +25,7 @@ use timer_ext::AsyncTimeoutExt;
 
 pub struct WinrtAsyncResponse {
     inner: WinrtResponse,
+    #[cfg(feature = "async-stream")]
     load_data_task: Option<<IAsyncOperation<u32> as IntoFuture>::IntoFuture>,
 }
 
@@ -35,10 +38,21 @@ impl crate::WinrtBackend {
 impl WinrtClient {
     async fn send_request_async(&self, req: Request) -> NyquestResult<WinrtAsyncResponse> {
         let req_msg = self.create_request(&req)?;
+        #[cfg(feature = "async-stream")]
         let mut stream_tasks = Default::default();
+        #[cfg(not(feature = "async-stream"))]
+        let stream_tasks = std::future::pending::<()>();
         if let Some(body) = req.body {
             let body = create_body(body, &mut |s| {
-                stream_content::transform_stream(s, &mut stream_tasks)
+                #[cfg(feature = "async-stream")]
+                {
+                    stream_content::transform_stream(s, &mut stream_tasks)
+                }
+                #[cfg(not(feature = "async-stream"))]
+                {
+                    let _ = s;
+                    unreachable!("async-stream feature is disabled")
+                }
             })?;
             self.append_content_headers(&body, &req.additional_headers)?;
             req_msg.SetContent(&body).into_nyquest_result()?;
@@ -59,6 +73,7 @@ impl WinrtClient {
             WinrtResponse::new(res, self.max_response_buffer_size, timer).into_nyquest_result()?;
         Ok(WinrtAsyncResponse {
             inner,
+            #[cfg(feature = "async-stream")]
             load_data_task: None,
         })
     }
@@ -114,12 +129,16 @@ impl AsyncResponse for WinrtAsyncResponse {
     }
 }
 
-impl futures_io::AsyncRead for WinrtAsyncResponse {
+#[cfg(feature = "async-stream")]
+impl nyquest_interface::r#async::futures_io::AsyncRead for WinrtAsyncResponse {
     fn poll_read(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+    ) -> std::task::Poll<io::Result<usize>> {
+        use std::future::Future as _;
+        use std::task::{ready, Poll};
+
         let this = self.get_mut();
         loop {
             if let Some(load_data_task) = this.load_data_task.as_mut() {

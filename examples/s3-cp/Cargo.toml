@@ -5,6 +5,6 @@ edition.workspace = true
 
 [dependencies]
 nyquest = { path = "../..", features = ["blocking"] }
-nyquest-preset = { path = "../../presets/default", features = ["blocking"] }
+nyquest-preset = { path = "../../presets/default", features = ["blocking", "blocking-stream"] }
 rusty-s3 = { version = "0.8", default-features = false }
 mime_guess = { version = "2", default-features = false }

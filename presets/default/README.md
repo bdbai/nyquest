@@ -37,7 +37,9 @@ the documentation of [`nyquest`] for usages.
 ## Features
 
 - `async`: Enable async support for backends and [`nyquest`].
+- `async-stream`: Enable async support and streaming upload/download for backends and [`nyquest`].
 - `blocking`: Enable blocking support for backends and [`nyquest`].
+- `blocking-stream`: Enable blocking support and streaming upload/download for backends and [`nyquest`].
 - `multipart`: Enable multipart form support for backends and [`nyquest`].
 - `auto-register`: Automatically register the backend before program startup using [`ctor`](https://docs.rs/ctor). Recommended to be used in tests and examples.
 

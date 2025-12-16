@@ -173,13 +173,21 @@ impl NSUrlSessionClient {
                     }
                 }
             }
-            let writer = stream_parts.map(|stream_parts| {
-                let input_stream = crate::stream::InputStream::new(waker.clone());
-                nsreq.setHTTPBodyStream(Some(&input_stream));
-                let writer = StreamWriter::new(&input_stream, stream_parts);
-                writer
-            });
-            Ok((self.session.dataTaskWithRequest(&nsreq), writer))
+
+            #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
+            {
+                let writer = stream_parts.map(|stream_parts| {
+                    let input_stream = crate::stream::InputStream::new(waker.clone());
+                    nsreq.setHTTPBodyStream(Some(&input_stream));
+                    let writer = StreamWriter::new(&input_stream, stream_parts);
+                    writer
+                });
+                Ok((self.session.dataTaskWithRequest(&nsreq), writer))
+            }
+            #[cfg(not(any(feature = "async-stream", feature = "blocking-stream")))]
+            {
+                unreachable!("async-stream or blocking-stream feature is required for stream body")
+            }
         }
     }
 }

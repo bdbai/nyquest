@@ -1,11 +1,8 @@
 use std::future::{poll_fn, Future};
-use std::io;
 use std::pin::{pin, Pin};
 use std::sync::OnceLock;
-use std::task::{ready, Context, Poll};
 
 use futures::future::{select, Either};
-use futures::AsyncRead;
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncClient, AsyncResponse, Request};
 use nyquest_interface::Result as NyquestResult;
@@ -15,6 +12,7 @@ use crate::client::ReqwestClient;
 use crate::error::{ReqwestBackendError, Result};
 use crate::response::ReqwestResponse;
 
+#[cfg(feature = "async-stream")]
 mod stream;
 
 #[derive(Clone)]
@@ -37,15 +35,24 @@ impl AsyncClient for ReqwestAsyncClient {
     }
 
     async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
+        #[cfg(feature = "async-stream")]
         let mut stream_task_collection = stream::StreamTaskCollection::default();
         let request_builder = self.inner.request(req, |stream| {
-            use nyquest_interface::r#async::BoxedStream;
-            let size = match &stream {
-                BoxedStream::Sized { content_length, .. } => Some(*content_length),
-                BoxedStream::Unsized { .. } => None,
-            };
-            let stream = stream_task_collection.add_stream(stream);
-            (reqwest::Body::wrap(stream), size)
+            #[cfg(feature = "async-stream")]
+            {
+                use nyquest_interface::r#async::BoxedStream;
+                let size = match &stream {
+                    BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                    BoxedStream::Unsized { .. } => None,
+                };
+                let stream = stream_task_collection.add_stream(stream);
+                (reqwest::Body::wrap(stream), size)
+            }
+            #[cfg(not(feature = "async-stream"))]
+            {
+                let _ = stream;
+                unreachable!("async-stream feature is disabled")
+            }
         })?;
 
         // Execute the request using shared runtime handling
@@ -58,6 +65,9 @@ impl AsyncClient for ReqwestAsyncClient {
                     .map_err(ReqwestBackendError::Reqwest)
             }
         ));
+        #[cfg(not(feature = "async-stream"))]
+        let stream_task = std::future::pending::<()>();
+        #[cfg(feature = "async-stream")]
         let stream_task = pin!(stream_task_collection.execute());
         let (response, handle) = if let Either::Left((res, _)) = select(req_task, stream_task).await
         {
@@ -172,12 +182,15 @@ impl AsyncResponse for ReqwestAsyncResponse {
     }
 }
 
-impl AsyncRead for ReqwestAsyncResponse {
+#[cfg(feature = "async-stream")]
+impl futures::AsyncRead for ReqwestAsyncResponse {
     fn poll_read(
         mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        use std::task::{ready, Poll};
+
         loop {
             let written = self.response.write_to(buf)?;
             if written > 0 {

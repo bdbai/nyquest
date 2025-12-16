@@ -9,7 +9,9 @@ UWP/WinRT [`HttpClient`](https://learn.microsoft.com/en-us/uwp/api/Windows.Web.H
 ## Features
 
 - `blocking`
+- `blocking-stream`
 - `async`
+- `async-stream`
 - `multipart`
 
 [`nyquest`]: https://docs.rs/nyquest

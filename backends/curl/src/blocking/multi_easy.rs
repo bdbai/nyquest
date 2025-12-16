@@ -2,11 +2,10 @@ use std::mem::ManuallyDrop;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 
-use nyquest_interface::blocking::{BoxedStream, Request};
+use nyquest_interface::blocking::Request;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 use crate::blocking::handler::BlockingHandler;
-use crate::blocking::part_reader::BlockingPartReader;
 use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
 use crate::curl_ng::mime::MimePartContent;
 use crate::curl_ng::multi::{MultiWithSet, RawMulti};
@@ -115,12 +114,17 @@ impl MultiEasy {
         .map(|_| ())
     }
 
+    #[cfg(feature = "blocking-stream")]
     pub fn populate_request(
         &mut self,
         url: &str,
         req: Request,
         options: &nyquest_interface::client::ClientOptions,
     ) -> NyquestResult<()> {
+        use nyquest_interface::blocking::BoxedStream;
+
+        use crate::blocking::part_reader::BlockingPartReader;
+
         self.with_detached_easy(|easy| {
             crate::request::populate_request(
                 url,
@@ -145,6 +149,30 @@ impl MultiEasy {
                         reader: BlockingPartReader::new(stream),
                         size,
                     }
+                },
+            )?;
+            Ok(())
+        })
+    }
+
+    #[cfg(not(feature = "blocking-stream"))]
+    pub fn populate_request(
+        &mut self,
+        url: &str,
+        req: Request,
+        options: &nyquest_interface::client::ClientOptions,
+    ) -> NyquestResult<()> {
+        self.with_detached_easy(|easy| {
+            use crate::curl_ng::mime::DummyMimePartReader;
+
+            crate::request::populate_request(
+                url,
+                req,
+                options,
+                easy,
+                |_, _| Ok(()),
+                |_| -> MimePartContent<DummyMimePartReader> {
+                    unreachable!("blocking-stream feature is disabled")
                 },
             )?;
             Ok(())
@@ -180,6 +208,7 @@ impl MultiEasy {
         .map(|_| ())
     }
 
+    #[cfg(feature = "blocking-stream")]
     pub fn poll_bytes<T>(&mut self, cb: impl FnOnce(&mut Vec<u8>) -> T) -> NyquestResult<T> {
         let mut easy = self.easy_mut();
         let buffer = &mut easy.as_callback_mut().state.response_buffer;
@@ -201,6 +230,7 @@ impl MultiEasy {
         std::mem::take(&mut self.easy_mut().as_callback_mut().state.response_buffer)
     }
 
+    #[cfg(feature = "blocking-stream")]
     pub fn with_response_buffer_mut<T>(&mut self, f: impl FnOnce(&mut Vec<u8>) -> T) -> T {
         f(&mut self.easy_mut().as_callback_mut().state.response_buffer)
     }

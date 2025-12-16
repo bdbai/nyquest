@@ -16,6 +16,7 @@ use crate::error::ReqwestBackendError;
 pub(crate) struct ReqwestResponse {
     parts: Parts,
     body: Pin<Box<reqwest::Body>>,
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     buffer: Bytes,
     max_response_buffer_size: Option<u64>,
 }
@@ -28,6 +29,7 @@ impl ReqwestResponse {
         Self {
             parts,
             body: Box::pin(body),
+            #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
             buffer: Bytes::new(),
             max_response_buffer_size,
         }
@@ -90,6 +92,7 @@ impl ReqwestResponse {
         Ok(bufs.concat())
     }
 
+    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     pub fn write_to(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let to_write = buf.len().min(self.buffer.len());
         if to_write > 0 {
@@ -113,7 +116,7 @@ impl ReqwestResponse {
         poll_fn(|cx| self.poll_receive_data_frame(cx)).await
     }
 
-    #[cfg(feature = "async")]
+    #[cfg(feature = "async-stream")]
     pub fn poll_receive_data_frame_buffered(
         &mut self,
         cx: &mut Context<'_>,
@@ -124,7 +127,7 @@ impl ReqwestResponse {
         Poll::Ready(Ok(len))
     }
 
-    #[cfg(feature = "blocking")]
+    #[cfg(feature = "blocking-stream")]
     pub async fn receive_data_frame_buffered(&mut self) -> io::Result<usize> {
         let buffer = self.receive_data_frame().await?.unwrap_or_default();
         let len = buffer.len();

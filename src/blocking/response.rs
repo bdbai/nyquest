@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use nyquest_interface::blocking::AnyBlockingResponse;
 
+#[cfg(feature = "blocking-stream")]
 use super::ReadStream;
 use crate::StatusCode;
 
@@ -78,6 +79,8 @@ impl Response {
     }
 
     /// Turn the response body into a [`std::io::Read`] stream.
+    #[cfg(feature = "blocking-stream")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "blocking-stream")))]
     pub fn into_read(self) -> ReadStream {
         ReadStream::new(self.inner)
     }
