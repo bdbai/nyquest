@@ -261,7 +261,6 @@ mod tests {
 
     #[test]
     #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
-
     fn test_multipart_unsized_upload() {
         const PATH: &str = "requests/multipart_unsized_upload";
 
