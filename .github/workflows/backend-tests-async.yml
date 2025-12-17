@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-linux:
+  test-async-linux:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,7 +18,7 @@ jobs:
       - name: Test curl
         run: cargo test -p nyquest-backend-tests --verbose --features async,curl,multipart
 
-  test-windows:
+  test-async-windows:
     runs-on: windows-latest
 
     steps:
@@ -26,7 +26,7 @@ jobs:
       - name: Test winrt
         run: cargo test -p nyquest-backend-tests --verbose --features async,winrt,multipart
 
-  test-macos:
+  test-async-macos:
     runs-on: macos-latest
 
     steps:
@@ -34,7 +34,7 @@ jobs:
       - name: Test nsurlsession
         run: cargo test -p nyquest-backend-tests --verbose --features async,nsurlsession,multipart
 
-  test-reqwest:
+  test-async-reqwest:
     runs-on: ubuntu-latest
 
     steps:

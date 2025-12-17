@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-linux:
+  test-blocking-linux:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,7 +18,7 @@ jobs:
       - name: Test curl
         run: cargo test -p nyquest-backend-tests --verbose --features blocking,curl,multipart
 
-  test-windows:
+  test-blocking-windows:
     runs-on: windows-latest
 
     steps:
@@ -26,7 +26,7 @@ jobs:
       - name: Test winrt
         run: cargo test -p nyquest-backend-tests --verbose --features blocking,winrt,multipart
 
-  test-macos:
+  test-blocking-macos:
     runs-on: macos-latest
 
     steps:
@@ -34,7 +34,7 @@ jobs:
       - name: Test nsurlsession
         run: cargo test -p nyquest-backend-tests --verbose --features blocking,nsurlsession,multipart
   
-  test-reqwest:
+  test-blocking-reqwest:
     runs-on: ubuntu-latest
 
     steps:

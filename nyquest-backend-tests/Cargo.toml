@@ -18,6 +18,7 @@ async = [
     "nyquest-backend-reqwest?/async",
 ]
 async-stream = [
+    "async",
     "nyquest/async-stream",
     "nyquest-backend-winrt?/async-stream",
     "nyquest-backend-curl?/async-stream",
@@ -32,6 +33,7 @@ blocking = [
     "nyquest-backend-reqwest?/blocking",
 ]
 blocking-stream = [
+    "blocking",
     "nyquest/blocking-stream",
     "nyquest-backend-winrt?/blocking-stream",
     "nyquest-backend-curl?/blocking-stream",

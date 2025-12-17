@@ -19,6 +19,7 @@ async = [
     "nyquest-backend-nsurlsession/async",
 ]
 async-stream = [
+    "async",
     "nyquest/async-stream",
     "nyquest-backend-curl/async-stream",
     "nyquest-backend-winrt/async-stream",
@@ -31,6 +32,7 @@ blocking = [
     "nyquest-backend-nsurlsession/blocking",
 ]
 blocking-stream = [
+    "blocking",
     "nyquest/blocking-stream",
     "nyquest-backend-curl/blocking-stream",
     "nyquest-backend-winrt/blocking-stream",
