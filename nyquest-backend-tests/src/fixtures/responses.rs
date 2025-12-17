@@ -206,7 +206,7 @@ mod tests {
                 }
             }
         });
-        #[cfg(feature = "blocking")]
+        #[cfg(feature = "blocking-stream")]
         {
             let builder = crate::init_builder_blocking()
                 .unwrap()
@@ -237,7 +237,7 @@ mod tests {
             drop(blocking_tx);
             assert_eq!(read.read(&mut buf).unwrap(), 0);
         }
-        #[cfg(feature = "async")]
+        #[cfg(feature = "async-stream")]
         {
             TOKIO_RT.block_on(async {
                 let builder = crate::init_builder()

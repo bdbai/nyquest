@@ -1,4 +1,4 @@
-name: Test backends (async)
+name: Test backends (blocking)
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test curl
-        run: cargo test -p nyquest-backend-tests --verbose --features async,curl,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,curl,multipart
 
   test-windows:
     runs-on: windows-latest
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test winrt
-        run: cargo test -p nyquest-backend-tests --verbose --features async,winrt,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,winrt,multipart
 
   test-macos:
     runs-on: macos-latest
@@ -32,12 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test nsurlsession
-        run: cargo test -p nyquest-backend-tests --verbose --features async,nsurlsession,multipart
-
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,nsurlsession,multipart
+  
   test-reqwest:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test reqwest
-        run: cargo test -p nyquest-backend-tests --verbose --features async,reqwest,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,reqwest,multipart
