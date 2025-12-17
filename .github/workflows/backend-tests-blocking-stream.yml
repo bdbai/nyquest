@@ -10,34 +10,34 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-blocking-linux:
+  test-blocking-stream-linux:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test curl
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking,curl,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,curl,multipart
 
-  test-blocking-windows:
+  test-blocking-stream-windows:
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test winrt
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking,winrt,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,winrt,multipart
 
-  test-blocking-macos:
+  test-blocking-stream-macos:
     runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test nsurlsession
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking,nsurlsession,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,nsurlsession,multipart
   
-  test-blocking-reqwest:
+  test-blocking-stream-reqwest:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test reqwest
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking,reqwest,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,reqwest,multipart

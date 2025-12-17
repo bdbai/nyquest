@@ -274,7 +274,7 @@ mod tests {
             }
         });
 
-        #[cfg(feature = "blocking")]
+        #[cfg(feature = "blocking-stream")]
         {
             let builder = crate::init_builder_blocking().unwrap();
             let client = builder.build_blocking().unwrap();
@@ -285,7 +285,7 @@ mod tests {
             assert_eq!(response.status(), 200);
         }
 
-        #[cfg(feature = "async")]
+        #[cfg(feature = "async-stream")]
         {
             TOKIO_RT.block_on(async {
                 let builder = crate::init_builder().await.unwrap();
@@ -325,7 +325,7 @@ mod tests {
             }
         });
 
-        #[cfg(feature = "blocking")]
+        #[cfg(feature = "blocking-stream")]
         {
             let builder = crate::init_builder_blocking().unwrap();
             let client = builder.build_blocking().unwrap();
@@ -336,7 +336,7 @@ mod tests {
             assert_eq!(response.status(), 200);
         }
 
-        #[cfg(feature = "async")]
+        #[cfg(feature = "async-stream")]
         {
             TOKIO_RT.block_on(async {
                 let builder = crate::init_builder().await.unwrap();
@@ -382,7 +382,7 @@ mod tests {
             }
         });
 
-        #[cfg(feature = "blocking")]
+        #[cfg(feature = "blocking-stream")]
         {
             let builder = crate::init_builder_blocking().unwrap();
             let client = builder.build_blocking().unwrap();
@@ -393,7 +393,7 @@ mod tests {
             assert_eq!(response.status(), 200);
         }
 
-        #[cfg(feature = "async")]
+        #[cfg(feature = "async-stream")]
         {
             TOKIO_RT.block_on(async {
                 let builder = crate::init_builder().await.unwrap();

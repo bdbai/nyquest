@@ -207,7 +207,7 @@ mod tests {
 
         let _handle = crate::add_hyper_fixture(PATH, echo_server_fixture);
 
-        #[cfg(feature = "blocking")]
+        #[cfg(feature = "blocking-stream")]
         {
             let builder = crate::init_builder_blocking().unwrap();
             let client = builder.build_blocking().unwrap();
@@ -230,7 +230,7 @@ mod tests {
             );
         }
 
-        #[cfg(feature = "async")]
+        #[cfg(feature = "async-stream")]
         {
             let (content_type, res) = TOKIO_RT.block_on(async {
                 let builder = crate::init_builder().await.unwrap();
@@ -266,7 +266,7 @@ mod tests {
 
         let _handle = crate::add_hyper_fixture(PATH, echo_server_fixture);
 
-        #[cfg(feature = "blocking")]
+        #[cfg(feature = "blocking-stream")]
         {
             let builder = crate::init_builder_blocking().unwrap();
             let client = builder.build_blocking().unwrap();
@@ -289,7 +289,7 @@ mod tests {
             );
         }
 
-        #[cfg(feature = "async")]
+        #[cfg(feature = "async-stream")]
         {
             let (content_type, res) = TOKIO_RT.block_on(async {
                 let builder = crate::init_builder().await.unwrap();

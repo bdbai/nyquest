@@ -10,34 +10,34 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-async-linux:
+  test-async-stream-linux:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test curl
-        run: cargo test -p nyquest-backend-tests --verbose --features async,curl,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,curl,multipart
 
-  test-async-windows:
+  test-async-stream-windows:
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test winrt
-        run: cargo test -p nyquest-backend-tests --verbose --features async,winrt,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,winrt,multipart
 
-  test-async-macos:
+  test-async-stream-macos:
     runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test nsurlsession
-        run: cargo test -p nyquest-backend-tests --verbose --features async,nsurlsession,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,nsurlsession,multipart
 
-  test-async-reqwest:
+  test-async-stream-reqwest:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test reqwest
-        run: cargo test -p nyquest-backend-tests --verbose --features async,reqwest,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,reqwest,multipart
