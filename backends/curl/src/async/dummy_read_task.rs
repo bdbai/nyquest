@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use nyquest_interface::Error as NyquestError;
 
 use crate::curl_ng::{
@@ -19,10 +21,7 @@ impl ReadTaskCollection {
         unreachable!("async-stream feature is disabled")
     }
 
-    pub fn execute(
-        &self,
-        _: &impl Send,
-    ) -> impl futures_util::Future<Output = Result<(), NyquestError>> + Send {
-        async { Ok(()) }
+    pub fn execute(&self, _: &impl Send) -> impl Future<Output = Result<(), NyquestError>> + Send {
+        std::future::pending()
     }
 }

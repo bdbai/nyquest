@@ -119,7 +119,7 @@ impl NSUrlSessionClient {
                     &NSString::from_str(name),
                 );
             }
-            let mut stream_parts = None;
+            let mut stream_parts = vec![];
             if let Some(body) = req.body {
                 match body {
                     Body::Bytes {
@@ -153,7 +153,7 @@ impl NSUrlSessionClient {
                             Some(&NSString::from_str(&content_type)),
                             ns_string!("content-type"),
                         );
-                        stream_parts = Some(generate_multipart_body(&boundary, parts));
+                        stream_parts = generate_multipart_body(&boundary, parts);
                     }
                     Body::Stream {
                         stream,
@@ -169,20 +169,25 @@ impl NSUrlSessionClient {
                                 ns_string!("content-length"),
                             );
                         }
-                        stream_parts = Some(vec![DataOrStream::Stream(stream)]);
+                        stream_parts = vec![DataOrStream::Stream(stream)];
                     }
                 }
             }
 
+            match stream_parts.split_first_mut() {
+                None => return Ok((self.session.dataTaskWithRequest(&nsreq), None)),
+                Some((DataOrStream::Data(first_data), [])) => {
+                    nsreq.setHTTPBody(Some(&NSData::from_vec(std::mem::take(first_data))));
+                    return Ok((self.session.dataTaskWithRequest(&nsreq), None));
+                }
+                _ => {}
+            };
             #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
             {
-                let writer = stream_parts.map(|stream_parts| {
-                    let input_stream = crate::stream::InputStream::new(waker.clone());
-                    nsreq.setHTTPBodyStream(Some(&input_stream));
-                    let writer = StreamWriter::new(&input_stream, stream_parts);
-                    writer
-                });
-                Ok((self.session.dataTaskWithRequest(&nsreq), writer))
+                let input_stream = crate::stream::InputStream::new(waker.clone());
+                nsreq.setHTTPBodyStream(Some(&input_stream));
+                let writer = StreamWriter::new(&input_stream, stream_parts);
+                Ok((self.session.dataTaskWithRequest(&nsreq), Some(writer)))
             }
             #[cfg(not(any(feature = "async-stream", feature = "blocking-stream")))]
             {
