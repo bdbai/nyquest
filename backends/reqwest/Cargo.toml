@@ -1,7 +1,7 @@
 [package]
 name = "nyquest-backend-reqwest"
 description = "reqwest backend for nyquest HTTP client library"
-version = "0.1.0"
+version = "0.2.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -28,7 +28,7 @@ native-tls = ["reqwest/native-tls"]
 rustls-tls-minimal = ["reqwest/rustls-tls-manual-roots-no-provider"]
 
 [dependencies]
-nyquest-interface = { version = "0.3.0", path = "../../nyquest-interface", default-features = false }
+nyquest-interface = { version = "0.4.0", path = "../../nyquest-interface", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["cookies"] }
 cfg-if.workspace = true
 thiserror.workspace = true

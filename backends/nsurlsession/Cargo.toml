@@ -1,7 +1,7 @@
 [package]
 name = "nyquest-backend-nsurlsession"
 description = "NSURLSession backend for nyquest"
-version = "0.3.1"
+version = "0.4.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -24,7 +24,7 @@ blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
 multipart = ["nyquest-interface/multipart"]
 
 [dependencies]
-nyquest-interface = { version = "0.3.0", path = "../../nyquest-interface", default-features = false }
+nyquest-interface = { version = "0.4.0", path = "../../nyquest-interface", default-features = false }
 cfg-if.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]

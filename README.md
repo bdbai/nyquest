@@ -48,6 +48,7 @@ On top of the `nyquest-interface` crate and backend crates, the `nyquest` crate 
   - `nyquest-backend-libcurl`: libcurl
   - `nyquest-backend-winrt`: UWP/WinRT [HttpClient](https://learn.microsoft.com/en-us/uwp/api/Windows.Web.Http.HttpClient)
   - `nyquest-backend-nsurlsession`: `NSURLSession`
+  - `nyquest-backend-reqwest`: reqwest (with WASM support)
 - `nyquest-backend-tests`: The test framework for Nyquest backends going through `nyquest`.
 
 ## Roadmap
