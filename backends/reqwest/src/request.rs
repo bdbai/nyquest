@@ -164,6 +164,8 @@ impl ReqwestClient {
 
     #[cfg(target_arch = "wasm32")]
     fn build_request_wasm(&self, mut builder: RequestBuilder) -> RequestBuilder {
+        use nyquest_interface::client::CachingBehavior;
+
         if let Some(timeout) = self.wasm_options.request_timeout {
             builder = builder.timeout(timeout);
         }
@@ -173,8 +175,8 @@ impl ReqwestClient {
             builder.fetch_credentials_omit()
         };
         match self.wasm_options.caching_behavior {
-            nyquest_interface::CachingBehavior::Disabled => builder.fetch_cache_no_store(),
-            nyquest_interface::CachingBehavior::BestEffort => builder.fetch_cache_default(),
+            CachingBehavior::Disabled => builder.fetch_cache_no_store(),
+            CachingBehavior::BestEffort => builder.fetch_cache_default(),
         }
     }
 }
