@@ -156,9 +156,27 @@ impl ReqwestClient {
         let mut builder =
             build_request_generic(&self.client, self.base_url.as_ref(), req, transform_stream)?;
         #[cfg(target_arch = "wasm32")]
-        if let Some(timeout) = self.timeout {
-            builder = builder.timeout(timeout);
+        {
+            builder = self.build_request_wasm(builder);
         }
         Ok(builder)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn build_request_wasm(&self, mut builder: RequestBuilder) -> RequestBuilder {
+        use nyquest_interface::client::CachingBehavior;
+
+        if let Some(timeout) = self.wasm_options.request_timeout {
+            builder = builder.timeout(timeout);
+        }
+        builder = if self.wasm_options.use_cookies {
+            builder.fetch_credentials_include()
+        } else {
+            builder.fetch_credentials_omit()
+        };
+        match self.wasm_options.caching_behavior {
+            CachingBehavior::Disabled => builder.fetch_cache_no_store(),
+            CachingBehavior::BestEffort => builder.fetch_cache_default(),
+        }
     }
 }

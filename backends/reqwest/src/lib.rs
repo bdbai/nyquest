@@ -14,8 +14,11 @@ cfg_if::cfg_if! {
             #[cfg(feature = "blocking")]
             #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
             mod blocking;
+            mod options;
             mod response;
             mod send_wrapper;
+
+            pub(crate) use options::WasmOptions;
         }
     } else {
         #[cfg(feature = "async")]
