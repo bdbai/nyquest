@@ -14,7 +14,7 @@ pub struct ReqwestClient {
     pub(crate) base_url: Option<Url>,
     pub(crate) max_response_buffer_size: Option<u64>,
     #[cfg(target_arch = "wasm32")]
-    pub(crate) timeout: Option<std::time::Duration>,
+    pub(crate) wasm_options: crate::wasm::WasmOptions,
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) managed_runtime: Arc<OnceLock<tokio::runtime::Runtime>>,
 }
@@ -39,7 +39,11 @@ impl ReqwestClient {
             base_url,
             max_response_buffer_size: options.max_response_buffer_size,
             #[cfg(target_arch = "wasm32")]
-            timeout: options.request_timeout,
+            wasm_options: crate::wasm::WasmOptions {
+                request_timeout: options.request_timeout,
+                caching_behavior: options.caching_behavior,
+                use_cookies: options.use_cookies,
+            },
             #[cfg(not(target_arch = "wasm32"))]
             managed_runtime: Arc::new(OnceLock::new()),
         })
