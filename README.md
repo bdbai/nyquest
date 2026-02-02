@@ -53,7 +53,7 @@ On top of the `nyquest-interface` crate and backend crates, the `nyquest` crate 
 
 ## Roadmap
 
-Nyquest is still at POC stage. We want to keep Nyquest itself as a greatest common divisor for all backends, therefore the API surface is subject to change along with the development of backends.
+We want to keep Nyquest itself as a greatest common divisor for all backends, therefore the API surface is subject to change along with the development of backends.
 
 The following items are planned in MVP:
 
