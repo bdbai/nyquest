@@ -1,0 +1,202 @@
+//! Request building utilities for WinHTTP backend.
+
+use std::borrow::Cow;
+
+use nyquest_interface::{Body, Method};
+
+use crate::error::Result;
+use crate::handle::{ConnectionHandle, RequestHandle};
+use crate::session::WinHttpSession;
+use crate::url::ParsedUrl;
+
+/// Prepared request body data.
+pub(crate) enum PreparedBody {
+    /// No body
+    None,
+    /// Complete body data
+    Complete(Vec<u8>),
+    /// Streaming body with content type
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+    Stream { content_type: String },
+}
+
+/// Prepares headers string from request additional_headers only.
+pub(crate) fn prepare_additional_headers(
+    additional_headers: &[(Cow<'static, str>, Cow<'static, str>)],
+    options: &nyquest_interface::client::ClientOptions,
+    body: &PreparedBody,
+) -> String {
+    let mut headers = String::new();
+
+    // Add default headers
+    for (name, value) in &options.default_headers {
+        // Skip if overridden in additional_headers
+        if !additional_headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case(name))
+        {
+            headers.push_str(name);
+            headers.push_str(": ");
+            headers.push_str(value);
+            headers.push_str("\r\n");
+        }
+    }
+
+    // Add request-specific headers
+    for (name, value) in additional_headers {
+        headers.push_str(name);
+        headers.push_str(": ");
+        headers.push_str(value);
+        headers.push_str("\r\n");
+    }
+
+    // Add Content-Type if needed
+    match body {
+        PreparedBody::Complete(_) => {
+            // Content-Type is handled when preparing body
+        }
+        #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+        PreparedBody::Stream { content_type, .. } => {
+            if !additional_headers
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+            {
+                headers.push_str("Content-Type: ");
+                headers.push_str(content_type);
+                headers.push_str("\r\n");
+            }
+        }
+        PreparedBody::None => {}
+    }
+
+    headers
+}
+
+/// Prepares the request body.
+pub(crate) fn prepare_body<S>(
+    body: Option<Body<S>>,
+    headers: &mut String,
+) -> (PreparedBody, Option<S>) {
+    match body {
+        None => (PreparedBody::None, None),
+        Some(Body::Bytes {
+            content,
+            content_type,
+        }) => {
+            headers.push_str("Content-Type: ");
+            headers.push_str(&content_type);
+            headers.push_str("\r\n");
+            (PreparedBody::Complete(content.into_owned()), None)
+        }
+        Some(Body::Form { fields }) => {
+            headers.push_str("Content-Type: application/x-www-form-urlencoded\r\n");
+            let encoded = encode_form_fields(&fields);
+            (PreparedBody::Complete(encoded.into_bytes()), None)
+        }
+        #[cfg(feature = "multipart")]
+        Some(Body::Multipart { parts }) => {
+            let boundary = crate::multipart::generate_multipart_boundary();
+            headers.push_str("Content-Type: multipart/form-data; boundary=");
+            headers.push_str(&boundary);
+            headers.push_str("\r\n");
+            let body_data = crate::multipart::generate_multipart_body(&boundary, parts);
+            (PreparedBody::Complete(body_data), None)
+        }
+        Some(Body::Stream {
+            stream,
+            content_type,
+        }) => {
+            #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+            {
+                (
+                    PreparedBody::Stream {
+                        content_type: content_type.into_owned(),
+                    },
+                    Some(stream),
+                )
+            }
+            #[cfg(not(any(feature = "blocking-stream", feature = "async-stream")))]
+            {
+                let _ = (stream, content_type);
+                unreachable!("streaming requires stream feature")
+            }
+        }
+    }
+}
+
+/// URL-encodes form fields.
+fn encode_form_fields(fields: &[(Cow<'static, str>, Cow<'static, str>)]) -> String {
+    let mut result = String::new();
+    for (i, (key, value)) in fields.iter().enumerate() {
+        if i > 0 {
+            result.push('&');
+        }
+        result.push_str(&url_encode(key));
+        result.push('=');
+        result.push_str(&url_encode(value));
+    }
+    result
+}
+
+/// Simple URL encoding for form data (application/x-www-form-urlencoded).
+/// Spaces are encoded as '+' per the application/x-www-form-urlencoded format.
+fn url_encode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => result.push(c),
+            ' ' => result.push('+'),
+            _ => {
+                for b in c.to_string().as_bytes() {
+                    result.push_str(&format!("%{:02X}", b));
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Converts nyquest Method to HTTP method string.
+pub(crate) fn method_to_str(method: &Method) -> &str {
+    match method {
+        Method::Get => "GET",
+        Method::Post => "POST",
+        Method::Put => "PUT",
+        Method::Delete => "DELETE",
+        Method::Patch => "PATCH",
+        Method::Head => "HEAD",
+        Method::Other(m) => m,
+    }
+}
+
+/// Creates connection and request handles for the given URL.
+pub(crate) fn create_request(
+    session: &WinHttpSession,
+    parsed_url: &ParsedUrl,
+    method: &str,
+) -> Result<(ConnectionHandle, RequestHandle)> {
+    let connection =
+        ConnectionHandle::connect(&session.session, &parsed_url.host, parsed_url.port)?;
+    let request = RequestHandle::open(&connection, method, &parsed_url.path, parsed_url.is_secure)?;
+
+    // Apply per-request options
+    if session.options.ignore_certificate_errors && parsed_url.is_secure {
+        request.ignore_certificate_errors()?;
+    }
+
+    if !session.options.use_cookies {
+        request.disable_cookies()?;
+    }
+
+    if !session.options.follow_redirects {
+        request.disable_redirects()?;
+    }
+
+    // Set receive response timeout at the request level for more reliable timeout behavior
+    if let Some(timeout) = session.options.request_timeout {
+        let timeout_ms = timeout.as_millis() as u32;
+        request.set_receive_response_timeout(timeout_ms)?;
+    }
+
+    Ok((connection, request))
+}

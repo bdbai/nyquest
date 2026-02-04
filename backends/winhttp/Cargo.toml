@@ -1,0 +1,40 @@
+[package]
+name = "nyquest-backend-winhttp"
+description = "WinHTTP backend for nyquest"
+version = "0.1.0"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+exclude.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+async = ["nyquest-interface/async", "dep:futures-channel"]
+async-stream = ["async", "nyquest-interface/async-stream"]
+blocking = ["nyquest-interface/blocking"]
+blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
+multipart = ["nyquest-interface/multipart"]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinHttp",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+] }
+
+[dependencies]
+nyquest-interface = { version = "0.4.0", path = "../../nyquest-interface", default-features = false }
+cfg-if.workspace = true
+futures-channel = { version = "0.3", optional = true, default-features = false, features = [
+    "alloc",
+] }
