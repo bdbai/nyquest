@@ -26,6 +26,14 @@ jobs:
       - name: Test winrt
         run: cargo test -p nyquest-backend-tests --verbose --features async-stream,winrt,multipart
 
+  test-async-stream-windows-winhttp:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test winhttp
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,winhttp,multipart
+
   test-async-stream-macos:
     runs-on: macos-latest
 

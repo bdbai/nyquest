@@ -1252,9 +1252,20 @@ dependencies = [
  "nyquest-backend-curl",
  "nyquest-backend-nsurlsession",
  "nyquest-backend-reqwest",
+ "nyquest-backend-winhttp",
  "nyquest-backend-winrt",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "nyquest-backend-winhttp"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "futures-channel",
+ "nyquest-interface",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
