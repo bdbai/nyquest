@@ -18,7 +18,7 @@ jobs:
       - name: Test curl
         run: cargo test -p nyquest-backend-tests --verbose --features blocking,curl,multipart
 
-  test-blocking-windows:
+  test-blocking-windows-winrt:
     runs-on: windows-latest
 
     steps:

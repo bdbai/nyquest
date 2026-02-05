@@ -18,7 +18,7 @@ jobs:
       - name: Test curl
         run: cargo test -p nyquest-backend-tests --verbose --features async,curl,multipart
 
-  test-async-windows:
+  test-async-windows-winrt:
     runs-on: windows-latest
 
     steps:

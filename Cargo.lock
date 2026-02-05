@@ -1265,6 +1265,7 @@ dependencies = [
  "cfg-if",
  "futures-channel",
  "nyquest-interface",
+ "widestring",
  "windows-sys 0.59.0",
 ]
 

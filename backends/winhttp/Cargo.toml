@@ -38,3 +38,4 @@ cfg-if.workspace = true
 futures-channel = { version = "0.3", optional = true, default-features = false, features = [
     "alloc",
 ] }
+widestring = { version = "1", default-features = false }
