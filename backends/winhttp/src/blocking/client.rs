@@ -10,7 +10,7 @@ use super::response::WinHttpBlockingResponse;
 use crate::error::WinHttpResultExt;
 use crate::handle::RequestHandle;
 use crate::request::{
-    create_request, method_to_str, prepare_additional_headers, prepare_body, PreparedBody,
+    create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
 use crate::session::WinHttpSession;
 use crate::url::{concat_url, ParsedUrl};
@@ -49,11 +49,11 @@ impl BlockingClient for WinHttpBlockingClient {
         let url = concat_url(self.session.options.base_url.as_deref(), &req.relative_uri);
         let parsed_url = ParsedUrl::parse(&url).ok_or(nyquest_interface::Error::InvalidUrl)?;
 
-        let method = method_to_str(&req.method);
+        let method = method_to_cwstr(&req.method);
 
         // Create connection and request handles
         let (connection, request) =
-            create_request(&self.session, &parsed_url, method).into_nyquest()?;
+            create_request(&self.session, &parsed_url, &method).into_nyquest()?;
 
         // Store additional headers before consuming body
         let additional_headers = req.additional_headers.clone();

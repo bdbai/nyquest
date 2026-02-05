@@ -16,7 +16,7 @@ use super::response::WinHttpAsyncResponse;
 use super::threadpool::ThreadpoolTask;
 use crate::error::{WinHttpError, WinHttpResultExt};
 use crate::request::{
-    create_request, method_to_str, prepare_additional_headers, prepare_body, PreparedBody,
+    create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
 use crate::session::WinHttpSession;
 use crate::url::{concat_url, ParsedUrl};
@@ -50,7 +50,7 @@ impl AsyncClient for WinHttpAsyncClient {
             let url = concat_url(session.options.base_url.as_deref(), &req.relative_uri);
             let parsed_url = ParsedUrl::parse(&url).ok_or(nyquest_interface::Error::InvalidUrl)?;
 
-            let method = method_to_str(&req.method);
+            let method = method_to_cwstr(&req.method);
 
             // Store additional headers before consuming body
             let additional_headers = req.additional_headers.clone();
@@ -71,9 +71,8 @@ impl AsyncClient for WinHttpAsyncClient {
             let (setup_tx, setup_rx) = oneshot::channel::<Result<(), WinHttpError>>();
 
             // Clone data needed for the threadpool callback
-            let session_clone = session.clone();
+            let max_response_buffer_size = session.max_response_buffer_size();
             let parsed_url_owned = parsed_url;
-            let method_owned = method.to_string();
             let headers_owned = headers_str;
             let body_data = match &prepared_body {
                 PreparedBody::None => None,
@@ -89,10 +88,10 @@ impl AsyncClient for WinHttpAsyncClient {
             let task = ThreadpoolTask::new(&ctx);
             task.submit(move |ctx| {
                 let result = setup_and_send_request(
-                    &session_clone,
+                    &session,
                     &ctx,
                     &parsed_url_owned,
-                    &method_owned,
+                    &method,
                     &headers_owned,
                 );
                 let _ = setup_tx.send(result);
@@ -119,7 +118,7 @@ impl AsyncClient for WinHttpAsyncClient {
                 status,
                 content_length,
                 headers,
-                session.max_response_buffer_size(),
+                max_response_buffer_size,
             ))
         }
     }
@@ -133,12 +132,11 @@ fn setup_and_send_request(
     session: &WinHttpSession,
     ctx: &RequestContext,
     parsed_url: &ParsedUrl,
-    method: &str,
+    method_cwstr: &[u16],
     headers: &str,
 ) -> Result<(), WinHttpError> {
     // Create connection and request handles
-    let (connection, request) = create_request(session, parsed_url, method)?;
-
+    let (connection, request) = create_request(session, parsed_url, method_cwstr)?;
     // Add headers
     if !headers.is_empty() {
         request.add_headers(headers)?;

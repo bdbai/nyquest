@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 
 use nyquest_interface::{Body, Method};
+use widestring::u16cstr;
 
 use crate::error::Result;
 use crate::handle::{ConnectionHandle, RequestHandle};
@@ -157,27 +158,34 @@ fn url_encode(s: &str) -> String {
 }
 
 /// Converts nyquest Method to HTTP method string.
-pub(crate) fn method_to_str(method: &Method) -> &str {
+pub(crate) fn method_to_cwstr(method: &Method) -> Cow<'static, [u16]> {
     match method {
-        Method::Get => "GET",
-        Method::Post => "POST",
-        Method::Put => "PUT",
-        Method::Delete => "DELETE",
-        Method::Patch => "PATCH",
-        Method::Head => "HEAD",
-        Method::Other(m) => m,
+        Method::Get => u16cstr!("GET"),
+        Method::Post => u16cstr!("POST"),
+        Method::Put => u16cstr!("PUT"),
+        Method::Delete => u16cstr!("DELETE"),
+        Method::Patch => u16cstr!("PATCH"),
+        Method::Head => u16cstr!("HEAD"),
+        Method::Other(m) => return m.encode_utf16().chain(std::iter::once(0)).collect(),
     }
+    .as_slice_with_nul()
+    .into()
 }
 
 /// Creates connection and request handles for the given URL.
 pub(crate) fn create_request(
     session: &WinHttpSession,
     parsed_url: &ParsedUrl,
-    method: &str,
+    method_cwstr: &[u16],
 ) -> Result<(ConnectionHandle, RequestHandle)> {
     let connection =
         ConnectionHandle::connect(&session.session, &parsed_url.host, parsed_url.port)?;
-    let request = RequestHandle::open(&connection, method, &parsed_url.path, parsed_url.is_secure)?;
+    let request = RequestHandle::open(
+        &connection,
+        method_cwstr,
+        &parsed_url.path,
+        parsed_url.is_secure,
+    )?;
 
     // Apply per-request options
     if session.options.ignore_certificate_errors && parsed_url.is_secure {

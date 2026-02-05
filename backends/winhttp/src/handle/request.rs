@@ -23,11 +23,13 @@ impl RequestHandle {
     /// Creates a new HTTP request.
     pub(crate) fn open(
         connection: &ConnectionHandle,
-        method: &str,
+        method_cwstr: &[u16],
         path: &str,
         is_secure: bool,
     ) -> Result<Self> {
-        let method_wide: Vec<u16> = method.encode_utf16().chain(std::iter::once(0)).collect();
+        if !method_cwstr.ends_with(&[0]) {
+            panic!("method_cwstr must be null-terminated");
+        }
         let path_wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
 
         let flags = if is_secure { WINHTTP_FLAG_SECURE } else { 0 };
@@ -35,7 +37,7 @@ impl RequestHandle {
         let handle = unsafe {
             WinHttpOpenRequest(
                 connection.as_raw(),
-                method_wide.as_ptr(),
+                method_cwstr.as_ptr(),
                 path_wide.as_ptr(),
                 std::ptr::null(), // Use default HTTP version
                 std::ptr::null(), // No referrer
