@@ -9,7 +9,6 @@ use crate::handle::{ConnectionHandle, RequestHandle};
 
 /// Request states for the async state machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
 pub(crate) enum RequestState {
     /// Initial state, not yet started
     Initial = 0,
@@ -51,34 +50,42 @@ impl From<u32> for RequestState {
     }
 }
 
+/// Inner state for a request context (protected by mutex).
+struct RequestContextInner {
+    /// The waker to notify when state changes
+    waker: Option<Waker>,
+    /// Error that occurred, if any
+    error: Option<WinHttpError>,
+    /// Data buffer for reads (used by async-stream feature)
+    data_buffer: Vec<u8>,
+    /// Active read buffer - must be kept alive until READ_COMPLETE callback fires
+    /// Boxed to ensure stable address even when mutex is unlocked
+    read_buffer: Option<Box<Vec<u8>>>,
+    /// Request body data - must be kept alive until SENDREQUEST_COMPLETE
+    request_body: Option<Vec<u8>>,
+    /// HTTP status code (set after headers received)
+    status_code: u32,
+    /// Content length (set after headers received)
+    content_length: Option<u64>,
+    /// Response headers (set after headers received)
+    headers: Vec<(String, String)>,
+    /// Connection handle (kept alive while request is active)
+    connection: Option<ConnectionHandle>,
+    /// Request handle
+    request: Option<RequestHandle>,
+}
+
 /// Shared state for an async request.
 ///
 /// This is the context that is passed to WinHTTP callbacks and shared between
 /// the Future and the callback.
 pub(crate) struct RequestContext {
-    /// Current state of the request
+    /// Current state of the request (atomic for lock-free access from callbacks)
     state: AtomicU32,
-    /// The waker to notify when state changes
-    waker: Mutex<Option<Waker>>,
-    /// Error that occurred, if any
-    error: Mutex<Option<WinHttpError>>,
-    /// Data buffer for reads (used by async-stream feature)
-    #[allow(dead_code)]
-    pub(crate) data_buffer: Mutex<Vec<u8>>,
-    /// Request body data - must be kept alive until SENDREQUEST_COMPLETE
-    request_body: Mutex<Option<Vec<u8>>>,
-    /// Number of bytes available (from WinHttpQueryDataAvailable)
-    pub(crate) bytes_available: AtomicU32,
-    /// HTTP status code (set after headers received)
-    pub(crate) status_code: AtomicU32,
-    /// Content length (set after headers received)
-    pub(crate) content_length: Mutex<Option<u64>>,
-    /// Response headers (set after headers received)
-    pub(crate) headers: Mutex<Vec<(String, String)>>,
-    /// Connection handle (kept alive while request is active)
-    pub(crate) connection: Mutex<Option<ConnectionHandle>>,
-    /// Request handle
-    pub(crate) request: Mutex<Option<RequestHandle>>,
+    /// Number of bytes available (atomic for lock-free access from callbacks)
+    bytes_available: AtomicU32,
+    /// Inner state protected by mutex
+    inner: Mutex<RequestContextInner>,
 }
 
 impl RequestContext {
@@ -86,16 +93,19 @@ impl RequestContext {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             state: AtomicU32::new(RequestState::Initial as u32),
-            waker: Mutex::new(None),
-            error: Mutex::new(None),
-            data_buffer: Mutex::new(Vec::new()),
-            request_body: Mutex::new(None),
             bytes_available: AtomicU32::new(0),
-            status_code: AtomicU32::new(0),
-            content_length: Mutex::new(None),
-            headers: Mutex::new(Vec::new()),
-            connection: Mutex::new(None),
-            request: Mutex::new(None),
+            inner: Mutex::new(RequestContextInner {
+                waker: None,
+                error: None,
+                data_buffer: Vec::new(),
+                read_buffer: None,
+                request_body: None,
+                status_code: 0,
+                content_length: None,
+                headers: Vec::new(),
+                connection: None,
+                request: None,
+            }),
         })
     }
 
@@ -107,62 +117,91 @@ impl RequestContext {
     /// Sets the state and wakes the waker if registered.
     pub(crate) fn set_state(&self, state: RequestState) {
         self.state.store(state as u32, Ordering::Release);
-        self.wake();
+        let waker = self.inner.lock().unwrap().waker.take();
+        if let Some(waker) = waker {
+            waker.wake();
+        }
     }
 
-    /// Transitions state from expected to new state.
+    /// Sets the state without waking or clearing the waker.
+    /// Use this when you want to update the state but keep the waker for later notification.
+    pub(crate) fn set_state_no_wake(&self, state: RequestState) {
+        self.state.store(state as u32, Ordering::Release);
+    }
+
+    /// Transitions state from expected to new state without waking.
     /// Returns true if the transition was successful.
-    pub(crate) fn transition_state(&self, from: RequestState, to: RequestState) -> bool {
+    pub(crate) fn transition_state_no_wake(&self, from: RequestState, to: RequestState) -> bool {
         self.state
             .compare_exchange(from as u32, to as u32, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     }
 
+    /// Transitions state from expected to new state and wakes the waker if successful.
+    /// Returns true if the transition was successful.
+    pub(crate) fn transition_state(&self, from: RequestState, to: RequestState) -> bool {
+        let result = self
+            .state
+            .compare_exchange(from as u32, to as u32, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok();
+        
+        if result {
+            let waker = self.inner.lock().unwrap().waker.take();
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+        }
+        result
+    }
+
     /// Sets the waker for notifications.
     pub(crate) fn set_waker(&self, waker: Waker) {
-        let mut guard = self.waker.lock().unwrap();
-        *guard = Some(waker);
+        self.inner.lock().unwrap().waker = Some(waker);
     }
 
     /// Wakes the registered waker.
     pub(crate) fn wake(&self) {
-        if let Some(waker) = self.waker.lock().unwrap().take() {
+        let waker = self.inner.lock().unwrap().waker.take();
+        if let Some(waker) = waker {
             waker.wake();
         }
     }
 
     /// Sets an error and transitions to error state.
     pub(crate) fn set_error(&self, error: WinHttpError) {
-        *self.error.lock().unwrap() = Some(error);
+        let mut inner = self.inner.lock().unwrap();
+        inner.error = Some(error);
+        drop(inner);  // Release lock
         self.set_state(RequestState::Error);
     }
 
     /// Takes the error if one occurred.
     pub(crate) fn take_error(&self) -> Option<WinHttpError> {
-        self.error.lock().unwrap().take()
+        self.inner.lock().unwrap().error.take()
     }
 
     /// Sets the request handles.
     pub(crate) fn set_handles(&self, connection: ConnectionHandle, request: RequestHandle) {
-        *self.connection.lock().unwrap() = Some(connection);
-        *self.request.lock().unwrap() = Some(request);
+        let mut inner = self.inner.lock().unwrap();
+        inner.connection = Some(connection);
+        inner.request = Some(request);
     }
 
     /// Sets the request body data. This must be kept alive until SENDREQUEST_COMPLETE.
     pub(crate) fn set_body(&self, body: Option<Vec<u8>>) {
-        *self.request_body.lock().unwrap() = body;
+        self.inner.lock().unwrap().request_body = body;
     }
 
     /// Clears the request body data after it's no longer needed.
     pub(crate) fn clear_body(&self) {
-        *self.request_body.lock().unwrap() = None;
+        self.inner.lock().unwrap().request_body = None;
     }
 
     /// Gets a pointer to the request body data.
     /// Returns (ptr, len) - ptr is null if no body.
     pub(crate) fn get_body_ptr(&self) -> (*const u8, usize) {
-        let guard = self.request_body.lock().unwrap();
-        match guard.as_ref() {
+        let inner = self.inner.lock().unwrap();
+        match inner.request_body.as_ref() {
             Some(data) => (data.as_ptr(), data.len()),
             None => (std::ptr::null(), 0),
         }
@@ -176,8 +215,8 @@ impl RequestContext {
     where
         F: FnOnce(&RequestHandle) -> R,
     {
-        let guard = self.request.lock().unwrap();
-        f(guard.as_ref().expect("request handle not set"))
+        let inner = self.inner.lock().unwrap();
+        f(inner.request.as_ref().expect("request handle not set"))
     }
 
     /// Gets the raw request handle pointer.
@@ -185,30 +224,125 @@ impl RequestContext {
     /// # Panics
     /// Panics if the request handle is not set.
     pub(crate) fn get_request_raw(&self) -> *mut std::ffi::c_void {
-        let guard = self.request.lock().unwrap();
-        guard.as_ref().expect("request handle not set").as_raw()
+        let inner = self.inner.lock().unwrap();
+        inner.request.as_ref().expect("request handle not set").as_raw()
     }
 
-    /// Appends data to the buffer.
-    #[cfg(feature = "async-stream")]
-    pub(crate) fn append_data(&self, data: &[u8]) {
-        self.data_buffer.lock().unwrap().extend_from_slice(data);
-    }
 
-    /// Consumes data from the buffer into the provided slice.
     /// Returns the number of bytes consumed.
     #[cfg(feature = "async-stream")]
     pub(crate) fn consume_data(&self, buf: &mut [u8]) -> usize {
-        let mut data = self.data_buffer.lock().unwrap();
-        let len = data.len().min(buf.len());
-        buf[..len].copy_from_slice(&data[..len]);
-        data.drain(..len);
+        let mut inner = self.inner.lock().unwrap();
+        let len = inner.data_buffer.len().min(buf.len());
+        buf[..len].copy_from_slice(&inner.data_buffer[..len]);
+        inner.data_buffer.drain(..len);
         len
     }
 
     /// Returns true if there's data in the buffer.
     #[cfg(feature = "async-stream")]
     pub(crate) fn has_data(&self) -> bool {
-        !self.data_buffer.lock().unwrap().is_empty()
+        !self.inner.lock().unwrap().data_buffer.is_empty()
+    }
+
+    /// Sets the active read buffer for async reads and returns a pointer to it.
+    /// This buffer must be kept alive until the READ_COMPLETE callback fires.
+    /// Returns the buffer pointer that should be passed to WinHttpReadData.
+    /// The buffer is boxed to ensure a stable address.
+    #[cfg(feature = "async-stream")]
+    pub(crate) fn set_read_buffer(&self, mut buffer: Vec<u8>) -> *mut u8 {
+        let mut inner = self.inner.lock().unwrap();
+        // Get the pointer to the Vec's data before boxing
+        let ptr = buffer.as_mut_ptr();
+        inner.read_buffer = Some(Box::new(buffer));
+        ptr
+    }
+
+    /// Takes ownership of the read buffer and moves its data to the data buffer.
+    /// Called from the READ_COMPLETE callback.
+    #[cfg(feature = "async-stream")]
+    pub(crate) fn complete_read(&self, bytes_read: usize) {
+        let mut inner = self.inner.lock().unwrap();
+        // Take the buffer and copy the data
+        if let Some(buffer) = inner.read_buffer.take() {
+            if bytes_read <= buffer.len() {
+                inner.data_buffer.extend_from_slice(&buffer[..bytes_read]);
+            }
+        }
+    }
+
+    /// Gets the number of bytes available.
+    pub(crate) fn bytes_available(&self) -> u32 {
+        self.bytes_available.load(Ordering::Acquire)
+    }
+
+    /// Sets the number of bytes available.
+    pub(crate) fn set_bytes_available(&self, bytes: u32) {
+        self.bytes_available.store(bytes, Ordering::Release);
+    }
+
+    /// Gets the HTTP status code.
+    pub(crate) fn status_code(&self) -> u32 {
+        self.inner.lock().unwrap().status_code
+    }
+
+    /// Gets the content length.
+    pub(crate) fn content_length(&self) -> Option<u64> {
+        self.inner.lock().unwrap().content_length
+    }
+
+    /// Gets a copy of the response headers.
+    pub(crate) fn headers(&self) -> Vec<(String, String)> {
+        self.inner.lock().unwrap().headers.clone()
+    }
+
+    /// Sets all response metadata at once (status, content_length, headers).
+    pub(crate) fn set_response_metadata(
+        &self,
+        status: u32,
+        content_length: Option<u64>,
+        headers: Vec<(String, String)>,
+    ) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.status_code = status;
+        inner.content_length = content_length;
+        inner.headers = headers;
+    }
+}
+
+impl Drop for RequestContext {
+    fn drop(&mut self) {
+        // Clear the callback context before the handles are dropped to prevent use-after-free.
+        // When WinHttpCloseHandle is called (during normal Drop), it may trigger final callbacks
+        // on the Windows thread pool. By clearing the context first, those callbacks will
+        // see context == 0 and return early instead of accessing freed memory.
+        // 
+        // IMPORTANT: We must NOT hold the lock while clearing the context, because
+        // if a callback is already queued and waiting for the lock, we would deadlock.
+        let request_handle = {
+            let inner = self.inner.lock().unwrap();
+            inner.request.as_ref().map(|r| r.as_raw())
+        };
+
+        if let Some(handle) = request_handle {
+            unsafe {
+                // Set context to 0 to indicate the context is no longer valid.
+                // This prevents callbacks that fire during or after WinHttpCloseHandle
+                // from accessing the freed RequestContext.
+                use windows_sys::Win32::Networking::WinHttp::WinHttpSetOption;
+                use windows_sys::Win32::Networking::WinHttp::WINHTTP_OPTION_CONTEXT_VALUE;
+                
+                let zero_context: usize = 0;
+                let _ = WinHttpSetOption(
+                    handle,
+                    WINHTTP_OPTION_CONTEXT_VALUE,
+                    &zero_context as *const _ as *const _,
+                    std::mem::size_of::<usize>() as u32,
+                );
+            }
+        }
+
+        // Now the handles will be dropped normally when RequestContextInner is dropped,
+        // and any callbacks that fire will see context == 0 and return early.
     }
 }

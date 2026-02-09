@@ -19,8 +19,9 @@ pub(crate) unsafe extern "system" fn winhttp_callback(
     dw_context: usize,
     dw_internet_status: u32,
     lpv_status_information: *mut c_void,
-    _dw_status_information_length: u32,
+    dw_status_information_length: u32,
 ) {
+    // Context of 0 means the request context has been cleared (cleanup in progress)
     if dw_context == 0 {
         return;
     }
@@ -32,11 +33,11 @@ pub(crate) unsafe extern "system" fn winhttp_callback(
     let ctx = &*ctx_ptr;
 
     // Handle the callback based on status
-    handle_callback(ctx, dw_internet_status, lpv_status_information);
+    handle_callback(ctx, dw_internet_status, lpv_status_information, dw_status_information_length);
 }
 
 /// Handles a WinHTTP callback.
-unsafe fn handle_callback(ctx: &RequestContext, status: u32, status_info: *mut c_void) {
+unsafe fn handle_callback(ctx: &RequestContext, status: u32, status_info: *mut c_void, status_info_len: u32) {
     match status {
         WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE => {
             handle_send_complete(ctx);
@@ -48,7 +49,7 @@ unsafe fn handle_callback(ctx: &RequestContext, status: u32, status_info: *mut c
             handle_data_available(ctx, status_info);
         }
         WINHTTP_CALLBACK_STATUS_READ_COMPLETE => {
-            handle_read_complete(ctx, status_info);
+            handle_read_complete(ctx, status_info, status_info_len);
         }
         WINHTTP_CALLBACK_STATUS_WRITE_COMPLETE => {
             handle_write_complete(ctx);
@@ -88,45 +89,47 @@ fn handle_send_complete(ctx: &RequestContext) {
 
 /// Handles WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE.
 fn handle_headers_available(ctx: &RequestContext) {
-    // Query status code and headers
-    ctx.with_request(|request| {
+    // Query all data while holding the request lock
+    let result = ctx.with_request(|request| {
         // Get status code
-        match request.query_status_code() {
-            Ok(status) => {
-                ctx.status_code
-                    .store(status as u32, std::sync::atomic::Ordering::Release);
-            }
-            Err(e) => {
-                ctx.set_error(e);
-                return;
-            }
-        }
-
+        let status = request.query_status_code()?;
         // Get content length
-        *ctx.content_length.lock().unwrap() = request.query_content_length();
-
+        let content_length = request.query_content_length();
         // Get headers
-        match request.query_raw_headers() {
-            Ok(raw_headers) => {
-                let mut headers = Vec::new();
-                for line in raw_headers.lines() {
-                    if line.is_empty() || line.starts_with("HTTP/") {
-                        continue;
-                    }
-                    if let Some((name, value)) = line.split_once(':') {
-                        headers.push((name.trim().to_string(), value.trim().to_string()));
-                    }
-                }
-                *ctx.headers.lock().unwrap() = headers;
-            }
-            Err(e) => {
-                ctx.set_error(e);
-            }
-        }
+        let raw_headers = request.query_raw_headers()?;
+        
+        Ok::<_, WinHttpError>((status, content_length, raw_headers))
     });
 
+    match result {
+        Ok((status, content_length, raw_headers)) => {
+            // Parse headers
+            let mut headers = Vec::new();
+            for line in raw_headers.lines() {
+                if line.is_empty() || line.starts_with("HTTP/") {
+                    continue;
+                }
+                if let Some((name, value)) = line.split_once(':') {
+                    headers.push((name.trim().to_string(), value.trim().to_string()));
+                }
+            }
+            
+            // Now set all the metadata at once
+            ctx.set_response_metadata(status as u32, content_length, headers);
+        }
+        Err(e) => {
+            ctx.set_error(e);
+            return;
+        }
+    }
+
     // Transition to HeadersReceived
-    ctx.set_state(RequestState::HeadersReceived);
+    // We expect Previous state to be ReceivingResponse
+    if !ctx.transition_state(RequestState::ReceivingResponse, RequestState::HeadersReceived) {
+        // If transition failed, we might be in Error state or already Completed?
+        // Logging would be good here, but we can't easily.
+        // If we are in Error state, we should probably stay there.
+    }
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_DATA_AVAILABLE.
@@ -140,24 +143,44 @@ unsafe fn handle_data_available(ctx: &RequestContext, status_info: *mut c_void) 
     }
 
     let bytes_available = *(status_info as *const u32);
-    ctx.bytes_available
-        .store(bytes_available, std::sync::atomic::Ordering::Release);
+    ctx.set_bytes_available(bytes_available);
 
     if bytes_available == 0 {
         // No more data, request is complete
-        ctx.set_state(RequestState::Completed);
+        // Transition from QueryingData to Completed.
+        ctx.transition_state(RequestState::QueryingData, RequestState::Completed);
     } else {
-        ctx.set_state(RequestState::DataAvailable);
+        // Transition from QueryingData to DataAvailable
+        ctx.transition_state(RequestState::QueryingData, RequestState::DataAvailable);
     }
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_READ_COMPLETE.
-fn handle_read_complete(ctx: &RequestContext, _status_info: *mut c_void) {
-    // The status_info for READ_COMPLETE contains the buffer and bytes read
-    // But we handle this differently - we check the actual read result
-
-    // For streaming reads, we just wake the future to check the buffer
-    ctx.set_state(RequestState::QueryingData);
+unsafe fn handle_read_complete(ctx: &RequestContext, _status_info: *mut c_void, status_info_len: u32) {
+    // status_info is a pointer to the buffer (which we already have in context)
+    // status_info_len contains the number of bytes read
+    #[cfg(feature = "async-stream")]
+    {
+        let bytes_read = status_info_len as usize;
+        
+        if bytes_read > 0 {
+            // Move data from read_buffer to data_buffer
+            ctx.complete_read(bytes_read);
+            // After read completes, query for more data
+            // Use HeadersReceived to trigger poll_read query logic
+            // Transition from Reading to HeadersReceived
+            ctx.transition_state(RequestState::Reading, RequestState::HeadersReceived);
+        } else {
+            // No data read, we're done
+            ctx.transition_state(RequestState::Reading, RequestState::Completed);
+        }
+    }
+    
+    #[cfg(not(feature = "async-stream"))]
+    {
+        // For non-async-stream, just notify that read is complete
+        ctx.transition_state(RequestState::Reading, RequestState::QueryingData);
+    }
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_WRITE_COMPLETE.

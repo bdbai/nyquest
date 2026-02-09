@@ -151,6 +151,7 @@ impl RequestHandle {
     ///
     /// # Safety
     /// The context pointer must remain valid until the request completes.
+    #[allow(dead_code)]
     pub(crate) unsafe fn send_with_context(
         &self,
         body: Option<&[u8]>,
