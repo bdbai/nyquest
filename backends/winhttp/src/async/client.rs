@@ -109,9 +109,9 @@ impl AsyncClient for WinHttpAsyncClient {
             headers_future.await?;
 
             // Build the response
-            let status = ctx.status_code.load(std::sync::atomic::Ordering::Acquire) as u16;
-            let content_length = *ctx.content_length.lock().unwrap();
-            let headers = ctx.headers.lock().unwrap().clone();
+            let status = ctx.status_code() as u16;
+            let content_length = ctx.content_length();
+            let headers = ctx.headers();
 
             Ok(WinHttpAsyncResponse::new(
                 ctx,
