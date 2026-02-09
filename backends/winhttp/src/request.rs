@@ -10,22 +10,35 @@ use crate::handle::{ConnectionHandle, RequestHandle};
 use crate::session::WinHttpSession;
 use crate::url::ParsedUrl;
 
-/// Prepared request body data.
+/// Prepared request body data (with streaming support).
+#[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+pub(crate) enum PreparedBody<S> {
+    /// No body
+    None,
+    /// Complete body data
+    Complete(Vec<u8>),
+    /// Streaming body with content type and optional content length
+    Stream {
+        content_type: String,
+        stream_parts: Vec<crate::stream::DataOrStream<S>>,
+    },
+}
+
+/// Prepared request body data (without streaming support).
+#[cfg(not(any(feature = "blocking-stream", feature = "async-stream")))]
 pub(crate) enum PreparedBody {
     /// No body
     None,
     /// Complete body data
     Complete(Vec<u8>),
-    /// Streaming body with content type
-    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
-    Stream { content_type: String },
 }
 
 /// Prepares headers string from request additional_headers only.
-pub(crate) fn prepare_additional_headers(
+#[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+pub(crate) fn prepare_additional_headers<S>(
     additional_headers: &[(Cow<'static, str>, Cow<'static, str>)],
     options: &nyquest_interface::client::ClientOptions,
-    body: &PreparedBody,
+    body: &PreparedBody<S>,
 ) -> String {
     let mut headers = String::new();
 
@@ -56,7 +69,6 @@ pub(crate) fn prepare_additional_headers(
         PreparedBody::Complete(_) => {
             // Content-Type is handled when preparing body
         }
-        #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
         PreparedBody::Stream { content_type, .. } => {
             if !additional_headers
                 .iter()
@@ -73,13 +85,51 @@ pub(crate) fn prepare_additional_headers(
     headers
 }
 
-/// Prepares the request body.
+/// Prepares headers string from request additional_headers only (no streaming).
+#[cfg(not(any(feature = "blocking-stream", feature = "async-stream")))]
+pub(crate) fn prepare_additional_headers(
+    additional_headers: &[(Cow<'static, str>, Cow<'static, str>)],
+    options: &nyquest_interface::client::ClientOptions,
+    body: &PreparedBody,
+) -> String {
+    let mut headers = String::new();
+
+    // Add default headers
+    for (name, value) in &options.default_headers {
+        // Skip if overridden in additional_headers
+        if !additional_headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case(name))
+        {
+            headers.push_str(name);
+            headers.push_str(": ");
+            headers.push_str(value);
+            headers.push_str("\r\n");
+        }
+    }
+
+    // Add request-specific headers
+    for (name, value) in additional_headers {
+        headers.push_str(name);
+        headers.push_str(": ");
+        headers.push_str(value);
+        headers.push_str("\r\n");
+    }
+
+    headers
+}
+
+/// Prepares the request body (with streaming support).
+#[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
 pub(crate) fn prepare_body<S>(
     body: Option<Body<S>>,
     headers: &mut String,
-) -> (PreparedBody, Option<S>) {
+    get_stream_len: impl Fn(&S) -> Option<u64>,
+) -> PreparedBody<S> {
+    use crate::stream::DataOrStream;
+
     match body {
-        None => (PreparedBody::None, None),
+        None => PreparedBody::None,
         Some(Body::Bytes {
             content,
             content_type,
@@ -87,12 +137,12 @@ pub(crate) fn prepare_body<S>(
             headers.push_str("Content-Type: ");
             headers.push_str(&content_type);
             headers.push_str("\r\n");
-            (PreparedBody::Complete(content.into_owned()), None)
+            PreparedBody::Complete(content.into_owned())
         }
         Some(Body::Form { fields }) => {
             headers.push_str("Content-Type: application/x-www-form-urlencoded\r\n");
             let encoded = encode_form_fields(&fields);
-            (PreparedBody::Complete(encoded.into_bytes()), None)
+            PreparedBody::Complete(encoded.into_bytes())
         }
         #[cfg(feature = "multipart")]
         Some(Body::Multipart { parts }) => {
@@ -100,27 +150,85 @@ pub(crate) fn prepare_body<S>(
             headers.push_str("Content-Type: multipart/form-data; boundary=");
             headers.push_str(&boundary);
             headers.push_str("\r\n");
-            let body_data = crate::multipart::generate_multipart_body(&boundary, parts);
-            (PreparedBody::Complete(body_data), None)
+            let body_parts = crate::multipart::generate_multipart_body(&boundary, parts);
+
+            // Check if there are any streams - if not, collect to complete body
+            let has_streams = body_parts
+                .iter()
+                .any(|p| matches!(p, DataOrStream::Stream(_)));
+            if !has_streams {
+                // All data parts, collect into single Vec
+                let data: Vec<u8> = body_parts
+                    .into_iter()
+                    .flat_map(|p| match p {
+                        DataOrStream::Data(d) => d,
+                        DataOrStream::Stream(_) => unreachable!(),
+                    })
+                    .collect();
+                PreparedBody::Complete(data)
+            } else {
+                // Has streams, use streaming upload
+                PreparedBody::Stream {
+                    content_type: format!("multipart/form-data; boundary={}", boundary),
+                    stream_parts: body_parts,
+                }
+            }
         }
         Some(Body::Stream {
             stream,
             content_type,
         }) => {
-            #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
-            {
-                (
-                    PreparedBody::Stream {
-                        content_type: content_type.into_owned(),
-                    },
-                    Some(stream),
-                )
+            // Check if stream has known length
+            let content_length = get_stream_len(&stream);
+            if let Some(len) = content_length {
+                headers.push_str("Content-Length: ");
+                headers.push_str(&len.to_string());
+                headers.push_str("\r\n");
             }
-            #[cfg(not(any(feature = "blocking-stream", feature = "async-stream")))]
-            {
-                let _ = (stream, content_type);
-                unreachable!("streaming requires stream feature")
+
+            PreparedBody::Stream {
+                content_type: content_type.into_owned(),
+                stream_parts: vec![DataOrStream::Stream(stream)],
             }
+        }
+    }
+}
+
+/// Prepares the request body (without streaming support).
+#[cfg(not(any(feature = "blocking-stream", feature = "async-stream")))]
+pub(crate) fn prepare_body<S>(
+    body: Option<Body<S>>,
+    headers: &mut String,
+    _get_stream_len: impl Fn(&S) -> Option<u64>,
+) -> PreparedBody {
+    match body {
+        None => PreparedBody::None,
+        Some(Body::Bytes {
+            content,
+            content_type,
+        }) => {
+            headers.push_str("Content-Type: ");
+            headers.push_str(&content_type);
+            headers.push_str("\r\n");
+            PreparedBody::Complete(content.into_owned())
+        }
+        Some(Body::Form { fields }) => {
+            headers.push_str("Content-Type: application/x-www-form-urlencoded\r\n");
+            let encoded = encode_form_fields(&fields);
+            PreparedBody::Complete(encoded.into_bytes())
+        }
+        #[cfg(feature = "multipart")]
+        Some(Body::Multipart { parts }) => {
+            let boundary = crate::multipart::generate_multipart_boundary();
+            headers.push_str("Content-Type: multipart/form-data; boundary=");
+            headers.push_str(&boundary);
+            headers.push_str("\r\n");
+            // Without stream feature, use non-streaming multipart generation
+            let body_data = crate::multipart::generate_multipart_body_bytes(&boundary, parts);
+            PreparedBody::Complete(body_data)
+        }
+        Some(Body::Stream { .. }) => {
+            unreachable!("streaming requires stream feature")
         }
     }
 }

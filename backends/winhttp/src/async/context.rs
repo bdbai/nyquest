@@ -30,6 +30,10 @@ pub(crate) enum RequestState {
     Completed = 8,
     /// Request failed with an error
     Error = 9,
+    /// SendRequest completed, ready for writing (streaming upload)
+    SendComplete = 10,
+    /// WriteData completed, ready for more writing or headers
+    WriteComplete = 11,
 }
 
 impl From<u32> for RequestState {
@@ -45,6 +49,8 @@ impl From<u32> for RequestState {
             7 => RequestState::Reading,
             8 => RequestState::Completed,
             9 => RequestState::Error,
+            10 => RequestState::SendComplete,
+            11 => RequestState::WriteComplete,
             _ => RequestState::Error,
         }
     }
@@ -63,6 +69,10 @@ struct RequestContextInner {
     read_buffer: Option<Box<Vec<u8>>>,
     /// Request body data - must be kept alive until SENDREQUEST_COMPLETE
     request_body: Option<Vec<u8>>,
+    /// Write buffer for streaming uploads - must be kept alive until WRITE_COMPLETE
+    write_buffer: Option<Vec<u8>>,
+    /// Whether this is a streaming upload (affects callback behavior)
+    streaming_upload: bool,
     /// HTTP status code (set after headers received)
     status_code: u32,
     /// Content length (set after headers received)
@@ -100,6 +110,8 @@ impl RequestContext {
                 data_buffer: Vec::new(),
                 read_buffer: None,
                 request_body: None,
+                write_buffer: None,
+                streaming_upload: false,
                 status_code: 0,
                 content_length: None,
                 headers: Vec::new(),
@@ -107,6 +119,16 @@ impl RequestContext {
                 request: None,
             }),
         })
+    }
+
+    /// Sets whether this is a streaming upload.
+    pub(crate) fn set_streaming_upload(&self, streaming: bool) {
+        self.inner.lock().unwrap().streaming_upload = streaming;
+    }
+
+    /// Returns whether this is a streaming upload.
+    pub(crate) fn is_streaming_upload(&self) -> bool {
+        self.inner.lock().unwrap().streaming_upload
     }
 
     /// Returns the current state.
@@ -125,6 +147,7 @@ impl RequestContext {
 
     /// Sets the state without waking or clearing the waker.
     /// Use this when you want to update the state but keep the waker for later notification.
+    #[allow(dead_code)]
     pub(crate) fn set_state_no_wake(&self, state: RequestState) {
         self.state.store(state as u32, Ordering::Release);
     }
@@ -144,7 +167,7 @@ impl RequestContext {
             .state
             .compare_exchange(from as u32, to as u32, Ordering::AcqRel, Ordering::Acquire)
             .is_ok();
-        
+
         if result {
             let waker = self.inner.lock().unwrap().waker.take();
             if let Some(waker) = waker {
@@ -160,6 +183,7 @@ impl RequestContext {
     }
 
     /// Wakes the registered waker.
+    #[allow(dead_code)]
     pub(crate) fn wake(&self) {
         let waker = self.inner.lock().unwrap().waker.take();
         if let Some(waker) = waker {
@@ -171,7 +195,7 @@ impl RequestContext {
     pub(crate) fn set_error(&self, error: WinHttpError) {
         let mut inner = self.inner.lock().unwrap();
         inner.error = Some(error);
-        drop(inner);  // Release lock
+        drop(inner); // Release lock
         self.set_state(RequestState::Error);
     }
 
@@ -195,6 +219,26 @@ impl RequestContext {
     /// Clears the request body data after it's no longer needed.
     pub(crate) fn clear_body(&self) {
         self.inner.lock().unwrap().request_body = None;
+    }
+
+    /// Sets the write buffer for streaming uploads. This must be kept alive until WRITE_COMPLETE.
+    pub(crate) fn set_write_buffer(&self, buffer: Vec<u8>) {
+        self.inner.lock().unwrap().write_buffer = Some(buffer);
+    }
+
+    /// Gets a pointer to the write buffer.
+    /// Returns (ptr, len) - ptr is null if no buffer.
+    pub(crate) fn get_write_buffer_ptr(&self) -> (*const u8, usize) {
+        let inner = self.inner.lock().unwrap();
+        match inner.write_buffer.as_ref() {
+            Some(data) => (data.as_ptr(), data.len()),
+            None => (std::ptr::null(), 0),
+        }
+    }
+
+    /// Clears the write buffer after WRITE_COMPLETE.
+    pub(crate) fn clear_write_buffer(&self) {
+        self.inner.lock().unwrap().write_buffer = None;
     }
 
     /// Gets a pointer to the request body data.
@@ -225,9 +269,12 @@ impl RequestContext {
     /// Panics if the request handle is not set.
     pub(crate) fn get_request_raw(&self) -> *mut std::ffi::c_void {
         let inner = self.inner.lock().unwrap();
-        inner.request.as_ref().expect("request handle not set").as_raw()
+        inner
+            .request
+            .as_ref()
+            .expect("request handle not set")
+            .as_raw()
     }
-
 
     /// Returns the number of bytes consumed.
     #[cfg(feature = "async-stream")]
@@ -316,7 +363,7 @@ impl Drop for RequestContext {
         // When WinHttpCloseHandle is called (during normal Drop), it may trigger final callbacks
         // on the Windows thread pool. By clearing the context first, those callbacks will
         // see context == 0 and return early instead of accessing freed memory.
-        // 
+        //
         // IMPORTANT: We must NOT hold the lock while clearing the context, because
         // if a callback is already queued and waiting for the lock, we would deadlock.
         let request_handle = {
@@ -331,7 +378,7 @@ impl Drop for RequestContext {
                 // from accessing the freed RequestContext.
                 use windows_sys::Win32::Networking::WinHttp::WinHttpSetOption;
                 use windows_sys::Win32::Networking::WinHttp::WINHTTP_OPTION_CONTEXT_VALUE;
-                
+
                 let zero_context: usize = 0;
                 let _ = WinHttpSetOption(
                     handle,
