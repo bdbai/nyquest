@@ -21,6 +21,7 @@ cfg_if::cfg_if! {
         mod multipart;
         mod request;
         mod session;
+        mod stream;
         mod url;
 
         pub use error::WinHttpError;

@@ -17,6 +17,8 @@ use crate::url::{concat_url, ParsedUrl};
 use crate::WinHttpBackend;
 
 #[cfg(feature = "blocking-stream")]
+use crate::stream::{DataOrStream, StreamWriter};
+#[cfg(feature = "blocking-stream")]
 use nyquest_interface::blocking::BoxedStream;
 
 /// Blocking WinHTTP client.
@@ -60,7 +62,17 @@ impl BlockingClient for WinHttpBlockingClient {
 
         // Prepare headers and body
         let mut headers_str = String::new();
-        let (prepared_body, _stream) = prepare_body(req.body, &mut headers_str);
+        let prepared_body = prepare_body(req.body, &mut headers_str, |s| {
+            #[cfg(feature = "blocking-stream")]
+            {
+                Self::get_stream_content_length(s)
+            }
+            #[cfg(not(feature = "blocking-stream"))]
+            {
+                let _ = s;
+                None
+            }
+        });
         headers_str.push_str(&prepare_additional_headers(
             &additional_headers,
             &self.session.options,
@@ -69,9 +81,10 @@ impl BlockingClient for WinHttpBlockingClient {
 
         // For unsized streams, add Transfer-Encoding: chunked header
         #[cfg(feature = "blocking-stream")]
-        let content_length = _stream.as_ref().and_then(Self::get_stream_content_length);
+        let is_chunked = matches!(&prepared_body, PreparedBody::Stream { stream_parts, .. } 
+            if stream_parts.iter().any(|p| matches!(p, DataOrStream::Stream(s) if Self::get_stream_content_length(s).is_none())));
         #[cfg(feature = "blocking-stream")]
-        if matches!(&prepared_body, PreparedBody::Stream { .. }) && content_length.is_none() {
+        if is_chunked {
             headers_str.push_str("Transfer-Encoding: chunked\r\n");
         }
 
@@ -89,9 +102,28 @@ impl BlockingClient for WinHttpBlockingClient {
                 request.send(Some(&data)).into_nyquest()?;
             }
             #[cfg(feature = "blocking-stream")]
-            PreparedBody::Stream { .. } => {
-                // For streaming uploads, use the already-extracted content length
-                self.send_streaming_request(&request, _stream, content_length)?;
+            PreparedBody::Stream { stream_parts, .. } => {
+                // For single-stream uploads, use the stream's content length directly
+                let content_length = if stream_parts.len() == 1 {
+                    stream_parts.iter().find_map(|p| {
+                        if let DataOrStream::Stream(s) = p {
+                            Self::get_stream_content_length(s)
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    // For multipart, calculate total size from all parts
+                    // This only works if ALL streams have known sizes
+                    let total_size = stream_parts.iter().try_fold(0u64, |acc, part| match part {
+                        DataOrStream::Data(d) => Some(acc + d.len() as u64),
+                        DataOrStream::Stream(s) => {
+                            Self::get_stream_content_length(s).map(|len| acc + len)
+                        }
+                    });
+                    total_size
+                };
+                self.send_streaming_request(&request, stream_parts, content_length)?;
             }
         }
 
@@ -118,55 +150,41 @@ impl BlockingClient for WinHttpBlockingClient {
 
 #[cfg(feature = "blocking-stream")]
 impl WinHttpBlockingClient {
-    fn send_streaming_request<S: std::io::Read>(
+    fn send_streaming_request(
         &self,
         request: &RequestHandle,
-        stream: Option<S>,
+        stream_parts: Vec<DataOrStream<BoxedStream>>,
         content_length: Option<u64>,
     ) -> NyquestResult<()> {
         use crate::error::WinHttpResultExt;
 
-        let Some(mut stream) = stream else {
-            request.send(None).into_nyquest()?;
-            return Ok(());
-        };
+        let chunked = content_length.is_none();
 
         // Send the request with appropriate content length handling
         if let Some(len) = content_length {
             // For sized streams, use the known content length
             request.send_with_total_length(len).into_nyquest()?;
-
-            // Write data in chunks (no chunked encoding, just raw data)
-            let mut buffer = [0u8; 8192];
-            loop {
-                let bytes_read = stream.read(&mut buffer)?;
-                if bytes_read == 0 {
-                    break;
-                }
-                request.write_data(&buffer[..bytes_read]).into_nyquest()?;
-            }
         } else {
-            // For streaming uploads with unknown content length, we use chunked encoding.
-            // When Transfer-Encoding: chunked is set, we must format the data ourselves
-            // in the chunked transfer encoding format.
+            // For streaming uploads with unknown content length
             request.send_for_streaming().into_nyquest()?;
+        }
 
-            // Write data in chunks using HTTP chunked transfer encoding format
-            let mut buffer = [0u8; 8192];
-            loop {
-                let bytes_read = stream.read(&mut buffer)?;
-                if bytes_read == 0 {
-                    break;
+        // Use StreamWriter to handle both data and stream parts
+        let mut writer = StreamWriter::new(stream_parts, chunked);
+
+        while !writer.is_finished() {
+            if writer.fill_buffer_blocking()? {
+                let data = writer.take_pending_data();
+                if !data.is_empty() {
+                    request.write_data(&data).into_nyquest()?;
                 }
-                // Write chunk: <size in hex>\r\n<data>\r\n
-                let header = format!("{:X}\r\n", bytes_read);
-                request.write_data(header.as_bytes()).into_nyquest()?;
-                request.write_data(&buffer[..bytes_read]).into_nyquest()?;
-                request.write_data(b"\r\n").into_nyquest()?;
             }
+        }
 
-            // Write final chunk (terminator): 0\r\n\r\n
-            request.write_data(b"0\r\n\r\n").into_nyquest()?;
+        // Write final chunk if using chunked encoding
+        if chunked {
+            let final_chunk = writer.get_final_chunk();
+            request.write_data(final_chunk).into_nyquest()?;
         }
 
         Ok(())
