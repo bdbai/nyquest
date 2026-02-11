@@ -20,8 +20,12 @@ unsafe impl Sync for ConnectionHandle {}
 
 impl ConnectionHandle {
     /// Creates a new connection to the specified server.
-    pub(crate) fn connect(session: &SessionHandle, host: &str, port: u16) -> Result<Self> {
-        let host_wide: Vec<u16> = host.encode_utf16().chain(std::iter::once(0)).collect();
+    pub(crate) fn connect(session: &SessionHandle, host: &[u16], port: u16) -> Result<Self> {
+        let host_wide: Vec<u16> = host
+            .into_iter()
+            .cloned()
+            .chain(std::iter::once(0))
+            .collect();
 
         let handle = unsafe { WinHttpConnect(session.as_raw(), host_wide.as_ptr(), port, 0) };
 

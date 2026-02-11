@@ -29,7 +29,7 @@ pub struct WinHttpBlockingClient {
 
 impl WinHttpBlockingClient {
     pub(crate) fn new(options: ClientOptions) -> NyquestResult<Self> {
-        let session = WinHttpSession::new_blocking(options).into_nyquest()?;
+        let session = WinHttpSession::new(options, false).into_nyquest()?;
         Ok(Self { session })
     }
 
@@ -48,7 +48,7 @@ impl BlockingClient for WinHttpBlockingClient {
 
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
         // Parse the URL
-        let url = concat_url(self.session.options.base_url.as_deref(), &req.relative_uri);
+        let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri);
         let parsed_url = ParsedUrl::parse(&url).ok_or(nyquest_interface::Error::InvalidUrl)?;
 
         let method = method_to_cwstr(&req.method);
