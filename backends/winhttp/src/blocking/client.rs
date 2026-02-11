@@ -81,11 +81,12 @@ impl BlockingClient for WinHttpBlockingClient {
 
         // For unsized streams, add Transfer-Encoding: chunked header
         #[cfg(feature = "blocking-stream")]
-        let is_chunked = matches!(&prepared_body, PreparedBody::Stream { stream_parts, .. } 
-            if stream_parts.iter().any(|p| matches!(p, DataOrStream::Stream(s) if Self::get_stream_content_length(s).is_none())));
-        #[cfg(feature = "blocking-stream")]
-        if is_chunked {
-            headers_str.push_str("Transfer-Encoding: chunked\r\n");
+        if let PreparedBody::Stream { stream_parts, .. } = &prepared_body {
+            if stream_parts.iter().any(|p| {
+                matches!(p, DataOrStream::Stream(s) if Self::get_stream_content_length(s).is_none())
+            }) {
+                headers_str.push_str("Transfer-Encoding: chunked\r\n");
+            }
         }
 
         // Add headers
@@ -125,6 +126,8 @@ impl BlockingClient for WinHttpBlockingClient {
                 };
                 self.send_streaming_request(&request, stream_parts, content_length)?;
             }
+            #[cfg(not(feature = "blocking-stream"))]
+            PreparedBody::Stream { stream_parts, .. } => {}
         }
 
         // Receive response
