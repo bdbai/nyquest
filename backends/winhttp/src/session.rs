@@ -52,12 +52,4 @@ impl WinHttpSession {
 
         Ok(())
     }
-
-    /// Returns the maximum response buffer size, defaulting to 100MB.
-    // TODO: Option<u64>
-    pub(crate) fn max_response_buffer_size(&self) -> u64 {
-        self.options
-            .max_response_buffer_size
-            .unwrap_or(100 * 1024 * 1024)
-    }
 }

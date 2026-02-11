@@ -146,7 +146,7 @@ impl BlockingClient for WinHttpBlockingClient {
             status,
             content_length,
             headers,
-            self.session.max_response_buffer_size(),
+            self.session.options.max_response_buffer_size,
         ))
     }
 }

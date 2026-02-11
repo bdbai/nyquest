@@ -15,7 +15,7 @@ pub struct WinHttpBlockingResponse {
     status: u16,
     content_length: Option<u64>,
     headers: Vec<(String, String)>,
-    max_response_buffer_size: u64,
+    max_response_buffer_size: Option<u64>,
 }
 
 impl WinHttpBlockingResponse {
@@ -25,7 +25,7 @@ impl WinHttpBlockingResponse {
         status: u16,
         content_length: Option<u64>,
         headers: Vec<(String, String)>,
-        max_response_buffer_size: u64,
+        max_response_buffer_size: Option<u64>,
     ) -> Self {
         Self {
             connection,
@@ -107,8 +107,10 @@ impl BlockingResponse for WinHttpBlockingResponse {
             }
 
             // Check buffer size limit
-            if result.len() as u64 + available as u64 > self.max_response_buffer_size {
-                return Err(nyquest_interface::Error::ResponseTooLarge);
+            if let Some(max_size) = self.max_response_buffer_size {
+                if result.len() as u64 + available as u64 > max_size {
+                    return Err(nyquest_interface::Error::ResponseTooLarge);
+                }
             }
 
             // Read data
