@@ -148,7 +148,7 @@ impl AsyncClient for WinHttpAsyncClient {
             let (setup_tx, setup_rx) = oneshot::channel();
 
             // Clone data needed for the threadpool callback
-            let max_response_buffer_size = session.max_response_buffer_size();
+            let max_response_buffer_size = session.options.max_response_buffer_size;
             let headers_owned = headers_str;
 
             // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE

@@ -15,7 +15,7 @@ pub struct WinHttpAsyncResponse {
     status: u16,
     content_length: Option<u64>,
     headers: Vec<(String, String)>,
-    max_response_buffer_size: u64,
+    max_response_buffer_size: Option<u64>,
 }
 
 impl WinHttpAsyncResponse {
@@ -24,7 +24,7 @@ impl WinHttpAsyncResponse {
         status: u16,
         content_length: Option<u64>,
         headers: Vec<(String, String)>,
-        max_response_buffer_size: u64,
+        max_response_buffer_size: Option<u64>,
     ) -> Self {
         Self {
             ctx,
@@ -311,16 +311,19 @@ impl AsyncResponse for WinHttpAsyncResponse {
                 })
                 .await;
 
-                match read_result {
-                    Ok(0) => break, // EOF
-                    Ok(n) => {
+                match (read_result, this.max_response_buffer_size) {
+                    (Ok(0), _) => break, // EOF
+                    (Ok(n), Some(max_size)) => {
                         // Check buffer size limit
-                        if result.len() as u64 + n as u64 > this.max_response_buffer_size {
+                        if result.len() as u64 + n as u64 > max_size {
                             return Err(nyquest_interface::Error::ResponseTooLarge);
                         }
                         result.extend_from_slice(&buf[..n]);
                     }
-                    Err(e) => return Err(nyquest_interface::Error::Io(e)),
+                    (Ok(n), None) => {
+                        result.extend_from_slice(&buf[..n]);
+                    }
+                    (Err(e), _) => return Err(nyquest_interface::Error::Io(e)),
                 }
             }
             Ok(result)
