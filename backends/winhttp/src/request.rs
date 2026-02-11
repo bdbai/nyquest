@@ -286,8 +286,7 @@ pub(crate) fn create_request(
     parsed_url: &ParsedUrl,
     method_cwstr: &[u16],
 ) -> Result<(ConnectionHandle, RequestHandle)> {
-    let connection =
-        ConnectionHandle::connect(&session.session, &parsed_url.host, parsed_url.port)?;
+    let connection = ConnectionHandle::connect(&session.session, parsed_url.host, parsed_url.port)?;
     let request = RequestHandle::open(
         &connection,
         method_cwstr,

@@ -21,7 +21,11 @@ unsafe impl Sync for SessionHandle {}
 
 impl SessionHandle {
     /// Creates a new WinHTTP session.
-    pub(crate) fn new(user_agent: Option<&str>) -> Result<Self> {
+    pub(crate) fn new(
+        user_agent: Option<&str>,
+        is_async: bool,
+        use_default_proxy: bool,
+    ) -> Result<Self> {
         let user_agent_wide: Vec<u16>;
         let user_agent_ptr = match user_agent {
             Some(ua) => {
@@ -31,39 +35,19 @@ impl SessionHandle {
             None => std::ptr::null(),
         };
 
+        let access_type = if use_default_proxy {
+            WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
+        } else {
+            WINHTTP_ACCESS_TYPE_NO_PROXY
+        };
+        let flags = if is_async { WINHTTP_FLAG_ASYNC } else { 0 };
         let handle = unsafe {
             WinHttpOpen(
                 user_agent_ptr,
-                WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                access_type,
                 std::ptr::null(),
                 std::ptr::null(),
-                0, // Sync mode for session creation
-            )
-        };
-
-        NonNull::new(handle)
-            .map(|handle| Self { handle })
-            .ok_or_else(|| WinHttpError::from_last_error("WinHttpOpen"))
-    }
-
-    /// Creates a new WinHTTP session with async callbacks enabled.
-    pub(crate) fn new_async(user_agent: Option<&str>) -> Result<Self> {
-        let user_agent_wide: Vec<u16>;
-        let user_agent_ptr = match user_agent {
-            Some(ua) => {
-                user_agent_wide = ua.encode_utf16().chain(std::iter::once(0)).collect();
-                user_agent_wide.as_ptr()
-            }
-            None => std::ptr::null(),
-        };
-
-        let handle = unsafe {
-            WinHttpOpen(
-                user_agent_ptr,
-                WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                std::ptr::null(),
-                std::ptr::null(),
-                WINHTTP_FLAG_ASYNC,
+                flags,
             )
         };
 
@@ -102,7 +86,12 @@ impl SessionHandle {
     }
 
     /// Sets an option on the session handle.
-    pub(crate) fn set_option<T>(&self, option: u32, value: &T) -> Result<()> {
+    pub(crate) unsafe fn set_option<T>(
+        &self,
+        option: u32,
+        value: &T,
+        error_context: &'static str,
+    ) -> Result<()> {
         let result = unsafe {
             WinHttpSetOption(
                 self.as_raw(),
@@ -112,7 +101,7 @@ impl SessionHandle {
             )
         };
         if result == 0 {
-            return Err(WinHttpError::from_last_error("WinHttpSetOption"));
+            return Err(WinHttpError::from_last_error(error_context));
         }
         Ok(())
     }
@@ -120,18 +109,36 @@ impl SessionHandle {
     /// Disables automatic redirects.
     pub(crate) fn disable_redirects(&self) -> Result<()> {
         let policy: u32 = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
-        self.set_option(WINHTTP_OPTION_REDIRECT_POLICY, &policy)
+        unsafe {
+            self.set_option(
+                WINHTTP_OPTION_REDIRECT_POLICY,
+                &policy,
+                "WinHttpSetOption (disable_redirects)",
+            )
+        }
     }
 
     /// Enables automatic redirects.
     pub(crate) fn enable_redirects(&self) -> Result<()> {
         let policy: u32 = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-        self.set_option(WINHTTP_OPTION_REDIRECT_POLICY, &policy)
+        unsafe {
+            self.set_option(
+                WINHTTP_OPTION_REDIRECT_POLICY,
+                &policy,
+                "WinHttpSetOption (enable_redirects)",
+            )
+        }
     }
 
     /// Sets the receive response timeout (time to wait for server to start sending response).
     pub(crate) fn set_receive_response_timeout(&self, timeout_ms: u32) -> Result<()> {
-        self.set_option(WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, &timeout_ms)
+        unsafe {
+            self.set_option(
+                WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT,
+                &timeout_ms,
+                "WinHttpSetOption (set_receive_response_timeout)",
+            )
+        }
     }
 
     /// Sets the callback function for async operations.
@@ -144,12 +151,10 @@ impl SessionHandle {
         notification_flags: u32,
     ) -> Result<WINHTTP_STATUS_CALLBACK> {
         let prev = WinHttpSetStatusCallback(self.as_raw(), callback, notification_flags, 0);
-        // Check for error by checking last error code instead of comparing function pointers
-        if prev.is_none() {
+        // Check WINHTTP_INVALID_STATUS_CALLBACK
+        if unsafe { std::mem::transmute::<_, usize>(prev) } == usize::MAX {
             let error = windows_sys::Win32::Foundation::GetLastError();
-            if error != 0 {
-                return Err(WinHttpError::from_code(error, "WinHttpSetStatusCallback"));
-            }
+            return Err(WinHttpError::from_code(error, "WinHttpSetStatusCallback"));
         }
         Ok(prev)
     }

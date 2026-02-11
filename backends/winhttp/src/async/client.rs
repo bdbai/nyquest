@@ -8,7 +8,7 @@ use std::task::{Context, Poll};
 use futures_channel::oneshot;
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncBackend, AsyncClient, Request};
-use nyquest_interface::Result as NyquestResult;
+use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 use super::callback::setup_session_callback;
 use super::context::{RequestContext, RequestState};
@@ -35,7 +35,7 @@ pub struct WinHttpAsyncClient {
 impl WinHttpAsyncClient {
     pub(crate) async fn new(options: ClientOptions) -> NyquestResult<Self> {
         // Create async session
-        let session = WinHttpSession::new_async(options).into_nyquest()?;
+        let session = WinHttpSession::new(options, true).into_nyquest()?;
 
         // Set up the callback on the session
         setup_session_callback(&session.session).into_nyquest()?;
@@ -60,8 +60,7 @@ impl AsyncClient for WinHttpAsyncClient {
         let session = self.session.clone();
         async move {
             // Parse the URL
-            let url = concat_url(session.options.base_url.as_deref(), &req.relative_uri);
-            let parsed_url = ParsedUrl::parse(&url).ok_or(nyquest_interface::Error::InvalidUrl)?;
+            let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri);
 
             let method = method_to_cwstr(&req.method);
 
@@ -146,11 +145,10 @@ impl AsyncClient for WinHttpAsyncClient {
             }
 
             // Create a oneshot channel for the initial setup result
-            let (setup_tx, setup_rx) = oneshot::channel::<Result<(), WinHttpError>>();
+            let (setup_tx, setup_rx) = oneshot::channel();
 
             // Clone data needed for the threadpool callback
             let max_response_buffer_size = session.max_response_buffer_size();
-            let parsed_url_owned = parsed_url;
             let headers_owned = headers_str;
 
             // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
@@ -167,44 +165,39 @@ impl AsyncClient for WinHttpAsyncClient {
             // Submit the blocking connect/open/send to the threadpool
             let task = ThreadpoolTask::new(&ctx);
             task.submit(move |ctx| {
+                let parsed_url = match ParsedUrl::parse(&url) {
+                    Some(p) => p,
+                    None => {
+                        let _ = setup_tx.send(Err(NyquestError::InvalidUrl));
+                        return;
+                    }
+                };
+
                 #[cfg(feature = "async-stream")]
                 let result = if is_streaming {
                     setup_and_send_streaming_request(
                         &session,
                         &ctx,
-                        &parsed_url_owned,
+                        &parsed_url,
                         &method,
                         &headers_owned,
                         stream_content_length,
                     )
                 } else {
-                    setup_and_send_request(
-                        &session,
-                        &ctx,
-                        &parsed_url_owned,
-                        &method,
-                        &headers_owned,
-                    )
+                    setup_and_send_request(&session, &ctx, &parsed_url, &method, &headers_owned)
                 };
 
                 #[cfg(not(feature = "async-stream"))]
-                let result = setup_and_send_request(
-                    &session,
-                    &ctx,
-                    &parsed_url_owned,
-                    &method,
-                    &headers_owned,
-                );
+                let result =
+                    setup_and_send_request(&session, &ctx, &parsed_url, &method, &headers_owned);
 
-                let _ = setup_tx.send(result);
-            })
-            .into_nyquest()?;
+                let _ = setup_tx.send(result.into_nyquest());
+            })?;
 
             // Wait for the setup to complete
-            let setup_result = setup_rx.await.map_err(|_| {
+            let () = setup_rx.await.map_err(|_| {
                 nyquest_interface::Error::Io(std::io::Error::other("setup channel closed"))
-            })?;
-            setup_result.into_nyquest()?;
+            })??;
 
             // If streaming, poll the stream writer to send data
             #[cfg(feature = "async-stream")]
