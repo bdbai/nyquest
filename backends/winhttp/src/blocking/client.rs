@@ -32,40 +32,26 @@ impl WinHttpBlockingClient {
         let session = WinHttpSession::new(options, false).into_nyquest()?;
         Ok(Self { session })
     }
-
-    /// Extracts content length from a BoxedStream if it's a sized stream.
-    #[cfg(feature = "blocking-stream")]
-    fn get_stream_content_length(stream: &BoxedStream) -> Option<u64> {
-        match stream {
-            BoxedStream::Sized { content_length, .. } => Some(*content_length),
-            BoxedStream::Unsized { .. } => None,
-        }
-    }
 }
 
 impl BlockingClient for WinHttpBlockingClient {
     type Response = WinHttpBlockingResponse;
 
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
-        // Parse the URL
-        let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri);
-        let parsed_url = ParsedUrl::parse(&url).ok_or(nyquest_interface::Error::InvalidUrl)?;
-
-        let method = method_to_cwstr(&req.method);
-
         // Create connection and request handles
-        let (connection, request) =
-            create_request(&self.session, &parsed_url, &method).into_nyquest()?;
-
-        // Store additional headers before consuming body
-        let additional_headers = req.additional_headers.clone();
+        let (connection, request) = {
+            let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri);
+            let parsed_url = ParsedUrl::parse(&url).ok_or(nyquest_interface::Error::InvalidUrl)?;
+            let method = method_to_cwstr(&req.method);
+            create_request(&self.session, &parsed_url, &method).into_nyquest()?
+        };
 
         // Prepare headers and body
         let mut headers_str = String::new();
         let prepared_body = prepare_body(req.body, &mut headers_str, |s| {
             #[cfg(feature = "blocking-stream")]
             {
-                Self::get_stream_content_length(s)
+                get_stream_content_length(s)
             }
             #[cfg(not(feature = "blocking-stream"))]
             {
@@ -74,7 +60,7 @@ impl BlockingClient for WinHttpBlockingClient {
             }
         });
         headers_str.push_str(&prepare_additional_headers(
-            &additional_headers,
+            &req.additional_headers,
             &self.session.options,
             &prepared_body,
         ));
@@ -82,9 +68,9 @@ impl BlockingClient for WinHttpBlockingClient {
         // For unsized streams, add Transfer-Encoding: chunked header
         #[cfg(feature = "blocking-stream")]
         if let PreparedBody::Stream { stream_parts, .. } = &prepared_body {
-            if stream_parts.iter().any(|p| {
-                matches!(p, DataOrStream::Stream(s) if Self::get_stream_content_length(s).is_none())
-            }) {
+            if stream_parts.iter().any(
+                |p| matches!(p, DataOrStream::Stream(s) if get_stream_content_length(s).is_none()),
+            ) {
                 headers_str.push_str("Transfer-Encoding: chunked\r\n");
             }
         }
@@ -108,7 +94,7 @@ impl BlockingClient for WinHttpBlockingClient {
                 let content_length = if stream_parts.len() == 1 {
                     stream_parts.iter().find_map(|p| {
                         if let DataOrStream::Stream(s) = p {
-                            Self::get_stream_content_length(s)
+                            get_stream_content_length(s)
                         } else {
                             None
                         }
@@ -119,7 +105,7 @@ impl BlockingClient for WinHttpBlockingClient {
                     let total_size = stream_parts.iter().try_fold(0u64, |acc, part| match part {
                         DataOrStream::Data(d) => Some(acc + d.len() as u64),
                         DataOrStream::Stream(s) => {
-                            Self::get_stream_content_length(s).map(|len| acc + len)
+                            get_stream_content_length(s).map(|len| acc + len)
                         }
                     });
                     total_size
@@ -191,6 +177,15 @@ impl WinHttpBlockingClient {
         }
 
         Ok(())
+    }
+}
+
+/// Extracts content length from a BoxedStream if it's a sized stream.
+#[cfg(feature = "blocking-stream")]
+fn get_stream_content_length(stream: &BoxedStream) -> Option<u64> {
+    match stream {
+        BoxedStream::Sized { content_length, .. } => Some(*content_length),
+        BoxedStream::Unsized { .. } => None,
     }
 }
 

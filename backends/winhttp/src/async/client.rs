@@ -42,15 +42,6 @@ impl WinHttpAsyncClient {
 
         Ok(Self { session })
     }
-
-    /// Extracts content length from a BoxedStream if it's a sized stream.
-    #[cfg(feature = "async-stream")]
-    fn get_stream_content_length(stream: &BoxedStream) -> Option<u64> {
-        match stream {
-            BoxedStream::Sized { content_length, .. } => Some(*content_length),
-            BoxedStream::Unsized { .. } => None,
-        }
-    }
 }
 
 impl AsyncClient for WinHttpAsyncClient {
@@ -72,7 +63,7 @@ impl AsyncClient for WinHttpAsyncClient {
             let prepared_body = prepare_body(req.body, &mut headers_str, |s| {
                 #[cfg(feature = "async-stream")]
                 {
-                    Self::get_stream_content_length(s)
+                    get_stream_content_length(s)
                 }
                 #[cfg(not(feature = "async-stream"))]
                 {
@@ -112,7 +103,7 @@ impl AsyncClient for WinHttpAsyncClient {
                 if parts.len() == 1 {
                     parts.iter().find_map(|p| {
                         if let DataOrStream::Stream(s) = p {
-                            Self::get_stream_content_length(s)
+                            get_stream_content_length(s)
                         } else {
                             None
                         }
@@ -123,7 +114,7 @@ impl AsyncClient for WinHttpAsyncClient {
                     parts.iter().try_fold(0u64, |acc, part| match part {
                         DataOrStream::Data(d) => Some(acc + d.len() as u64),
                         DataOrStream::Stream(s) => {
-                            Self::get_stream_content_length(s).map(|len| acc + len)
+                            get_stream_content_length(s).map(|len| acc + len)
                         }
                     })
                 }
@@ -135,7 +126,7 @@ impl AsyncClient for WinHttpAsyncClient {
             #[cfg(feature = "async-stream")]
             let is_chunked = stream_parts.as_ref().is_some_and(|parts| {
                 parts.iter().any(|p| {
-                    matches!(p, DataOrStream::Stream(s) if Self::get_stream_content_length(s).is_none())
+                    matches!(p, DataOrStream::Stream(s) if get_stream_content_length(s).is_none())
                 })
             });
             #[cfg(not(feature = "async-stream"))]
@@ -222,6 +213,15 @@ impl AsyncClient for WinHttpAsyncClient {
                 max_response_buffer_size,
             ))
         }
+    }
+}
+
+/// Extracts content length from a BoxedStream if it's a sized stream.
+#[cfg(feature = "async-stream")]
+fn get_stream_content_length(stream: &BoxedStream) -> Option<u64> {
+    match stream {
+        BoxedStream::Sized { content_length, .. } => Some(*content_length),
+        BoxedStream::Unsized { .. } => None,
     }
 }
 
