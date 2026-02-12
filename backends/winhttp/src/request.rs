@@ -235,34 +235,58 @@ pub(crate) fn prepare_body<S>(
 
 /// URL-encodes form fields.
 fn encode_form_fields(fields: &[(Cow<'static, str>, Cow<'static, str>)]) -> String {
-    let mut result = String::new();
-    for (i, (key, value)) in fields.iter().enumerate() {
-        if i > 0 {
-            result.push('&');
-        }
-        result.push_str(&url_encode(key));
+    let mut result = String::with_capacity(fields.iter().map(|(k, v)| k.len() + v.len() + 2).sum());
+    let mut it = fields.iter();
+    if let Some((key, value)) = it.next() {
+        url_encode(key, &mut result);
         result.push('=');
-        result.push_str(&url_encode(value));
+        url_encode(value, &mut result);
+    }
+    for (key, value) in it {
+        result.push('&');
+        url_encode(key, &mut result);
+        result.push('=');
+        url_encode(value, &mut result);
     }
     result
 }
 
 /// Simple URL encoding for form data (application/x-www-form-urlencoded).
 /// Spaces are encoded as '+' per the application/x-www-form-urlencoded format.
-fn url_encode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    for c in s.chars() {
+fn url_encode(input: &str, output_buf: &mut String) {
+    output_buf.reserve(input.len());
+    for c in input.chars() {
         match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => result.push(c),
-            ' ' => result.push('+'),
+            'A'..='Z'
+            | 'a'..='z'
+            | '0'..='9'
+            | '-'
+            | '_'
+            | '.'
+            | '~'
+            | '!'
+            | '*'
+            | '\''
+            | '('
+            | ')' => output_buf.push(c),
+            ' ' => output_buf.push('+'),
             _ => {
-                for b in c.to_string().as_bytes() {
-                    result.push_str(&format!("%{:02X}", b));
+                for b in c.encode_utf8(&mut [0; 4]).as_bytes() {
+                    output_buf.push('%');
+                    output_buf.push(
+                        char::from_digit((b >> 4) as u32, 16)
+                            .unwrap()
+                            .to_ascii_uppercase(),
+                    );
+                    output_buf.push(
+                        char::from_digit((b & 0xF) as u32, 16)
+                            .unwrap()
+                            .to_ascii_uppercase(),
+                    );
                 }
             }
         }
     }
-    result
 }
 
 /// Converts nyquest Method to HTTP method string.
@@ -314,4 +338,18 @@ pub(crate) fn create_request(
     }
 
     Ok((connection, request))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_encode() {
+        let input = "key1=value 1&key2=value@2";
+        let expected = "key1%3Dvalue+1%26key2%3Dvalue%402";
+        let mut output = String::new();
+        url_encode(input, &mut output);
+        assert_eq!(output, expected);
+    }
 }
