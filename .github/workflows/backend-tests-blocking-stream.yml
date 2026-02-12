@@ -18,13 +18,21 @@ jobs:
       - name: Test curl
         run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,curl,multipart
 
-  test-blocking-stream-windows:
+  test-blocking-stream-windows-winrt:
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Test winrt
         run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,winrt,multipart
+
+  test-blocking-stream-windows-winhttp:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test winhttp
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-stream,winhttp,multipart
 
   test-blocking-stream-macos:
     runs-on: macos-latest

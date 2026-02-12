@@ -13,6 +13,7 @@ publish = false
 async = [
     "nyquest/async",
     "nyquest-backend-winrt?/async",
+    "nyquest-backend-winhttp?/async",
     "nyquest-backend-curl?/async",
     "nyquest-backend-nsurlsession?/async",
     "nyquest-backend-reqwest?/async",
@@ -21,6 +22,7 @@ async-stream = [
     "async",
     "nyquest/async-stream",
     "nyquest-backend-winrt?/async-stream",
+    "nyquest-backend-winhttp?/async-stream",
     "nyquest-backend-curl?/async-stream",
     "nyquest-backend-nsurlsession?/async-stream",
     "nyquest-backend-reqwest?/async-stream",
@@ -28,6 +30,7 @@ async-stream = [
 blocking = [
     "nyquest/blocking",
     "nyquest-backend-winrt?/blocking",
+    "nyquest-backend-winhttp?/blocking",
     "nyquest-backend-curl?/blocking",
     "nyquest-backend-nsurlsession?/blocking",
     "nyquest-backend-reqwest?/blocking",
@@ -36,6 +39,7 @@ blocking-stream = [
     "blocking",
     "nyquest/blocking-stream",
     "nyquest-backend-winrt?/blocking-stream",
+    "nyquest-backend-winhttp?/blocking-stream",
     "nyquest-backend-curl?/blocking-stream",
     "nyquest-backend-nsurlsession?/blocking-stream",
     "nyquest-backend-reqwest?/blocking-stream",
@@ -43,11 +47,13 @@ blocking-stream = [
 multipart = [
     "nyquest/multipart",
     "nyquest-backend-winrt?/multipart",
+    "nyquest-backend-winhttp?/multipart",
     "nyquest-backend-curl?/multipart",
     "nyquest-backend-nsurlsession?/multipart",
     "nyquest-backend-reqwest?/multipart",
 ]
 winrt = ["dep:nyquest-backend-winrt"]
+winhttp = ["dep:nyquest-backend-winhttp"]
 curl = ["dep:nyquest-backend-curl"]
 nsurlsession = ["dep:nyquest-backend-nsurlsession"]
 reqwest = ["dep:nyquest-backend-reqwest"]
@@ -68,6 +74,7 @@ futures-util = "0.3"
 [dependencies]
 nyquest = { path = "../", features = ["json"] }
 nyquest-backend-winrt = { path = "../backends/winrt", optional = true }
+nyquest-backend-winhttp = { path = "../backends/winhttp", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }
 nyquest-backend-nsurlsession = { path = "../backends/nsurlsession", optional = true }
 nyquest-backend-reqwest = { path = "../backends/reqwest", optional = true }
