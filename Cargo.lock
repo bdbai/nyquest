@@ -1316,8 +1316,10 @@ dependencies = [
 name = "nyquest-backend-winhttp"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "cfg-if",
  "futures-channel",
+ "futures-task",
  "getrandom 0.4.1",
  "iconv-native",
  "nyquest-interface",

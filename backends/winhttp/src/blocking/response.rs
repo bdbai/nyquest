@@ -9,8 +9,7 @@ use crate::handle::{ConnectionHandle, RequestHandle};
 /// Blocking WinHTTP response.
 pub struct WinHttpBlockingResponse {
     // Keep connection alive while response is being read
-    #[allow(dead_code)]
-    connection: ConnectionHandle,
+    _connection: ConnectionHandle,
     request: RequestHandle,
     status: u16,
     content_length: Option<u64>,
@@ -26,7 +25,7 @@ impl WinHttpBlockingResponse {
         max_response_buffer_size: Option<u64>,
     ) -> Self {
         Self {
-            connection,
+            _connection: connection,
             request,
             status,
             content_length,

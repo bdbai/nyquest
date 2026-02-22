@@ -1,6 +1,6 @@
 //! WinHTTP async callback implementation.
 
-use std::ffi::c_void;
+use std::{ffi::c_void, mem::ManuallyDrop, sync::Weak};
 
 use windows_sys::Win32::Networking::WinHttp::*;
 
@@ -26,15 +26,21 @@ pub(crate) unsafe extern "system" fn winhttp_callback(
         return;
     }
 
-    // The context is a raw pointer to the RequestContext.
-    // We need to be careful here - the RequestContext must be kept alive by the caller.
-    // We just borrow it for the duration of this callback.
-    let ctx_ptr = dw_context as *const RequestContext;
-    let ctx = &*ctx_ptr;
+    let ctx = Weak::<RequestContext>::from_raw(dw_context as *const _);
+    let ctx = if dw_internet_status == WINHTTP_CALLBACK_STATUS_HANDLE_CLOSING {
+        drop(ctx);
+        return;
+    } else {
+        ManuallyDrop::new(ctx)
+    };
+    let Some(ctx) = ctx.upgrade() else {
+        // Context has been dropped, likely due to request cancellation and cleanup
+        return;
+    };
 
     // Handle the callback based on status
     handle_callback(
-        ctx,
+        &ctx,
         dw_internet_status,
         lpv_status_information,
         dw_status_information_length,
@@ -78,67 +84,13 @@ unsafe fn handle_callback(
 
 /// Handles WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE.
 fn handle_send_complete(ctx: &RequestContext) {
-    // The body data is no longer needed after the request is sent
     ctx.clear_body();
-
-    // Check if this is a streaming upload - if so, transition to SendComplete
-    // so the client code can write data via WinHttpWriteData.
-    // Otherwise, proceed directly to receiving the response.
-    if ctx.is_streaming_upload() {
-        // Streaming upload case - transition to SendComplete
-        // The future will call WinHttpWriteData to send body data
-        ctx.transition_state(RequestState::Sending, RequestState::SendComplete);
-        return;
-    }
-
-    // Non-streaming case - transition to ReceivingResponse and call WinHttpReceiveResponse
-    if ctx.transition_state(RequestState::Sending, RequestState::ReceivingResponse) {
-        // Get the raw handle BEFORE calling the async function.
-        // We must not hold the mutex while calling WinHttpReceiveResponse because
-        // the callback for HEADERS_AVAILABLE may fire synchronously on the same thread.
-        let h_request = ctx.get_request_raw();
-
-        // Initiate WinHttpReceiveResponse - callback may be invoked synchronously!
-        let result = unsafe { WinHttpReceiveResponse(h_request, std::ptr::null_mut()) };
-        if result == 0 {
-            let error = WinHttpError::from_last_error("WinHttpReceiveResponse");
-            ctx.set_error(error);
-        }
-    }
+    ctx.transition_state(RequestState::HeadersSent);
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE.
 fn handle_headers_available(ctx: &RequestContext) {
-    // Query all data while holding the request lock
-    let result = ctx.with_request(|request| {
-        // Get status code
-        let status = request.query_status_code()?;
-        // Get content length
-        let content_length = request.query_content_length();
-
-        Ok::<_, WinHttpError>((status, content_length))
-    });
-
-    match result {
-        Ok((status, content_length)) => {
-            ctx.set_response_metadata(status as u32, content_length);
-        }
-        Err(e) => {
-            ctx.set_error(e);
-            return;
-        }
-    }
-
-    // Transition to HeadersReceived
-    // We expect Previous state to be ReceivingResponse
-    if !ctx.transition_state(
-        RequestState::ReceivingResponse,
-        RequestState::HeadersReceived,
-    ) {
-        // If transition failed, we might be in Error state or already Completed?
-        // Logging would be good here, but we can't easily.
-        // If we are in Error state, we should probably stay there.
-    }
+    ctx.transition_state(RequestState::HeadersReceived);
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_DATA_AVAILABLE.
@@ -157,10 +109,10 @@ unsafe fn handle_data_available(ctx: &RequestContext, status_info: *mut c_void) 
     if bytes_available == 0 {
         // No more data, request is complete
         // Transition from QueryingData to Completed.
-        ctx.transition_state(RequestState::QueryingData, RequestState::Completed);
+        ctx.transition_state(RequestState::Completed);
     } else {
         // Transition from QueryingData to DataAvailable
-        ctx.transition_state(RequestState::QueryingData, RequestState::DataAvailable);
+        ctx.transition_state(RequestState::DataAvailable);
     }
 }
 
@@ -182,17 +134,17 @@ unsafe fn handle_read_complete(
             // After read completes, query for more data
             // Use HeadersReceived to trigger poll_read query logic
             // Transition from Reading to HeadersReceived
-            ctx.transition_state(RequestState::Reading, RequestState::HeadersReceived);
+            ctx.transition_state(RequestState::HeadersReceived);
         } else {
             // No data read, we're done
-            ctx.transition_state(RequestState::Reading, RequestState::Completed);
+            ctx.transition_state(RequestState::Completed);
         }
     }
 
     #[cfg(not(feature = "async-stream"))]
     {
         // For non-async-stream, just notify that read is complete
-        ctx.transition_state(RequestState::Reading, RequestState::QueryingData);
+        ctx.transition_state(RequestState::QueryingData);
     }
 }
 
@@ -201,7 +153,7 @@ fn handle_write_complete(ctx: &RequestContext) {
     // Clear the write buffer as it's no longer needed
     ctx.clear_write_buffer();
     // Transition from Writing to WriteComplete
-    ctx.transition_state(RequestState::Writing, RequestState::WriteComplete);
+    ctx.transition_state(RequestState::WriteComplete);
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_REQUEST_ERROR.

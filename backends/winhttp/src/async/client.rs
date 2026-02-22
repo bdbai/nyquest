@@ -1,9 +1,7 @@
 //! Async WinHTTP client implementation.
 
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
 use futures_channel::oneshot;
 use nyquest_interface::client::ClientOptions;
@@ -15,6 +13,8 @@ use super::context::{RequestContext, RequestState};
 use super::response::WinHttpAsyncResponse;
 use super::threadpool::ThreadpoolTask;
 use crate::error::{WinHttpError, WinHttpResultExt};
+use crate::handle::{ConnectionHandle, RequestHandle};
+use crate::r#async::state_fut::wait_for_state;
 use crate::request::{
     create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
@@ -84,9 +84,6 @@ impl AsyncClient for WinHttpAsyncClient {
             let headers_owned = headers_str;
 
             let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
-            if is_stream {
-                ctx.set_streaming_upload(true);
-            }
             // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
             ctx.set_body(prepared_body.take_body());
 
@@ -123,29 +120,34 @@ impl AsyncClient for WinHttpAsyncClient {
             })?;
 
             // Wait for the setup to complete
-            let () = setup_rx.await.map_err(|_| {
+            let (connection, request) = setup_rx.await.map_err(|_| {
                 nyquest_interface::Error::Io(std::io::Error::other("setup channel closed"))
             })??;
+
+            wait_for_state(&*ctx, RequestState::HeadersSent).await?;
 
             // If streaming, poll the stream writer to send data
             #[cfg(feature = "async-stream")]
             if let PreparedBody::Stream { stream_parts, .. } = prepared_body {
-                poll_stream_upload(ctx.clone(), stream_parts, body_len.is_none()).await?;
+                poll_stream_upload(&ctx, &request, stream_parts, body_len.is_none()).await?;
             }
 
+            request.receive_response().into_nyquest()?;
+
             // Now wait for headers to be available
-            let headers_future = WaitForHeaders { ctx: ctx.clone() };
-            headers_future.await?;
+            wait_for_state(&*ctx, RequestState::HeadersReceived).await?;
 
             // Build the response
-            let status = ctx.status_code() as u16;
-            let content_length = ctx.content_length();
+            let status = request.query_status_code()?;
+            let content_length = request.query_content_length();
 
             Ok(WinHttpAsyncResponse::new(
                 ctx,
                 status,
                 content_length,
                 max_response_buffer_size,
+                connection,
+                request,
             ))
         }
     }
@@ -171,11 +173,11 @@ fn get_stream_content_length(_stream: &impl Sized) -> Option<u64> {
 /// WinHTTP operations.
 fn setup_and_send_request(
     session: &WinHttpSession,
-    ctx: &RequestContext,
+    ctx: &Arc<RequestContext>,
     parsed_url: &ParsedUrl,
     method_cwstr: &[u16],
     headers: &str,
-) -> Result<(), WinHttpError> {
+) -> Result<(ConnectionHandle, RequestHandle), WinHttpError> {
     // Create connection and request handles
     let (connection, request) = create_request(session, parsed_url, method_cwstr)?;
     // Add headers
@@ -183,23 +185,7 @@ fn setup_and_send_request(
         request.add_headers(headers)?;
     }
 
-    // Store the handles in the context
-    ctx.set_handles(connection, request);
-
-    // Get a raw pointer to the RequestContext to use as the callback context.
-    // The RequestContext is kept alive by the Arc held by the caller.
-    // WinHTTP will pass this pointer back to us in the callback.
-    let ctx_ptr = ctx as *const RequestContext as usize;
-
-    // Set the context on the request handle
-    ctx.with_request(|request| unsafe { request.set_context(ctx_ptr) })?;
-
-    // Update state to Sending
-    ctx.set_state(RequestState::Sending);
-
-    // Get the raw handle before calling send to avoid holding the lock during the async call.
-    // WinHTTP can call the callback synchronously, which would cause a deadlock if we held the lock.
-    let request_handle = ctx.get_request_raw();
+    let ctx_ptr = Arc::downgrade(ctx).into_raw() as usize;
 
     // Get the body pointer from the context - the body is stored there to ensure it lives
     // long enough for the async WinHTTP operation to complete.
@@ -208,7 +194,7 @@ fn setup_and_send_request(
     // Send the request (async mode - returns immediately, but callback may fire synchronously)
     let result = unsafe {
         windows_sys::Win32::Networking::WinHttp::WinHttpSendRequest(
-            request_handle,
+            request.as_raw(),
             std::ptr::null(),
             0,
             body_ptr as *const std::ffi::c_void,
@@ -222,7 +208,7 @@ fn setup_and_send_request(
         return Err(WinHttpError::from_last_error("WinHttpSendRequest"));
     }
 
-    Ok(())
+    Ok((connection, request))
 }
 
 /// Sets up and sends the initial part of a streaming request.
@@ -232,12 +218,12 @@ fn setup_and_send_request(
 #[cfg(feature = "async-stream")]
 fn setup_and_send_streaming_request(
     session: &WinHttpSession,
-    ctx: &RequestContext,
+    ctx: &Arc<RequestContext>,
     parsed_url: &ParsedUrl,
     method_cwstr: &[u16],
     headers: &str,
     content_length: Option<u64>,
-) -> Result<(), WinHttpError> {
+) -> Result<(ConnectionHandle, RequestHandle), WinHttpError> {
     use windows_sys::Win32::Networking::WinHttp::WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH;
 
     // Create connection and request handles
@@ -248,20 +234,8 @@ fn setup_and_send_streaming_request(
         request.add_headers(headers)?;
     }
 
-    // Store the handles in the context
-    ctx.set_handles(connection, request);
-
     // Get a raw pointer to the RequestContext to use as the callback context.
-    let ctx_ptr = ctx as *const RequestContext as usize;
-
-    // Set the context on the request handle
-    ctx.with_request(|request| unsafe { request.set_context(ctx_ptr) })?;
-
-    // Update state to Sending
-    ctx.set_state(RequestState::Sending);
-
-    // Get the raw handle
-    let request_handle = ctx.get_request_raw();
+    let ctx_ptr = Arc::downgrade(ctx).into_raw() as usize;
 
     // For streaming uploads, we send with no initial body and WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH
     // if we don't know the content length (chunked transfer encoding).
@@ -272,7 +246,7 @@ fn setup_and_send_streaming_request(
     // Send the request with no body - we'll write data via WinHttpWriteData
     let result = unsafe {
         windows_sys::Win32::Networking::WinHttp::WinHttpSendRequest(
-            request_handle,
+            request.as_raw(),
             std::ptr::null(),
             0,
             std::ptr::null(),
@@ -288,19 +262,17 @@ fn setup_and_send_streaming_request(
         ));
     }
 
-    Ok(())
+    Ok((connection, request))
 }
 
 /// Polls the stream writer to send data chunks via WinHttpWriteData.
 #[cfg(feature = "async-stream")]
 async fn poll_stream_upload(
-    ctx: Arc<RequestContext>,
+    ctx: &RequestContext,
+    request: &RequestHandle,
     stream_parts: Vec<DataOrStream<BoxedStream>>,
     is_chunked: bool,
 ) -> NyquestResult<()> {
-    // First, wait for SENDREQUEST_COMPLETE
-    WaitForSendComplete { ctx: ctx.clone() }.await?;
-
     // Create stream writer
     let mut writer = StreamWriter::new(stream_parts, is_chunked);
 
@@ -320,7 +292,7 @@ async fn poll_stream_upload(
             Ok(n) => {
                 // Got data, write it via WinHttpWriteData
                 let data = buffer[..n].to_vec();
-                write_data_async(&ctx, data).await?;
+                write_data_async(ctx, request, data).await?;
             }
             Err(e) => {
                 return Err(nyquest_interface::Error::Io(e));
@@ -331,38 +303,18 @@ async fn poll_stream_upload(
     // If chunked, send the final chunk terminator
     if is_chunked {
         let final_chunk = writer.get_final_chunk().to_vec();
-        write_data_async(&ctx, final_chunk).await?;
+        write_data_async(ctx, request, final_chunk).await?;
     }
-
-    // Now initiate receiving the response
-    initiate_receive_response(&ctx)?;
-
-    Ok(())
-}
-
-/// Initiates WinHttpReceiveResponse after streaming upload completes.
-#[cfg(feature = "async-stream")]
-fn initiate_receive_response(ctx: &Arc<RequestContext>) -> NyquestResult<()> {
-    use windows_sys::Win32::Networking::WinHttp::WinHttpReceiveResponse;
-
-    // Transition to ReceivingResponse state
-    ctx.set_state(RequestState::ReceivingResponse);
-
-    // Get request handle
-    let request_handle = ctx.get_request_raw();
-
-    // Initiate WinHttpReceiveResponse
-    let result = unsafe { WinHttpReceiveResponse(request_handle, std::ptr::null_mut()) };
-    if result == 0 {
-        return Err(WinHttpError::from_last_error("WinHttpReceiveResponse").into());
-    }
-
     Ok(())
 }
 
 /// Writes data asynchronously via WinHttpWriteData and waits for completion.
 #[cfg(feature = "async-stream")]
-async fn write_data_async(ctx: &Arc<RequestContext>, data: Vec<u8>) -> NyquestResult<()> {
+async fn write_data_async(
+    ctx: &RequestContext,
+    request: &RequestHandle,
+    data: Vec<u8>,
+) -> NyquestResult<()> {
     if data.is_empty() {
         return Ok(());
     }
@@ -371,18 +323,15 @@ async fn write_data_async(ctx: &Arc<RequestContext>, data: Vec<u8>) -> NyquestRe
     ctx.set_write_buffer(data);
 
     // Set state to Writing
-    ctx.set_state(RequestState::Writing);
+    ctx.set_state(RequestState::HeadersSent);
 
     // Get the buffer pointer and length
     let (ptr, len) = ctx.get_write_buffer_ptr();
 
-    // Get request handle
-    let request_handle = ctx.get_request_raw();
-
     // Call WinHttpWriteData
     let result = unsafe {
         windows_sys::Win32::Networking::WinHttp::WinHttpWriteData(
-            request_handle,
+            request.as_raw(),
             ptr as *const std::ffi::c_void,
             len as u32,
             std::ptr::null_mut(),
@@ -394,119 +343,8 @@ async fn write_data_async(ctx: &Arc<RequestContext>, data: Vec<u8>) -> NyquestRe
     }
 
     // Wait for WRITE_COMPLETE callback
-    WaitForWriteComplete { ctx: ctx.clone() }.await
-}
-
-/// Future that waits for the send request to complete (SENDREQUEST_COMPLETE).
-#[cfg(feature = "async-stream")]
-struct WaitForSendComplete {
-    ctx: Arc<RequestContext>,
-}
-
-#[cfg(feature = "async-stream")]
-impl Future for WaitForSendComplete {
-    type Output = NyquestResult<()>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let ctx = &self.ctx;
-
-        let state = ctx.state();
-        match state {
-            RequestState::SendComplete | RequestState::Writing => Poll::Ready(Ok(())),
-            RequestState::Error => {
-                if let Some(err) = ctx.take_error() {
-                    Poll::Ready(Err(err.into()))
-                } else {
-                    Poll::Ready(Err(nyquest_interface::Error::Io(std::io::Error::other(
-                        "unknown error in send",
-                    ))))
-                }
-            }
-            _ => {
-                ctx.set_waker(cx.waker().clone());
-                // Double check state to avoid race condition (lost wakeup)
-                if ctx.state() != state {
-                    cx.waker().wake_by_ref();
-                }
-                Poll::Pending
-            }
-        }
-    }
-}
-
-/// Future that waits for a write to complete (WRITE_COMPLETE).
-#[cfg(feature = "async-stream")]
-struct WaitForWriteComplete {
-    ctx: Arc<RequestContext>,
-}
-
-#[cfg(feature = "async-stream")]
-impl Future for WaitForWriteComplete {
-    type Output = NyquestResult<()>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let ctx = &self.ctx;
-
-        let state = ctx.state();
-        match state {
-            RequestState::WriteComplete | RequestState::SendComplete => Poll::Ready(Ok(())),
-            RequestState::Error => {
-                if let Some(err) = ctx.take_error() {
-                    Poll::Ready(Err(err.into()))
-                } else {
-                    Poll::Ready(Err(nyquest_interface::Error::Io(std::io::Error::other(
-                        "unknown error in write",
-                    ))))
-                }
-            }
-            _ => {
-                ctx.set_waker(cx.waker().clone());
-                // Double check state to avoid race condition (lost wakeup)
-                if ctx.state() != state {
-                    cx.waker().wake_by_ref();
-                }
-                Poll::Pending
-            }
-        }
-    }
-}
-
-/// Future that waits for headers to be available.
-struct WaitForHeaders {
-    ctx: Arc<RequestContext>,
-}
-
-impl Future for WaitForHeaders {
-    type Output = NyquestResult<()>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let ctx = &self.ctx;
-
-        let state = ctx.state();
-        match state {
-            RequestState::HeadersReceived
-            | RequestState::QueryingData
-            | RequestState::DataAvailable
-            | RequestState::Completed => Poll::Ready(Ok(())),
-            RequestState::Error => {
-                if let Some(err) = ctx.take_error() {
-                    Poll::Ready(Err(err.into()))
-                } else {
-                    Poll::Ready(Err(nyquest_interface::Error::Io(std::io::Error::other(
-                        "unknown error",
-                    ))))
-                }
-            }
-            _ => {
-                ctx.set_waker(cx.waker().clone());
-                // Double check state to avoid race condition (lost wakeup)
-                if ctx.state() != state {
-                    cx.waker().wake_by_ref();
-                }
-                Poll::Pending
-            }
-        }
-    }
+    wait_for_state(ctx, RequestState::WriteComplete).await?;
+    Ok(())
 }
 
 impl AsyncBackend for WinHttpBackend {

@@ -175,7 +175,7 @@ mod tests {
                     // support multiple headers with the same name. However,
                     // they should still return all values concatenated with a
                     // comma.
-                    assert_eq!(&*header_value2, Some("test-value, test-value2"));
+                    assert_eq!(&*header_value2, ["test-value, test-value2".to_string()]);
                 } else {
                     assert_eq!(
                         header_value2.first().cloned().as_deref(),

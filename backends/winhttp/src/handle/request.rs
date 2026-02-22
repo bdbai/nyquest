@@ -410,23 +410,6 @@ impl RequestHandle {
             self.set_option(WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout_ms)
         }
     }
-
-    /// Sets the callback function and context for async operations.
-    ///
-    /// # Safety
-    /// The context must remain valid until the request completes.
-    pub(crate) unsafe fn set_context(&self, context: usize) -> Result<()> {
-        let result = WinHttpSetOption(
-            self.as_raw(),
-            WINHTTP_OPTION_CONTEXT_VALUE,
-            &context as *const usize as *const std::ffi::c_void,
-            std::mem::size_of::<usize>() as u32,
-        );
-        if result == 0 {
-            return Err(WinHttpError::from_last_error("WinHttpSetOption (context)"));
-        }
-        Ok(())
-    }
 }
 
 impl Drop for RequestHandle {

@@ -19,11 +19,11 @@ where
     F: FnOnce() + Send + 'static,
 {
     // Box the closure and leak it - it will be freed in the callback wrapper
-    let boxed: Box<Box<dyn FnOnce() + Send>> = Box::new(Box::new(callback));
+    let boxed: Box<F> = Box::new(callback);
     let raw = Box::into_raw(boxed);
 
     let result = TrySubmitThreadpoolCallback(
-        Some(threadpool_callback_wrapper),
+        Some(threadpool_callback_wrapper::<F>),
         raw as *mut std::ffi::c_void,
         std::ptr::null_mut(),
     );
@@ -41,7 +41,7 @@ where
 ///
 /// This is the actual callback that Windows calls. It extracts the Rust closure
 /// and invokes it.
-unsafe extern "system" fn threadpool_callback_wrapper(
+unsafe extern "system" fn threadpool_callback_wrapper<F: FnOnce() + Send + 'static>(
     _instance: PTP_CALLBACK_INSTANCE,
     context: *mut std::ffi::c_void,
 ) {
@@ -50,7 +50,7 @@ unsafe extern "system" fn threadpool_callback_wrapper(
     }
 
     // Reconstruct the boxed closure
-    let boxed: Box<Box<dyn FnOnce() + Send>> = Box::from_raw(context as *mut _);
+    let boxed: Box<F> = Box::from_raw(context as *mut _);
 
     // Catch panics to prevent unwinding across FFI boundary
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {

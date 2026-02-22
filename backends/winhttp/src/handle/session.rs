@@ -152,7 +152,7 @@ impl SessionHandle {
     ) -> Result<WINHTTP_STATUS_CALLBACK> {
         let prev = WinHttpSetStatusCallback(self.as_raw(), callback, notification_flags, 0);
         // Check WINHTTP_INVALID_STATUS_CALLBACK
-        if unsafe { std::mem::transmute::<_, usize>(prev) } == usize::MAX {
+        if unsafe { std::mem::transmute::<WINHTTP_STATUS_CALLBACK, usize>(prev) } == usize::MAX {
             let error = windows_sys::Win32::Foundation::GetLastError();
             return Err(WinHttpError::from_code(error, "WinHttpSetStatusCallback"));
         }

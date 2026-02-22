@@ -7,6 +7,8 @@ use std::task::{Context, Poll};
 use nyquest_interface::r#async::AsyncResponse;
 use nyquest_interface::Result as NyquestResult;
 
+use crate::handle::{ConnectionHandle, RequestHandle};
+
 use super::context::{RequestContext, RequestState};
 
 /// Async WinHTTP response.
@@ -15,6 +17,8 @@ pub struct WinHttpAsyncResponse {
     status: u16,
     content_length: Option<u64>,
     max_response_buffer_size: Option<u64>,
+    _connection: ConnectionHandle,
+    request: RequestHandle,
 }
 
 impl WinHttpAsyncResponse {
@@ -23,12 +27,16 @@ impl WinHttpAsyncResponse {
         status: u16,
         content_length: Option<u64>,
         max_response_buffer_size: Option<u64>,
+        connection: ConnectionHandle,
+        request: RequestHandle,
     ) -> Self {
         Self {
             ctx,
             status,
             content_length,
             max_response_buffer_size,
+            _connection: connection,
+            request,
         }
     }
 
@@ -36,10 +44,8 @@ impl WinHttpAsyncResponse {
     fn start_query_data(&self) -> NyquestResult<()> {
         use windows_sys::Win32::Networking::WinHttp::WinHttpQueryDataAvailable;
 
-        // Get raw handle without holding lock - callback may fire synchronously!
-        let request_handle = self.ctx.get_request_raw();
-
-        let result = unsafe { WinHttpQueryDataAvailable(request_handle, std::ptr::null_mut()) };
+        let result =
+            unsafe { WinHttpQueryDataAvailable(self.request.as_raw(), std::ptr::null_mut()) };
         if result == 0 {
             let err = crate::error::WinHttpError::from_last_error("WinHttpQueryDataAvailable");
             return Err(err.into());
@@ -55,15 +61,12 @@ impl WinHttpAsyncResponse {
 
         let buffer = vec![0u8; len as usize];
 
-        // Get raw handle without holding lock - callback may fire synchronously!
-        let request_handle = self.ctx.get_request_raw();
-
         // Store the buffer in the context and get pointer to it
         let buffer_ptr = self.ctx.set_read_buffer(buffer);
 
         let result = unsafe {
             WinHttpReadData(
-                request_handle,
+                self.request.as_raw(),
                 buffer_ptr as *mut std::ffi::c_void,
                 len,
                 std::ptr::null_mut(), // bytes_read - NULL for async mode
@@ -84,12 +87,9 @@ impl WinHttpAsyncResponse {
         let mut buffer = vec![0u8; len as usize];
         let mut bytes_read: u32 = 0;
 
-        // Get raw handle without holding lock - callback may fire synchronously!
-        let request_handle = self.ctx.get_request_raw();
-
         let result = unsafe {
             WinHttpReadData(
-                request_handle,
+                self.request.as_raw(),
                 buffer.as_mut_ptr() as *mut std::ffi::c_void,
                 len,
                 &mut bytes_read,
@@ -135,29 +135,15 @@ impl nyquest_interface::r#async::futures_io::AsyncRead for WinHttpAsyncResponse 
             }
             RequestState::HeadersReceived => {
                 // Start querying for data
-                this.ctx.set_waker(cx.waker().clone());
+                this.ctx.set_waker(cx.waker());
 
                 // Attempt transition to QueryingData
-                if this.ctx.transition_state_no_wake(
-                    RequestState::HeadersReceived,
-                    RequestState::QueryingData,
-                ) {
-                    if let Err(e) = this.start_query_data() {
-                        return Poll::Ready(Err(std::io::Error::other(format!("{:?}", e))));
-                    }
-                } else {
-                    // State changed while we were processing - re-poll
-                    cx.waker().wake_by_ref();
+                this.ctx
+                    .transition_state_no_wake(RequestState::QueryingData);
+                if let Err(e) = this.start_query_data() {
+                    return Poll::Ready(Err(std::io::Error::other(format!("{:?}", e))));
                 }
-                Poll::Pending
-            }
-            RequestState::QueryingData => {
-                // Query already in progress, just wait for callback
-                this.ctx.set_waker(cx.waker().clone());
-                // Double check state
-                if this.ctx.state() != state {
-                    cx.waker().wake_by_ref();
-                }
+
                 Poll::Pending
             }
             RequestState::DataAvailable => {
@@ -167,33 +153,17 @@ impl nyquest_interface::r#async::futures_io::AsyncRead for WinHttpAsyncResponse 
                 }
 
                 // Initiate async read
-                this.ctx.set_waker(cx.waker().clone());
+                this.ctx.set_waker(cx.waker());
 
                 // Attempt transition to Reading
-                if this
-                    .ctx
-                    .transition_state_no_wake(RequestState::DataAvailable, RequestState::Reading)
-                {
-                    if let Err(e) = this.start_read_data(available) {
-                        return Poll::Ready(Err(std::io::Error::other(format!("{:?}", e))));
-                    }
-                } else {
-                    // State changed while we were processing - re-poll
-                    cx.waker().wake_by_ref();
-                }
-                Poll::Pending
-            }
-            RequestState::Reading => {
-                // Waiting for READ_COMPLETE callback
-                this.ctx.set_waker(cx.waker().clone());
-                // Double check state
-                if this.ctx.state() != state {
-                    cx.waker().wake_by_ref();
+                this.ctx.transition_state_no_wake(RequestState::Reading);
+                if let Err(e) = this.start_read_data(available) {
+                    return Poll::Ready(Err(std::io::Error::other(format!("{:?}", e))));
                 }
                 Poll::Pending
             }
             _ => {
-                this.ctx.set_waker(cx.waker().clone());
+                this.ctx.set_waker(cx.waker());
                 // Double check state
                 if this.ctx.state() != state {
                     cx.waker().wake_by_ref();
@@ -233,7 +203,7 @@ impl std::future::Future for WaitForData {
                 }
             }
             _ => {
-                ctx.set_waker(cx.waker().clone());
+                ctx.set_waker(&cx.waker());
                 // Double check state
                 if ctx.state() != state {
                     cx.waker().wake_by_ref();
@@ -254,7 +224,7 @@ impl AsyncResponse for WinHttpAsyncResponse {
     }
 
     fn get_header(&self, header: &str) -> NyquestResult<Vec<String>> {
-        let headers = self.ctx.with_request(|r| r.query_header(header))?;
+        let headers = self.request.query_header(header)?;
         Ok(headers)
     }
 
