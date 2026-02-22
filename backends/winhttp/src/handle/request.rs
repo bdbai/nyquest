@@ -30,11 +30,7 @@ impl RequestHandle {
         if !method_cwstr.ends_with(&[0]) {
             panic!("method_cwstr must be null-terminated");
         }
-        let path_wide: Vec<u16> = path
-            .into_iter()
-            .cloned()
-            .chain(std::iter::once(0))
-            .collect();
+        let path_wide: Vec<u16> = path.iter().cloned().chain(std::iter::once(0)).collect();
 
         let flags = if is_secure { WINHTTP_FLAG_SECURE } else { 0 };
 

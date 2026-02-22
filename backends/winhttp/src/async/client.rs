@@ -60,17 +60,8 @@ impl AsyncClient for WinHttpAsyncClient {
 
             // Prepare headers and body before spawning to threadpool
             let mut headers_str = String::new();
-            let prepared_body = prepare_body(req.body, &mut headers_str, |s| {
-                #[cfg(feature = "async-stream")]
-                {
-                    get_stream_content_length(s)
-                }
-                #[cfg(not(feature = "async-stream"))]
-                {
-                    let _ = s;
-                    None
-                }
-            });
+            let mut prepared_body =
+                prepare_body(req.body, &mut headers_str, get_stream_content_length);
             headers_str.push_str(&prepare_additional_headers(
                 &additional_headers,
                 &session.options,
@@ -80,58 +71,8 @@ impl AsyncClient for WinHttpAsyncClient {
             // Create the request context
             let ctx = RequestContext::new();
 
-            // Extract body data and stream parts depending on the body type
-            #[cfg(feature = "async-stream")]
-            let (body_data, stream_parts) = match prepared_body {
-                PreparedBody::None => (None, None),
-                PreparedBody::Complete(data) => (Some(data), None),
-                PreparedBody::Stream { stream_parts, .. } => (None, Some(stream_parts)),
-            };
-            #[cfg(not(feature = "async-stream"))]
-            let (body_data, stream_parts): (
-                Option<Vec<u8>>,
-                Option<Vec<DataOrStream<()>>>,
-            ) = match prepared_body {
-                PreparedBody::None => (None, None),
-                PreparedBody::Complete(data) => (Some(data), None),
-            };
-
-            // Determine content length for streaming
-            #[cfg(feature = "async-stream")]
-            let stream_content_length = stream_parts.as_ref().and_then(|parts| {
-                // For single-stream uploads, use the stream's content length directly
-                if parts.len() == 1 {
-                    parts.iter().find_map(|p| {
-                        if let DataOrStream::Stream(s) = p {
-                            get_stream_content_length(s)
-                        } else {
-                            None
-                        }
-                    })
-                } else {
-                    // For multipart, calculate total size from all parts
-                    // This only works if ALL streams have known sizes
-                    parts.iter().try_fold(0u64, |acc, part| match part {
-                        DataOrStream::Data(d) => Some(acc + d.len() as u64),
-                        DataOrStream::Stream(s) => {
-                            get_stream_content_length(s).map(|len| acc + len)
-                        }
-                    })
-                }
-            });
-            #[cfg(not(feature = "async-stream"))]
-            let stream_content_length: Option<u64> = None;
-
-            // For unsized streams, add Transfer-Encoding: chunked header
-            #[cfg(feature = "async-stream")]
-            let is_chunked = stream_parts.as_ref().is_some_and(|parts| {
-                parts.iter().any(|p| {
-                    matches!(p, DataOrStream::Stream(s) if get_stream_content_length(s).is_none())
-                })
-            });
-            #[cfg(not(feature = "async-stream"))]
-            let is_chunked = false;
-            if is_chunked {
+            let body_len = prepared_body.body_len(get_stream_content_length);
+            if body_len.is_none() {
                 headers_str.push_str("Transfer-Encoding: chunked\r\n");
             }
 
@@ -142,16 +83,12 @@ impl AsyncClient for WinHttpAsyncClient {
             let max_response_buffer_size = session.options.max_response_buffer_size;
             let headers_owned = headers_str;
 
+            let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
+            if is_stream {
+                ctx.set_streaming_upload(true);
+            }
             // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
-            ctx.set_body(body_data);
-
-            // For streaming uploads, we need different setup
-            #[cfg(feature = "async-stream")]
-            let is_streaming = stream_parts.is_some();
-
-            // Set the streaming flag on the context so the callback knows how to behave
-            #[cfg(feature = "async-stream")]
-            ctx.set_streaming_upload(is_streaming);
+            ctx.set_body(prepared_body.take_body());
 
             // Submit the blocking connect/open/send to the threadpool
             let task = ThreadpoolTask::new(&ctx);
@@ -164,23 +101,23 @@ impl AsyncClient for WinHttpAsyncClient {
                     }
                 };
 
-                #[cfg(feature = "async-stream")]
-                let result = if is_streaming {
-                    setup_and_send_streaming_request(
-                        &session,
-                        &ctx,
-                        &parsed_url,
-                        &method,
-                        &headers_owned,
-                        stream_content_length,
-                    )
+                let result = if is_stream {
+                    #[cfg(feature = "async-stream")]
+                    {
+                        setup_and_send_streaming_request(
+                            &session,
+                            &ctx,
+                            &parsed_url,
+                            &method,
+                            &headers_owned,
+                            body_len,
+                        )
+                    }
+                    #[cfg(not(feature = "async-stream"))]
+                    unreachable!("streaming requires async-stream feature")
                 } else {
                     setup_and_send_request(&session, &ctx, &parsed_url, &method, &headers_owned)
                 };
-
-                #[cfg(not(feature = "async-stream"))]
-                let result =
-                    setup_and_send_request(&session, &ctx, &parsed_url, &method, &headers_owned);
 
                 let _ = setup_tx.send(result.into_nyquest());
             })?;
@@ -192,8 +129,8 @@ impl AsyncClient for WinHttpAsyncClient {
 
             // If streaming, poll the stream writer to send data
             #[cfg(feature = "async-stream")]
-            if let Some(parts) = stream_parts {
-                poll_stream_upload(ctx.clone(), parts, is_chunked).await?;
+            if let PreparedBody::Stream { stream_parts, .. } = prepared_body {
+                poll_stream_upload(ctx.clone(), stream_parts, body_len.is_none()).await?;
             }
 
             // Now wait for headers to be available
@@ -223,6 +160,11 @@ fn get_stream_content_length(stream: &BoxedStream) -> Option<u64> {
         BoxedStream::Sized { content_length, .. } => Some(*content_length),
         BoxedStream::Unsized { .. } => None,
     }
+}
+
+#[cfg(not(feature = "async-stream"))]
+fn get_stream_content_length(_stream: &impl Sized) -> Option<u64> {
+    None
 }
 
 /// Sets up and sends the request on the threadpool.

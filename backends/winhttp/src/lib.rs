@@ -23,8 +23,6 @@ cfg_if::cfg_if! {
         mod session;
         mod stream;
         mod url;
-
-        pub use error::WinHttpError;
     }
 }
 
