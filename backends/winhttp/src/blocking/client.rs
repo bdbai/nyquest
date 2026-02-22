@@ -127,8 +127,10 @@ impl WinHttpBlockingClient {
         while !writer.is_finished() {
             if writer.fill_buffer_blocking()? {
                 let data = writer.take_pending_data();
-                if !data.is_empty() {
-                    request.write_data(&data).into_nyquest()?;
+                let mut data = &data[..];
+                while !data.is_empty() {
+                    let written = request.write_data(data).into_nyquest()?;
+                    data = &data[written as usize..];
                 }
             }
         }

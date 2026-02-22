@@ -39,10 +39,7 @@ impl WinHttpBlockingResponse {
 impl std::io::Read for WinHttpBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // Query available data
-        let available = self
-            .request
-            .query_data_available()
-            .map_err(std::io::Error::from)?;
+        let available = self.request.query_data_available()?;
 
         if available == 0 {
             return Ok(0);
@@ -50,12 +47,13 @@ impl std::io::Read for WinHttpBlockingResponse {
 
         // Read data
         let to_read = buf.len().min(available as usize);
-        let bytes_read = self
-            .request
-            .read_data(&mut buf[..to_read])
-            .map_err(std::io::Error::from)?;
-
-        Ok(bytes_read as usize)
+        let buf = &mut buf[..to_read];
+        {
+            let uninit =
+                unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut _, buf.len()) };
+            let bytes_read = self.request.read_data(uninit)?;
+            Ok(bytes_read as usize)
+        }
     }
 }
 
@@ -96,31 +94,33 @@ impl BlockingResponse for WinHttpBlockingResponse {
 
     fn bytes(&mut self) -> NyquestResult<Vec<u8>> {
         let mut result = Vec::new();
+        let mut max_to_read = match self.max_response_buffer_size {
+            Some(max_size) => max_size as usize + 1,
+            None => usize::MAX,
+        };
 
         loop {
-            // Query available data
             let available = self.request.query_data_available().into_nyquest()?;
 
             if available == 0 {
                 break;
             }
 
-            // Check buffer size limit
-            if let Some(max_size) = self.max_response_buffer_size {
-                if result.len() as u64 + available as u64 > max_size {
-                    return Err(nyquest_interface::Error::ResponseTooLarge);
-                }
-            }
+            let offset = result.len();
+            let to_read = (available as usize).min(max_to_read);
+            result.reserve(to_read);
 
-            // Read data
-            let mut buffer = vec![0u8; available as usize];
-            let bytes_read = self.request.read_data(&mut buffer).into_nyquest()?;
-
+            let capacity = result.spare_capacity_mut();
+            let bytes_read = self.request.read_data(capacity).into_nyquest()?;
             if bytes_read == 0 {
                 break;
             }
+            unsafe { result.set_len(offset + bytes_read as usize) };
 
-            result.extend_from_slice(&buffer[..bytes_read as usize]);
+            if bytes_read as usize >= max_to_read {
+                return Err(nyquest_interface::Error::ResponseTooLarge);
+            }
+            max_to_read -= bytes_read as usize;
         }
 
         Ok(result)

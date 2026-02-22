@@ -1,6 +1,6 @@
 //! WinHTTP request handle wrapper.
 
-use std::ptr::NonNull;
+use std::{mem::MaybeUninit, ptr::NonNull};
 
 use windows_sys::Win32::Networking::WinHttp::*;
 
@@ -313,7 +313,7 @@ impl RequestHandle {
     }
 
     /// Reads data from the response.
-    pub(crate) fn read_data(&self, buffer: &mut [u8]) -> Result<u32> {
+    pub(crate) fn read_data(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<u32> {
         let mut bytes_read: u32 = 0;
 
         let result = unsafe {
