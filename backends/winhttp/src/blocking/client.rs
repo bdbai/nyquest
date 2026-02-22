@@ -112,8 +112,6 @@ impl BlockingClient for WinHttpBlockingClient {
                 };
                 self.send_streaming_request(&request, stream_parts, content_length)?;
             }
-            #[cfg(not(feature = "blocking-stream"))]
-            PreparedBody::Stream { stream_parts, .. } => {}
         }
 
         // Receive response

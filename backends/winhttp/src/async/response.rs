@@ -351,8 +351,10 @@ impl AsyncResponse for WinHttpAsyncResponse {
                         }
 
                         // Check buffer size limit
-                        if result.len() as u64 + available as u64 > this.max_response_buffer_size {
-                            return Err(nyquest_interface::Error::ResponseTooLarge);
+                        if let Some(max_size) = this.max_response_buffer_size {
+                            if result.len() as u64 + available as u64 > max_size {
+                                return Err(nyquest_interface::Error::ResponseTooLarge);
+                            }
                         }
 
                         // Read the data synchronously

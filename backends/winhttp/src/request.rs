@@ -10,27 +10,18 @@ use crate::handle::{ConnectionHandle, RequestHandle};
 use crate::session::WinHttpSession;
 use crate::url::ParsedUrl;
 
-/// Prepared request body data (with streaming support).
-#[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+/// Prepared request body data.
 pub(crate) enum PreparedBody<S> {
     /// No body
     None,
     /// Complete body data
     Complete(Vec<u8>),
     /// Streaming body with content type and optional content length
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     Stream {
         content_type: String,
         stream_parts: Vec<crate::stream::DataOrStream<S>>,
     },
-}
-
-/// Prepared request body data (without streaming support).
-#[cfg(not(any(feature = "blocking-stream", feature = "async-stream")))]
-pub(crate) enum PreparedBody {
-    /// No body
-    None,
-    /// Complete body data
-    Complete(Vec<u8>),
 }
 
 /// Prepares headers string from request additional_headers only.
