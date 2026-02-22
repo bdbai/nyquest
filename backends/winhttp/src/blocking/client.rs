@@ -8,7 +8,6 @@ use nyquest_interface::Result as NyquestResult;
 
 use super::response::WinHttpBlockingResponse;
 use crate::error::WinHttpResultExt;
-use crate::handle::RequestHandle;
 use crate::request::{
     create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
@@ -125,15 +124,11 @@ impl BlockingClient for WinHttpBlockingClient {
         let status = request.query_status_code().into_nyquest()?;
         let content_length = request.query_content_length();
 
-        // Parse headers
-        let headers = parse_response_headers(&request)?;
-
         Ok(WinHttpBlockingResponse::new(
             connection,
             request,
             status,
             content_length,
-            headers,
             self.session.options.max_response_buffer_size,
         ))
     }
@@ -143,7 +138,7 @@ impl BlockingClient for WinHttpBlockingClient {
 impl WinHttpBlockingClient {
     fn send_streaming_request(
         &self,
-        request: &RequestHandle,
+        request: &crate::handle::RequestHandle,
         stream_parts: Vec<DataOrStream<BoxedStream>>,
         content_length: Option<u64>,
     ) -> NyquestResult<()> {
@@ -189,26 +184,6 @@ fn get_stream_content_length(stream: &BoxedStream) -> Option<u64> {
         BoxedStream::Sized { content_length, .. } => Some(*content_length),
         BoxedStream::Unsized { .. } => None,
     }
-}
-
-fn parse_response_headers(request: &RequestHandle) -> NyquestResult<Vec<(String, String)>> {
-    let raw_headers = request.query_raw_headers().into_nyquest()?;
-    let mut headers = Vec::new();
-
-    for line in raw_headers.lines() {
-        if line.is_empty() {
-            continue;
-        }
-        // Skip status line
-        if line.starts_with("HTTP/") {
-            continue;
-        }
-        if let Some((name, value)) = line.split_once(':') {
-            headers.push((name.trim().to_string(), value.trim().to_string()));
-        }
-    }
-
-    Ok(headers)
 }
 
 impl BlockingBackend for WinHttpBackend {

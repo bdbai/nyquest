@@ -23,6 +23,8 @@ async-stream = ["async", "nyquest-interface/async-stream"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
 multipart = ["nyquest-interface/multipart", "dep:getrandom"]
+charset = ["dep:iconv-native"]
+charset-defaults = ["charset", "iconv-native/default"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
@@ -40,3 +42,4 @@ futures-channel = { version = "0.3", optional = true, default-features = false, 
 ] }
 widestring = { version = "1", default-features = false }
 getrandom = { version = "0.4", optional = true }
+iconv-native = { version = "0.1.0", optional = true, default-features = false }

@@ -14,7 +14,6 @@ pub struct WinHttpAsyncResponse {
     ctx: Arc<RequestContext>,
     status: u16,
     content_length: Option<u64>,
-    headers: Vec<(String, String)>,
     max_response_buffer_size: Option<u64>,
 }
 
@@ -23,31 +22,14 @@ impl WinHttpAsyncResponse {
         ctx: Arc<RequestContext>,
         status: u16,
         content_length: Option<u64>,
-        headers: Vec<(String, String)>,
         max_response_buffer_size: Option<u64>,
     ) -> Self {
         Self {
             ctx,
             status,
             content_length,
-            headers,
             max_response_buffer_size,
         }
-    }
-
-    fn detect_charset(&self) -> Option<String> {
-        for (name, value) in &self.headers {
-            if name.eq_ignore_ascii_case("content-type") {
-                if let Some(charset_part) = value
-                    .split(';')
-                    .find(|s| s.trim().to_ascii_lowercase().starts_with("charset="))
-                {
-                    let charset = charset_part.trim().strip_prefix("charset=")?;
-                    return Some(charset.trim_matches('"').to_string());
-                }
-            }
-        }
-        None
     }
 
     /// Initiates querying for available data.
@@ -272,21 +254,25 @@ impl AsyncResponse for WinHttpAsyncResponse {
     }
 
     fn get_header(&self, header: &str) -> NyquestResult<Vec<String>> {
-        Ok(self
-            .headers
-            .iter()
-            .filter(|(name, _)| name.eq_ignore_ascii_case(header))
-            .map(|(_, value)| value.clone())
-            .collect())
+        let headers = self.ctx.with_request(|r| r.query_header(header))?;
+        Ok(headers)
     }
 
     async fn text(mut self: Pin<&mut Self>) -> NyquestResult<String> {
         let bytes = self.as_mut().bytes().await?;
 
-        // Try to detect charset from Content-Type header
-        if let Some(charset) = self.detect_charset() {
-            if charset.eq_ignore_ascii_case("utf-8") || charset.eq_ignore_ascii_case("us-ascii") {
-                return Ok(String::from_utf8_lossy(&bytes).into_owned());
+        #[cfg(feature = "charset")]
+        if let Some((_, mut charset)) = self
+            .get_header("content-type")?
+            .pop()
+            .unwrap_or_default()
+            .split(';')
+            .filter_map(|s| s.split_once('='))
+            .find(|(k, _)| k.trim().eq_ignore_ascii_case("charset"))
+        {
+            charset = charset.trim_matches('"');
+            if let Ok(decoded) = iconv_native::decode_lossy(&bytes, charset.trim()) {
+                return Ok(decoded);
             }
         }
 

@@ -77,8 +77,6 @@ struct RequestContextInner {
     status_code: u32,
     /// Content length (set after headers received)
     content_length: Option<u64>,
-    /// Response headers (set after headers received)
-    headers: Vec<(String, String)>,
     /// Connection handle (kept alive while request is active)
     connection: Option<ConnectionHandle>,
     /// Request handle
@@ -114,7 +112,6 @@ impl RequestContext {
                 streaming_upload: false,
                 status_code: 0,
                 content_length: None,
-                headers: Vec::new(),
                 connection: None,
                 request: None,
             }),
@@ -338,22 +335,11 @@ impl RequestContext {
         self.inner.lock().unwrap().content_length
     }
 
-    /// Gets a copy of the response headers.
-    pub(crate) fn headers(&self) -> Vec<(String, String)> {
-        self.inner.lock().unwrap().headers.clone()
-    }
-
     /// Sets all response metadata at once (status, content_length, headers).
-    pub(crate) fn set_response_metadata(
-        &self,
-        status: u32,
-        content_length: Option<u64>,
-        headers: Vec<(String, String)>,
-    ) {
+    pub(crate) fn set_response_metadata(&self, status: u32, content_length: Option<u64>) {
         let mut inner = self.inner.lock().unwrap();
         inner.status_code = status;
         inner.content_length = content_length;
-        inner.headers = headers;
     }
 }
 

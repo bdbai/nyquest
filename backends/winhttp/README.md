@@ -12,6 +12,10 @@ WinHTTP is the recommended API for Windows services.
 - `async`: Enable async HTTP client support
 - `async-stream`: Enable async streaming upload/download
 - `multipart`: Enable multipart form support
+- `charset-defaults`: Enable encoding conversion via [`iconv-native`] with its default features
+  enabled.
+- `charset`: Enable encoding conversion via [`iconv-native`] without activating any of its default
+  features. Refer to the documentation of [`iconv-native`] for its features.
 
 ## Platform Support
 

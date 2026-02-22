@@ -238,107 +238,65 @@ impl RequestHandle {
     }
 
     /// Queries a specific header value.
-    #[allow(dead_code)]
     pub(crate) fn query_header(&self, header_name: &str) -> Result<Vec<String>> {
         let header_name_wide: Vec<u16> = header_name
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
+        let mut res = vec![];
 
-        // First, query the required buffer size
-        let mut size: u32 = 0;
-        let result = unsafe {
-            WinHttpQueryHeaders(
-                self.as_raw(),
-                WINHTTP_QUERY_CUSTOM,
-                header_name_wide.as_ptr(),
-                std::ptr::null_mut(),
-                &mut size,
-                std::ptr::null_mut(),
-            )
-        };
+        let mut next_value_idx = 0;
+        loop {
+            // First, query the required buffer size
+            let mut size: u32 = 0;
+            let result = unsafe {
+                WinHttpQueryHeaders(
+                    self.as_raw(),
+                    WINHTTP_QUERY_CUSTOM,
+                    header_name_wide.as_ptr(),
+                    std::ptr::null_mut(),
+                    &mut size,
+                    &mut next_value_idx,
+                )
+            };
 
-        if result == 0 {
-            let error = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-            if error == windows_sys::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER {
-                // Buffer size is now in `size`, proceed to allocate
-            } else if error
-                == windows_sys::Win32::Networking::WinHttp::ERROR_WINHTTP_HEADER_NOT_FOUND
-            {
-                return Ok(Vec::new());
-            } else {
-                return Err(WinHttpError::from_code(
-                    error,
-                    "WinHttpQueryHeaders (size query)",
-                ));
+            if result == 0 {
+                let error = unsafe { windows_sys::Win32::Foundation::GetLastError() };
+                if error == windows_sys::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER {
+                    // Buffer size is now in `size`, proceed to allocate
+                } else if error
+                    == windows_sys::Win32::Networking::WinHttp::ERROR_WINHTTP_HEADER_NOT_FOUND
+                {
+                    return Ok(res);
+                } else {
+                    return Err(WinHttpError::from_code(
+                        error,
+                        "WinHttpQueryHeaders (size query)",
+                    ));
+                }
             }
-        }
 
-        // Allocate buffer and query the actual value
-        let mut buffer: Vec<u16> = vec![0; (size / 2) as usize + 1];
-        let result = unsafe {
-            WinHttpQueryHeaders(
-                self.as_raw(),
-                WINHTTP_QUERY_CUSTOM,
-                header_name_wide.as_ptr(),
-                buffer.as_mut_ptr() as *mut std::ffi::c_void,
-                &mut size,
-                std::ptr::null_mut(),
-            )
-        };
+            // Allocate buffer and query the actual value
+            let mut buffer: Vec<u16> = vec![0; (size / 2) as usize + 1];
+            let result = unsafe {
+                WinHttpQueryHeaders(
+                    self.as_raw(),
+                    WINHTTP_QUERY_CUSTOM,
+                    header_name_wide.as_ptr(),
+                    buffer.as_mut_ptr() as *mut std::ffi::c_void,
+                    &mut size,
+                    &mut next_value_idx,
+                )
+            };
 
-        if result == 0 {
-            return Err(WinHttpError::from_last_error("WinHttpQueryHeaders (value)"));
-        }
-
-        // Convert to string
-        let value = String::from_utf16_lossy(&buffer[..(size / 2) as usize]);
-        Ok(vec![value])
-    }
-
-    /// Queries all response headers as a raw string.
-    pub(crate) fn query_raw_headers(&self) -> Result<String> {
-        // First, query the required buffer size
-        let mut size: u32 = 0;
-        let result = unsafe {
-            WinHttpQueryHeaders(
-                self.as_raw(),
-                WINHTTP_QUERY_RAW_HEADERS_CRLF,
-                std::ptr::null(),
-                std::ptr::null_mut(),
-                &mut size,
-                std::ptr::null_mut(),
-            )
-        };
-
-        if result == 0 {
-            let error = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-            if error != windows_sys::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER {
-                return Err(WinHttpError::from_code(
-                    error,
-                    "WinHttpQueryHeaders (raw headers size)",
-                ));
+            if result == 0 {
+                return Err(WinHttpError::from_last_error("WinHttpQueryHeaders (value)"));
             }
+
+            // Convert to string
+            let value = String::from_utf16_lossy(&buffer[..(size / 2) as usize]);
+            res.push(value);
         }
-
-        // Allocate buffer and query the actual headers
-        let mut buffer: Vec<u16> = vec![0; (size / 2) as usize + 1];
-        let result = unsafe {
-            WinHttpQueryHeaders(
-                self.as_raw(),
-                WINHTTP_QUERY_RAW_HEADERS_CRLF,
-                std::ptr::null(),
-                buffer.as_mut_ptr() as *mut std::ffi::c_void,
-                &mut size,
-                std::ptr::null_mut(),
-            )
-        };
-
-        if result == 0 {
-            return Err(WinHttpError::from_last_error("WinHttpQueryHeaders (raw)"));
-        }
-
-        Ok(String::from_utf16_lossy(&buffer[..(size / 2) as usize]))
     }
 
     /// Queries available data to read.

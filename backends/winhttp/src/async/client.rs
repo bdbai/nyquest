@@ -140,13 +140,11 @@ impl AsyncClient for WinHttpAsyncClient {
             // Build the response
             let status = ctx.status_code() as u16;
             let content_length = ctx.content_length();
-            let headers = ctx.headers();
 
             Ok(WinHttpAsyncResponse::new(
                 ctx,
                 status,
                 content_length,
-                headers,
                 max_response_buffer_size,
             ))
         }

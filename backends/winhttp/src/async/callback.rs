@@ -115,27 +115,13 @@ fn handle_headers_available(ctx: &RequestContext) {
         let status = request.query_status_code()?;
         // Get content length
         let content_length = request.query_content_length();
-        // Get headers
-        let raw_headers = request.query_raw_headers()?;
 
-        Ok::<_, WinHttpError>((status, content_length, raw_headers))
+        Ok::<_, WinHttpError>((status, content_length))
     });
 
     match result {
-        Ok((status, content_length, raw_headers)) => {
-            // Parse headers
-            let mut headers = Vec::new();
-            for line in raw_headers.lines() {
-                if line.is_empty() || line.starts_with("HTTP/") {
-                    continue;
-                }
-                if let Some((name, value)) = line.split_once(':') {
-                    headers.push((name.trim().to_string(), value.trim().to_string()));
-                }
-            }
-
-            // Now set all the metadata at once
-            ctx.set_response_metadata(status as u32, content_length, headers);
+        Ok((status, content_length)) => {
+            ctx.set_response_metadata(status as u32, content_length);
         }
         Err(e) => {
             ctx.set_error(e);

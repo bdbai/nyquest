@@ -1319,6 +1319,7 @@ dependencies = [
  "cfg-if",
  "futures-channel",
  "getrandom 0.4.1",
+ "iconv-native",
  "nyquest-interface",
  "widestring",
  "windows-sys 0.59.0",
