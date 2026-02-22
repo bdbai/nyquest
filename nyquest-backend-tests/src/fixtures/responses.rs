@@ -169,14 +169,20 @@ mod tests {
         let builder = crate::init_builder_blocking().unwrap();
         let assertions = |(header_value, header_value2): (Vec<String>, Vec<String>)| {
             assert_eq!(&*header_value, [HEADER_VALUE]);
-            assert_eq!(
-                header_value2.first().cloned().as_deref(),
-                Some(HEADER_VALUE)
-            );
-            #[cfg(not(any(feature = "winrt", feature = "nsurlsession")))]
-            // Those platforms treat headers as a dictionary and doesn't support
-            // multiple headers with the same name
-            assert_eq!(&*header_value2, [HEADER_VALUE, HEADER_VALUE2]);
+            cfg_if::cfg_if! {
+                if #[cfg(any(feature = "winrt", feature = "nsurlsession"))] {
+                    // Those platforms treat headers as a dictionary and doesn't
+                    // support multiple headers with the same name. However,
+                    // they should still return all values concatenated with a
+                    // comma.
+                    assert_eq!(&*header_value2, Some("test-value, test-value2"));
+                } else {
+                    assert_eq!(
+                        header_value2.first().cloned().as_deref(),
+                        Some(HEADER_VALUE)
+                    );
+                }
+            }
         };
         #[cfg(feature = "blocking")]
         {

@@ -354,7 +354,12 @@ impl RequestHandle {
     }
 
     /// Sets an option on the request handle.
-    pub(crate) fn set_option<T>(&self, option: u32, value: &T) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the value pointer is valid and of the
+    /// correct type for the specified option.
+    pub(crate) unsafe fn set_option<T>(&self, option: u32, value: &T) -> Result<()> {
         let result = unsafe {
             WinHttpSetOption(
                 self.as_raw(),
@@ -375,33 +380,35 @@ impl RequestHandle {
             | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID
             | SECURITY_FLAG_IGNORE_CERT_CN_INVALID
             | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
-        self.set_option(WINHTTP_OPTION_SECURITY_FLAGS, &flags)
+        unsafe { self.set_option(WINHTTP_OPTION_SECURITY_FLAGS, &flags) }
     }
 
     /// Disables automatic redirects on this request.
     pub(crate) fn disable_redirects(&self) -> Result<()> {
         let policy: u32 = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
-        self.set_option(WINHTTP_OPTION_REDIRECT_POLICY, &policy)
+        unsafe { self.set_option(WINHTTP_OPTION_REDIRECT_POLICY, &policy) }
     }
 
     /// Enables automatic redirects on this request.
     #[allow(dead_code)]
     pub(crate) fn enable_redirects(&self) -> Result<()> {
         let policy: u32 = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-        self.set_option(WINHTTP_OPTION_REDIRECT_POLICY, &policy)
+        unsafe { self.set_option(WINHTTP_OPTION_REDIRECT_POLICY, &policy) }
     }
 
     /// Disables automatic cookies on this request.
     pub(crate) fn disable_cookies(&self) -> Result<()> {
         let flags: u32 = WINHTTP_DISABLE_COOKIES;
-        self.set_option(WINHTTP_OPTION_DISABLE_FEATURE, &flags)
+        unsafe { self.set_option(WINHTTP_OPTION_DISABLE_FEATURE, &flags) }
     }
 
     /// Sets the receive response timeout on this request (time to wait for server response).
     pub(crate) fn set_receive_response_timeout(&self, timeout_ms: u32) -> Result<()> {
         // Set both receive response timeout and receive timeout
-        self.set_option(WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, &timeout_ms)?;
-        self.set_option(WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout_ms)
+        unsafe {
+            self.set_option(WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, &timeout_ms)?;
+            self.set_option(WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout_ms)
+        }
     }
 
     /// Sets the callback function and context for async operations.

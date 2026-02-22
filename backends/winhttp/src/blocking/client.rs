@@ -47,31 +47,17 @@ impl BlockingClient for WinHttpBlockingClient {
 
         // Prepare headers and body
         let mut headers_str = String::new();
-        let prepared_body = prepare_body(req.body, &mut headers_str, |s| {
-            #[cfg(feature = "blocking-stream")]
-            {
-                get_stream_content_length(s)
-            }
-            #[cfg(not(feature = "blocking-stream"))]
-            {
-                let _ = s;
-                None
-            }
-        });
+        let prepared_body = prepare_body(req.body, &mut headers_str, get_stream_content_length);
         headers_str.push_str(&prepare_additional_headers(
             &req.additional_headers,
             &self.session.options,
             &prepared_body,
         ));
 
+        let body_len = prepared_body.body_len(get_stream_content_length);
         // For unsized streams, add Transfer-Encoding: chunked header
-        #[cfg(feature = "blocking-stream")]
-        if let PreparedBody::Stream { stream_parts, .. } = &prepared_body {
-            if stream_parts.iter().any(
-                |p| matches!(p, DataOrStream::Stream(s) if get_stream_content_length(s).is_none()),
-            ) {
-                headers_str.push_str("Transfer-Encoding: chunked\r\n");
-            }
+        if body_len.is_none() {
+            headers_str.push_str("Transfer-Encoding: chunked\r\n");
         }
 
         // Add headers
@@ -89,27 +75,7 @@ impl BlockingClient for WinHttpBlockingClient {
             }
             #[cfg(feature = "blocking-stream")]
             PreparedBody::Stream { stream_parts, .. } => {
-                // For single-stream uploads, use the stream's content length directly
-                let content_length = if stream_parts.len() == 1 {
-                    stream_parts.iter().find_map(|p| {
-                        if let DataOrStream::Stream(s) = p {
-                            get_stream_content_length(s)
-                        } else {
-                            None
-                        }
-                    })
-                } else {
-                    // For multipart, calculate total size from all parts
-                    // This only works if ALL streams have known sizes
-                    let total_size = stream_parts.iter().try_fold(0u64, |acc, part| match part {
-                        DataOrStream::Data(d) => Some(acc + d.len() as u64),
-                        DataOrStream::Stream(s) => {
-                            get_stream_content_length(s).map(|len| acc + len)
-                        }
-                    });
-                    total_size
-                };
-                self.send_streaming_request(&request, stream_parts, content_length)?;
+                self.send_streaming_request(&request, stream_parts, body_len)?;
             }
             #[cfg(not(feature = "blocking-stream"))]
             PreparedBody::Stream { .. } => {
@@ -184,6 +150,11 @@ fn get_stream_content_length(stream: &BoxedStream) -> Option<u64> {
         BoxedStream::Sized { content_length, .. } => Some(*content_length),
         BoxedStream::Unsized { .. } => None,
     }
+}
+
+#[cfg(not(feature = "blocking-stream"))]
+fn get_stream_content_length(_stream: &impl Sized) -> Option<u64> {
+    None
 }
 
 impl BlockingBackend for WinHttpBackend {
