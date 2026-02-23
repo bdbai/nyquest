@@ -50,45 +50,33 @@ impl AsyncClient for WinHttpAsyncClient {
     fn request(&self, req: Request) -> impl Future<Output = NyquestResult<Self::Response>> + Send {
         let session = self.session.clone();
         async move {
-            // Parse the URL
-            let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri);
-
-            let method_cwstr = method_to_cwstr(&req.method);
-
-            // Store additional headers before consuming body
-            let additional_headers = req.additional_headers.clone();
-
             // Prepare headers and body before spawning to threadpool
-            let mut headers_str = String::new();
-            let mut prepared_body =
-                prepare_body(req.body, &mut headers_str, get_stream_content_length);
-            headers_str.push_str(&prepare_additional_headers(
-                &additional_headers,
-                &session.options,
-                &prepared_body,
-            ));
+            let mut prepared_body;
 
             // Create the request context
             let ctx = RequestContext::new();
 
-            let body_len = prepared_body.body_len(get_stream_content_length);
-            if body_len.is_none() {
-                headers_str.push_str("Transfer-Encoding: chunked\r\n");
-            }
-
-            // Create a oneshot channel for the initial setup result
+            let body_len;
             let (setup_tx, setup_rx) = oneshot::channel();
-
-            // Clone data needed for the threadpool callback
-            let max_response_buffer_size = session.options.max_response_buffer_size;
-            let headers_owned = headers_str;
-
-            let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
-            // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
-            ctx.set_body(prepared_body.take_body());
-
-            // Submit the blocking connect/open/send to the threadpool
             submit_callback({
+                let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri);
+                let method = method_to_cwstr(&req.method);
+                let mut headers_str = String::new();
+                prepared_body = prepare_body(req.body, &mut headers_str, get_stream_content_length);
+                headers_str.push_str(&prepare_additional_headers(
+                    &req.additional_headers,
+                    &session.options,
+                    &prepared_body,
+                ));
+
+                body_len = prepared_body.body_len(get_stream_content_length);
+                if body_len.is_none() {
+                    headers_str.push_str("Transfer-Encoding: chunked\r\n");
+                }
+                let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
+                // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
+                ctx.set_body(prepared_body.take_body());
+
                 let ctx = Arc::downgrade(&ctx);
                 let session = session.clone();
                 move || {
@@ -100,39 +88,40 @@ impl AsyncClient for WinHttpAsyncClient {
                         }
                     };
 
-                    let (connection, request) =
-                        match create_request(&session, &parsed_url, &method_cwstr) {
-                            Ok(handles) => handles,
-                            Err(e) => {
-                                let _ = setup_tx.send(Err(e.into()));
-                                return;
-                            }
-                        };
+                    let (connection, request) = match create_request(&session, &parsed_url, &method)
+                    {
+                        Ok(handles) => handles,
+                        Err(e) => {
+                            let _ = setup_tx.send(Err(e.into()));
+                            return;
+                        }
+                    };
                     drop(session);
                     let Some(ctx) = ctx.upgrade() else {
                         return;
                     };
-                    let result = if headers_owned.is_empty() {
+                    let result = if headers_str.is_empty() {
                         Ok(())
                     } else {
-                        request.add_headers(&headers_owned)
+                        request.add_headers(&headers_str)
                     };
-                    let result = result
-                        .and_then(|()| {
-                            if is_stream {
-                                #[cfg(feature = "async-stream")]
-                                {
-                                    setup_and_send_streaming_request(&request, &ctx, body_len)
-                                }
-                                #[cfg(not(feature = "async-stream"))]
-                                unreachable!("streaming requires async-stream feature")
-                            } else {
-                                setup_and_send_request(&request, &ctx)
+                    let result = result.and_then(|()| {
+                        let context = Arc::into_raw(ctx.clone()) as usize;
+                        let res = match (is_stream, body_len) {
+                            (true, Some(len)) => request.send_with_total_length(len, context),
+                            (true, None) => request.send_chunked(context),
+                            (false, _) => {
+                                let (body_ptr, body_len) = ctx.get_body_ptr();
+                                unsafe { request.send(body_ptr, body_len, context) }
                             }
-                        })
-                        .map(|()| (connection, request));
+                        };
+                        if res.is_err() {
+                            let _ = unsafe { Arc::from_raw(context as *const RequestContext) };
+                        }
+                        res
+                    });
 
-                    let _ = setup_tx.send(result.into_nyquest());
+                    let _ = setup_tx.send(result.map(|()| (connection, request)).into_nyquest());
                 }
             })?;
 
@@ -162,7 +151,7 @@ impl AsyncClient for WinHttpAsyncClient {
                 ctx,
                 status,
                 content_length,
-                max_response_buffer_size,
+                session.options.max_response_buffer_size,
                 session.clone(),
                 connection,
                 request,
@@ -183,79 +172,6 @@ fn get_stream_content_length(stream: &BoxedStream) -> Option<u64> {
 #[cfg(not(feature = "async-stream"))]
 fn get_stream_content_length(_stream: &impl Sized) -> Option<u64> {
     None
-}
-
-/// Sets up and sends the request on the threadpool.
-///
-/// This function runs on the Win32 threadpool and performs the blocking
-/// WinHTTP operations.
-fn setup_and_send_request(
-    request: &RequestHandle,
-    ctx: &Arc<RequestContext>,
-) -> Result<(), WinHttpError> {
-    // Get the body pointer from the context - the body is stored there to ensure it lives
-    // long enough for the async WinHTTP operation to complete.
-    let (body_ptr, body_len) = ctx.get_body_ptr();
-
-    // Send the request (async mode - returns immediately, but callback may fire synchronously)
-    let result = unsafe {
-        windows_sys::Win32::Networking::WinHttp::WinHttpSendRequest(
-            request.as_raw(),
-            std::ptr::null(),
-            0,
-            body_ptr as *const std::ffi::c_void,
-            body_len as u32,
-            body_len as u32,
-            Arc::into_raw(ctx.clone()) as usize,
-        )
-    };
-
-    if result == 0 {
-        return Err(WinHttpError::from_last_error("WinHttpSendRequest"));
-    }
-
-    Ok(())
-}
-
-/// Sets up and sends the initial part of a streaming request.
-///
-/// This function runs on the Win32 threadpool. It sends the initial request with
-/// no body data - the body will be written asynchronously via WinHttpWriteData.
-#[cfg(feature = "async-stream")]
-fn setup_and_send_streaming_request(
-    request: &RequestHandle,
-    ctx: &Arc<RequestContext>,
-    content_length: Option<u64>,
-) -> Result<(), WinHttpError> {
-    use windows_sys::Win32::Networking::WinHttp::WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH;
-
-    // Add headers
-
-    // For streaming uploads, we send with no initial body and WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH
-    // if we don't know the content length (chunked transfer encoding).
-    let total_length = content_length
-        .map(|l| l as u32)
-        .unwrap_or(WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH);
-
-    // Send the request with no body - we'll write data via WinHttpWriteData
-    let result = unsafe {
-        windows_sys::Win32::Networking::WinHttp::WinHttpSendRequest(
-            request.as_raw(),
-            std::ptr::null(),
-            0,
-            std::ptr::null(),
-            0,
-            total_length,
-            Arc::into_raw(ctx.clone()) as usize,
-        )
-    };
-
-    if result == 0 {
-        return Err(WinHttpError::from_last_error(
-            "WinHttpSendRequest (streaming)",
-        ));
-    }
-    Ok(())
 }
 
 /// Polls the stream writer to send data chunks via WinHttpWriteData.

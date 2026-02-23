@@ -77,21 +77,30 @@ impl RequestHandle {
     }
 
     /// Sends the HTTP request with optional body data.
-    pub(crate) fn send(&self, body: Option<&[u8]>) -> Result<()> {
-        let (body_ptr, body_len) = match body {
-            Some(data) => (data.as_ptr() as *const std::ffi::c_void, data.len() as u32),
-            None => (std::ptr::null(), 0),
-        };
+    ///
+    /// # Safety
+    /// The caller must ensure that the body data remains valid until the
+    /// request is sent.
+    pub(crate) unsafe fn send(
+        &self,
+        mut body_ptr: *const u8,
+        body_len: usize,
+        context: usize,
+    ) -> Result<()> {
+        let body_len = body_len as u32;
+        if body_len == 0 {
+            body_ptr = std::ptr::null();
+        }
 
         let result = unsafe {
             WinHttpSendRequest(
                 self.as_raw(),
                 std::ptr::null(), // No additional headers
                 0,
-                body_ptr,
+                body_ptr as _,
                 body_len,
                 body_len,
-                0, // No context
+                context,
             )
         };
 
@@ -103,7 +112,7 @@ impl RequestHandle {
 
     /// Sends the HTTP request for streaming upload with unknown content length.
     /// This uses WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH to allow WinHttpWriteData calls.
-    pub(crate) fn send_for_streaming(&self) -> Result<()> {
+    pub(crate) fn send_chunked(&self, context: usize) -> Result<()> {
         // WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH = 0xFFFFFFFF
         // This tells WinHTTP that we'll be streaming data with unknown length
         const WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH: u32 = 0xFFFFFFFF;
@@ -116,7 +125,7 @@ impl RequestHandle {
                 std::ptr::null(),
                 0,
                 WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH,
-                0,
+                context,
             )
         };
 
@@ -128,7 +137,7 @@ impl RequestHandle {
 
     /// Sends the HTTP request for streaming upload with a known total content length.
     /// The body data will be written separately using WinHttpWriteData.
-    pub(crate) fn send_with_total_length(&self, total_length: u64) -> Result<()> {
+    pub(crate) fn send_with_total_length(&self, total_length: u64, context: usize) -> Result<()> {
         let result = unsafe {
             WinHttpSendRequest(
                 self.as_raw(),
@@ -137,41 +146,9 @@ impl RequestHandle {
                 std::ptr::null(),
                 0,
                 total_length as u32,
-                0,
+                context,
             )
         };
-
-        if result == 0 {
-            return Err(WinHttpError::from_last_error("WinHttpSendRequest"));
-        }
-        Ok(())
-    }
-
-    /// Sends the HTTP request with optional body data and a context pointer.
-    ///
-    /// # Safety
-    /// The context pointer must remain valid until the request completes.
-    #[allow(dead_code)]
-    pub(crate) unsafe fn send_with_context(
-        &self,
-        body: Option<&[u8]>,
-        total_length: u32,
-        context: usize,
-    ) -> Result<()> {
-        let (body_ptr, body_len) = match body {
-            Some(data) => (data.as_ptr() as *const std::ffi::c_void, data.len() as u32),
-            None => (std::ptr::null(), 0),
-        };
-
-        let result = WinHttpSendRequest(
-            self.as_raw(),
-            std::ptr::null(),
-            0,
-            body_ptr,
-            body_len,
-            total_length,
-            context,
-        );
 
         if result == 0 {
             return Err(WinHttpError::from_last_error("WinHttpSendRequest"));

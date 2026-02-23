@@ -67,12 +67,14 @@ impl BlockingClient for WinHttpBlockingClient {
 
         // Send the request
         match prepared_body {
-            PreparedBody::None => {
-                request.send(None).into_nyquest()?;
-            }
-            PreparedBody::Complete(data) => {
-                request.send(Some(&data)).into_nyquest()?;
-            }
+            PreparedBody::None => unsafe {
+                request.send(std::ptr::null(), 0, 0).into_nyquest()?;
+            },
+            // SAFETY: Since the request handle is in blocking mode, WinHTTP
+            // will not read the body data until send() returns.
+            PreparedBody::Complete(data) => unsafe {
+                request.send(data.as_ptr(), data.len(), 0).into_nyquest()?;
+            },
             #[cfg(feature = "blocking-stream")]
             PreparedBody::Stream { stream_parts, .. } => {
                 self.send_streaming_request(&request, stream_parts, body_len)?;
@@ -116,10 +118,10 @@ impl WinHttpBlockingClient {
         // Send the request with appropriate content length handling
         if let Some(len) = content_length {
             // For sized streams, use the known content length
-            request.send_with_total_length(len).into_nyquest()?;
+            request.send_with_total_length(len, 0).into_nyquest()?;
         } else {
             // For streaming uploads with unknown content length
-            request.send_for_streaming().into_nyquest()?;
+            request.send_chunked(0).into_nyquest()?;
         }
 
         // Use StreamWriter to handle both data and stream parts
