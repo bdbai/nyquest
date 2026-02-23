@@ -111,37 +111,35 @@ impl WinHttpBlockingClient {
         stream_parts: Vec<DataOrStream<BoxedStream>>,
         content_length: Option<u64>,
     ) -> NyquestResult<()> {
-        use crate::error::WinHttpResultExt;
+        use crate::error::WinHttpResultExt as _;
 
-        let chunked = content_length.is_none();
-
-        // Send the request with appropriate content length handling
-        if let Some(len) = content_length {
-            // For sized streams, use the known content length
+        let mut writer = if let Some(len) = content_length {
             request.send_with_total_length(len, 0).into_nyquest()?;
+            StreamWriter::new(stream_parts, false)
         } else {
-            // For streaming uploads with unknown content length
             request.send_chunked(0).into_nyquest()?;
-        }
-
-        // Use StreamWriter to handle both data and stream parts
-        let mut writer = StreamWriter::new(stream_parts, chunked);
+            StreamWriter::new(stream_parts, true)
+        };
 
         while !writer.is_finished() {
-            if writer.fill_buffer_blocking()? {
-                let data = writer.take_pending_data();
-                let mut data = &data[..];
-                while !data.is_empty() {
-                    let written = request.write_data(data).into_nyquest()?;
-                    data = &data[written as usize..];
-                }
-            }
-        }
+            use std::io::Read as _;
+            use std::task::Poll;
 
-        // Write final chunk if using chunked encoding
-        if chunked {
-            let final_chunk = writer.get_final_chunk();
-            request.write_data(final_chunk).into_nyquest()?;
+            let (buf, mut range) = match writer
+                .poll_take_buffer(|stream, buf| Poll::Ready(stream.read(buf)))
+            {
+                Poll::Ready(Ok(res)) => res,
+                Poll::Ready(Err(e)) => return Err(e.into()),
+                Poll::Pending => {
+                    unreachable!("poll_take_buffer should never return Pending in blocking mode")
+                }
+            };
+            while !range.is_empty() {
+                let data = &buf[range.start..range.end];
+                let written = unsafe { request.write_data(data).into_nyquest()? };
+                range.start += written as usize;
+            }
+            writer.advance(buf);
         }
 
         Ok(())

@@ -1,6 +1,8 @@
 //! Async WinHTTP client implementation.
 
 use std::future::Future;
+#[cfg(feature = "async-stream")]
+use std::ops::Range;
 use std::sync::Arc;
 
 use futures_channel::oneshot;
@@ -185,75 +187,56 @@ async fn poll_stream_upload(
     // Create stream writer
     let mut writer = StreamWriter::new(stream_parts, is_chunked);
 
-    // Buffer for reading data
-    const CHUNK_SIZE: usize = 65536;
-    let mut buffer = vec![0u8; CHUNK_SIZE];
+    while !writer.is_finished() {
+        let (buf, range) = writer
+            .take_buffer(|stream, buf, cx| {
+                use nyquest_interface::r#async::futures_io::AsyncRead as _;
+                use std::pin::Pin;
 
-    loop {
-        // Poll the stream writer to fill the buffer
-        let poll_result = std::future::poll_fn(|cx| writer.poll_fill_buffer(cx, &mut buffer)).await;
-
-        match poll_result {
-            Ok(0) => {
-                // No more data - done writing
-                break;
-            }
-            Ok(n) => {
-                // Got data, write it via WinHttpWriteData
-                let data = buffer[..n].to_vec();
-                write_data_async(ctx, request, data).await?;
-            }
-            Err(e) => {
-                return Err(nyquest_interface::Error::Io(e));
-            }
-        }
-    }
-
-    // If chunked, send the final chunk terminator
-    if is_chunked {
-        let final_chunk = writer.get_final_chunk().to_vec();
-        write_data_async(ctx, request, final_chunk).await?;
+                Pin::new(stream).poll_read(cx, buf)
+            })
+            .await?;
+        let buf = write_all_data_async(ctx, request, buf, range).await?;
+        writer.advance(buf);
     }
     Ok(())
 }
 
 /// Writes data asynchronously via WinHttpWriteData and waits for completion.
 #[cfg(feature = "async-stream")]
-async fn write_data_async(
+async fn write_all_data_async(
     ctx: &RequestContext,
     request: &RequestHandle,
     data: Vec<u8>,
-) -> NyquestResult<()> {
+    mut range: Range<usize>,
+) -> NyquestResult<Vec<u8>> {
     if data.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     // Store the data in the context so it remains valid during the async operation
     ctx.set_write_buffer(data);
+    while !range.is_empty() {
+        let ptr = ctx.prepare_for_writing();
 
-    // Set state to Writing
-    ctx.set_state(RequestState::HeadersSent);
+        let result = unsafe {
+            windows_sys::Win32::Networking::WinHttp::WinHttpWriteData(
+                request.as_raw(),
+                ptr.add(range.start) as *const std::ffi::c_void,
+                range.len() as u32,
+                std::ptr::null_mut(),
+            )
+        };
 
-    // Get the buffer pointer and length
-    let (ptr, len) = ctx.get_write_buffer_ptr();
+        if result == 0 {
+            return Err(WinHttpError::from_last_error("WinHttpWriteData").into());
+        }
 
-    // Call WinHttpWriteData
-    let result = unsafe {
-        windows_sys::Win32::Networking::WinHttp::WinHttpWriteData(
-            request.as_raw(),
-            ptr as *const std::ffi::c_void,
-            len as u32,
-            std::ptr::null_mut(),
-        )
-    };
-
-    if result == 0 {
-        return Err(WinHttpError::from_last_error("WinHttpWriteData").into());
+        // Wait for WRITE_COMPLETE callback
+        let res = wait_for_state(ctx, RequestState::WriteComplete).await?;
+        range.start += res.bytes_transferred;
     }
-
-    // Wait for WRITE_COMPLETE callback
-    wait_for_state(ctx, RequestState::WriteComplete).await?;
-    Ok(())
+    Ok(ctx.take_write_buffer())
 }
 
 impl AsyncBackend for WinHttpBackend {

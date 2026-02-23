@@ -2,14 +2,14 @@
 //!
 //! This follows the pattern from nsurlsession backend.
 
-use std::io;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::io::{self, Cursor};
+use std::ops::Range;
+use std::task::{ready, Poll};
 
 use super::DataOrStream;
 
 /// Buffer size for chunked transfers.
-const CHUNK_BUFFER_SIZE: usize = 8192;
+const CHUNK_BUFFER_SIZE: usize = 16 * 1024;
 
 /// Writes stream data to a WinHTTP request.
 pub(crate) struct StreamWriter<S> {
@@ -17,8 +17,6 @@ pub(crate) struct StreamWriter<S> {
     data_parts: Vec<DataOrStream<S>>,
     /// Internal buffer for reading from streams.
     buffer: Vec<u8>,
-    /// Number of valid bytes in the buffer.
-    buffer_len: usize,
     /// Whether we're using chunked transfer encoding.
     chunked: bool,
     /// Whether we've finished writing all data.
@@ -31,7 +29,6 @@ impl<S> StreamWriter<S> {
         Self {
             data_parts,
             buffer: vec![0u8; CHUNK_BUFFER_SIZE],
-            buffer_len: 0,
             chunked,
             finished: false,
         }
@@ -42,193 +39,103 @@ impl<S> StreamWriter<S> {
         self.finished
     }
 
-    /// Tries to fill the internal buffer by reading from parts using a callback.
-    ///
-    /// Returns:
-    /// - `Poll::Ready(Ok(true))` if data was produced (check `take_pending_data`)
-    /// - `Poll::Ready(Ok(false))` if all data has been written (call `get_final_chunk` if chunked)
-    /// - `Poll::Ready(Err(e))` if an error occurred
-    /// - `Poll::Pending` if we need to wait for the stream to produce data
-    pub fn poll_fill_buffer_with_cb(
+    fn get_max_chunk_size(&self) -> usize {
+        if self.chunked {
+            CHUNK_BUFFER_SIZE - 12
+        } else {
+            CHUNK_BUFFER_SIZE
+        }
+    }
+
+    pub fn poll_take_buffer(
         &mut self,
         mut read_cb: impl FnMut(&mut S, &mut [u8]) -> Poll<io::Result<usize>>,
-    ) -> Poll<io::Result<bool>> {
+    ) -> Poll<io::Result<(Vec<u8>, Range<usize>)>> {
         if self.finished {
-            return Poll::Ready(Ok(false));
+            return Poll::Ready(Ok((Vec::new(), 0..0)));
         }
 
-        loop {
-            // If we have pending data in buffer, don't read more until it's consumed
-            if self.buffer_len > 0 {
-                return Poll::Ready(Ok(true));
-            }
-
-            let Some(part) = self.data_parts.first_mut() else {
-                // No more parts, we're done
-                self.finished = true;
-                return Poll::Ready(Ok(false));
-            };
-
-            match part {
-                DataOrStream::Data(data) => {
-                    if data.is_empty() {
+        let max_chunk_size = self.get_max_chunk_size();
+        let (mut range, mut buf) = loop {
+            match self.data_parts.first_mut() {
+                Some(DataOrStream::Data(data)) if data.is_empty() => {
+                    self.data_parts.remove(0);
+                    continue;
+                }
+                Some(DataOrStream::Data(data)) => break (0..data.len(), std::mem::take(data)),
+                Some(DataOrStream::Stream(stream)) => {
+                    self.buffer.resize(CHUNK_BUFFER_SIZE, 0);
+                    let res = ready!(read_cb(stream, &mut self.buffer[..max_chunk_size]))?;
+                    if res == 0 {
                         self.data_parts.remove(0);
                         continue;
                     }
-                    // Copy data to buffer
-                    let to_write = data.len().min(self.buffer.len());
-                    self.buffer[..to_write].copy_from_slice(&data[..to_write]);
-                    self.buffer_len = to_write;
-                    data.drain(..to_write);
-                    return Poll::Ready(Ok(true));
+                    break (0..res, std::mem::take(&mut self.buffer));
                 }
-                DataOrStream::Stream(stream) => {
-                    match read_cb(stream, &mut self.buffer) {
-                        Poll::Ready(Ok(0)) => {
-                            // Stream exhausted
-                            self.data_parts.remove(0);
-                        }
-                        Poll::Ready(Ok(n)) => {
-                            self.buffer_len = n;
-                            return Poll::Ready(Ok(true));
-                        }
-                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                        Poll::Pending => return Poll::Pending,
-                    }
+                _ => {
+                    // No more parts, we're done
+                    self.finished = true;
+                    break (0..0, vec![]);
                 }
             }
-        }
-    }
-
-    /// Gets the pending data to write, formatted for the transfer encoding.
-    ///
-    /// Returns the data to write and clears the internal buffer.
-    pub fn take_pending_data(&mut self) -> Vec<u8> {
-        if self.buffer_len == 0 {
-            return Vec::new();
-        }
-
-        let data = if self.chunked {
-            // Format as chunked: <size in hex>\r\n<data>\r\n
-            let mut chunk = format!("{:X}\r\n", self.buffer_len).into_bytes();
-            chunk.extend_from_slice(&self.buffer[..self.buffer_len]);
-            chunk.extend_from_slice(b"\r\n");
-            chunk
-        } else {
-            self.buffer[..self.buffer_len].to_vec()
         };
 
-        self.buffer_len = 0;
-        data
-    }
-
-    /// Gets the final chunk for chunked encoding (the terminator).
-    pub fn get_final_chunk(&self) -> &'static [u8] {
-        b"0\r\n\r\n"
-    }
-}
-
-// Async stream support
-#[cfg(feature = "async-stream")]
-impl StreamWriter<nyquest_interface::r#async::BoxedStream> {
-    /// Async version of fill_buffer that works with BoxedStream.
-    ///
-    /// Fills the internal buffer from the next data part or stream.
-    /// Returns the number of bytes available to write, or 0 if done.
-    pub fn poll_fill_buffer(
-        &mut self,
-        cx: &mut Context<'_>,
-        output_buffer: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        use nyquest_interface::r#async::futures_io::AsyncRead;
-
-        if self.finished {
-            return Poll::Ready(Ok(0));
-        }
-
-        loop {
-            let Some(part) = self.data_parts.first_mut() else {
-                // No more parts, we're done
-                self.finished = true;
-                return Poll::Ready(Ok(0));
-            };
-
-            match part {
-                DataOrStream::Data(data) => {
-                    if data.is_empty() {
-                        self.data_parts.remove(0);
-                        continue;
-                    }
-                    // Copy data to output buffer
-                    let to_write = data.len().min(output_buffer.len());
-
-                    let output = if self.chunked {
-                        // Format as chunked: <size in hex>\r\n<data>\r\n
-                        let mut chunk = format!("{:X}\r\n", to_write).into_bytes();
-                        chunk.extend_from_slice(&data[..to_write]);
-                        chunk.extend_from_slice(b"\r\n");
-                        data.drain(..to_write);
-
-                        // Copy to output buffer
-                        let len = chunk.len().min(output_buffer.len());
-                        output_buffer[..len].copy_from_slice(&chunk[..len]);
-                        len
-                    } else {
-                        output_buffer[..to_write].copy_from_slice(&data[..to_write]);
-                        data.drain(..to_write);
-                        to_write
-                    };
-
-                    return Poll::Ready(Ok(output));
-                }
-                DataOrStream::Stream(stream) => {
-                    // Use a temporary buffer to read from the stream
-                    let temp_buf = if self.chunked {
-                        // Reserve space for chunk header/trailer
-                        &mut self.buffer[..]
-                    } else {
-                        &mut output_buffer[..]
-                    };
-
-                    let pinned = Pin::new(stream);
-                    match pinned.poll_read(cx, temp_buf) {
-                        Poll::Ready(Ok(0)) => {
-                            // Stream exhausted
-                            self.data_parts.remove(0);
-                        }
-                        Poll::Ready(Ok(n)) => {
-                            let output = if self.chunked {
-                                // Format as chunked: <size in hex>\r\n<data>\r\n
-                                let mut chunk = format!("{:X}\r\n", n).into_bytes();
-                                chunk.extend_from_slice(&self.buffer[..n]);
-                                chunk.extend_from_slice(b"\r\n");
-
-                                // Copy to output buffer
-                                let len = chunk.len().min(output_buffer.len());
-                                output_buffer[..len].copy_from_slice(&chunk[..len]);
-                                len
-                            } else {
-                                n
-                            };
-                            return Poll::Ready(Ok(output));
-                        }
-                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                        Poll::Pending => return Poll::Pending,
-                    }
-                }
+        if self.chunked {
+            if range.is_empty() {
+                self.buffer.resize(5, 0);
+                self.buffer[..5].copy_from_slice(b"0\r\n\r\n");
+                (buf, range) = (std::mem::take(&mut self.buffer), 0..5);
+            } else {
+                decorate_buffer_for_chunked_encoding(&mut buf, &mut range);
             }
         }
+        Poll::Ready(Ok((buf, range)))
+    }
+
+    #[cfg(feature = "async-stream")]
+    pub async fn take_buffer(
+        &mut self,
+        mut read_cb: impl FnMut(
+            &mut S,
+            &mut [u8],
+            &mut std::task::Context<'_>,
+        ) -> Poll<io::Result<usize>>,
+    ) -> io::Result<(Vec<u8>, Range<usize>)> {
+        std::future::poll_fn(|cx| self.poll_take_buffer(|stream, buf| read_cb(stream, buf, cx)))
+            .await
+    }
+
+    pub fn advance(&mut self, mut buffer_to_return: Vec<u8>) {
+        match self.data_parts.first_mut() {
+            Some(DataOrStream::Data(_)) => {
+                // Drop the buffer
+            }
+            Some(DataOrStream::Stream(_)) => {
+                buffer_to_return.resize(CHUNK_BUFFER_SIZE, 0);
+                self.buffer = buffer_to_return;
+            }
+            None => {}
+        }
     }
 }
 
-/// Sync version of poll_fill_buffer for blocking client.
-#[cfg(feature = "blocking-stream")]
-impl<S: std::io::Read> StreamWriter<S> {
-    /// Blocking version of fill_buffer.
-    pub fn fill_buffer_blocking(&mut self) -> io::Result<bool> {
-        match self.poll_fill_buffer_with_cb(|stream, buf| Poll::Ready(stream.read(buf))) {
-            Poll::Ready(result) => result,
-            Poll::Pending => unreachable!("blocking read should not return Pending"),
-        }
+fn decorate_buffer_for_chunked_encoding(buffer: &mut Vec<u8>, range: &mut Range<usize>) {
+    use std::io::Write as _;
+
+    let encoding_buf = {
+        let mut buf = Cursor::new([0u8; 12]);
+        write!(buf, "{:X}\r\n\r\n", range.len())
+            .expect("chunked encoding buf should not exceed 12 bytes");
+        buf
+    };
+    let encoding_buf = &encoding_buf.get_ref()[..encoding_buf.position() as usize];
+    if buffer.len() < range.end + encoding_buf.len() {
+        buffer.truncate(range.end);
+        buffer.extend_from_slice(encoding_buf);
+    } else {
+        buffer[range.end..][..encoding_buf.len()].copy_from_slice(encoding_buf);
     }
+    let encoding_front_len = encoding_buf.len() - 2;
+    buffer[range.start..range.end + encoding_front_len].rotate_right(encoding_front_len);
+    range.end += encoding_buf.len();
 }

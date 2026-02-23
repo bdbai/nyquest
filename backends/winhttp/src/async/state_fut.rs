@@ -11,8 +11,14 @@ pub struct StateFuture<C> {
     expected_states: RequestState,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateChangedResult {
+    pub state: RequestState,
+    pub bytes_transferred: usize,
+}
+
 impl<C: Deref<Target = RequestContext>> Future for StateFuture<C> {
-    type Output = Result<(), WinHttpError>;
+    type Output = Result<StateChangedResult, WinHttpError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         poll_for_state(&self.context, self.expected_states, cx)
@@ -23,15 +29,19 @@ fn poll_for_state(
     context: &RequestContext,
     expected_states: RequestState,
     cx: &mut Context<'_>,
-) -> Poll<Result<(), WinHttpError>> {
+) -> Poll<Result<StateChangedResult, WinHttpError>> {
     if let Some(error) = context.take_error() {
         return Poll::Ready(Err(error));
     }
-    let state = context.state();
+    let mut inner = context.inner.lock().unwrap();
+    let state = inner.state;
     if state.intersects(expected_states) {
-        Poll::Ready(Ok(()))
+        Poll::Ready(Ok(StateChangedResult {
+            state,
+            bytes_transferred: inner.bytes_transferred,
+        }))
     } else {
-        context.set_waker(cx.waker());
+        inner.waker.clone_from(cx.waker());
         Poll::Pending
     }
 }

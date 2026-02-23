@@ -64,7 +64,7 @@ unsafe fn handle_callback(
             handle_read_complete(ctx, status_info, status_info_len);
         }
         WINHTTP_CALLBACK_STATUS_WRITE_COMPLETE => {
-            handle_write_complete(ctx);
+            handle_write_complete(ctx, status_info);
         }
         WINHTTP_CALLBACK_STATUS_REQUEST_ERROR => {
             handle_request_error(ctx, status_info);
@@ -145,11 +145,14 @@ unsafe fn handle_read_complete(
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_WRITE_COMPLETE.
-fn handle_write_complete(ctx: &RequestContext) {
-    // Clear the write buffer as it's no longer needed
-    ctx.clear_write_buffer();
+unsafe fn handle_write_complete(ctx: &RequestContext, status_info: *mut c_void) {
     // Transition from Writing to WriteComplete
-    ctx.transition_state(RequestState::WriteComplete);
+    let bytes_written = if status_info.is_null() {
+        0
+    } else {
+        unsafe { *(status_info as *const u32) as usize }
+    };
+    ctx.set_write_complete(bytes_written);
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_REQUEST_ERROR.

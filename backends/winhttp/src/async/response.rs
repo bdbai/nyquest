@@ -124,18 +124,14 @@ impl nyquest_interface::r#async::futures_io::AsyncRead for WinHttpAsyncResponse 
             return Poll::Ready(Ok(len));
         }
 
+        if let Some(err) = this.ctx.take_error() {
+            return Poll::Ready(Err(std::io::Error::from(err)));
+        }
         let state = this.ctx.state();
         match state {
             RequestState::Completed => {
                 // No more data
                 Poll::Ready(Ok(0))
-            }
-            RequestState::Error => {
-                if let Some(err) = this.ctx.take_error() {
-                    Poll::Ready(Err(std::io::Error::from(err)))
-                } else {
-                    Poll::Ready(Err(std::io::Error::other("unknown error")))
-                }
             }
             RequestState::HeadersReceived => {
                 // Start querying for data

@@ -17,36 +17,35 @@ bitflags::bitflags! {
         /// WriteData completed, ready for more writing or receiving response
         const WriteComplete = 0b0000_0000_0000_0100;
         /// Response headers received, ready to read data
-        const HeadersReceived = 0b0000_0000_0001_0000;
+        const HeadersReceived = 0b0000_0000_0000_1000;
         /// Waiting for WinHttpQueryDataAvailable
-        const QueryingData = 0b0000_0000_0010_0000;
+        const QueryingData = 0b0000_0000_0001_0000;
         /// Data available, ready to read
-        const DataAvailable = 0b0000_0000_0100_0000;
+        const DataAvailable = 0b0000_0000_0010_0000;
         /// Waiting for WinHttpReadData to complete
-        const Reading = 0b0000_0000_1000_0000;
+        const Reading = 0b0000_0000_0100_0000;
         /// Request completed successfully
-        const Completed = 0b0000_0001_0000_0000;
-        /// Request failed with an error
-        const Error = 0b0000_0010_0000_0000;
+        const Completed = 0b0000_0000_1000_0000;
     }
 }
 
 /// Inner state for a request context (protected by mutex).
-struct RequestContextInner {
-    state: RequestState,
+pub(crate) struct RequestContextInner {
+    pub(crate) state: RequestState,
     /// The waker to notify when state changes
-    waker: Waker,
+    pub(crate) waker: Waker,
     /// Error that occurred, if any
     error: Option<WinHttpError>,
     /// Data buffer for reads (used by async-stream feature)
     data_buffer: Vec<u8>,
+    pub(crate) bytes_transferred: usize,
     /// Active read buffer - must be kept alive until READ_COMPLETE callback fires
     /// Boxed to ensure stable address even when mutex is unlocked
     read_buffer: Option<Vec<u8>>,
     /// Request body data - must be kept alive until SENDREQUEST_COMPLETE
     request_body: Option<Vec<u8>>,
     /// Write buffer for streaming uploads - must be kept alive until WRITE_COMPLETE
-    write_buffer: Option<Vec<u8>>,
+    write_buffer: Vec<u8>,
 }
 
 /// Shared state for an async request.
@@ -57,7 +56,7 @@ pub(crate) struct RequestContext {
     /// Number of bytes available (atomic for lock-free access from callbacks)
     bytes_available: AtomicU32,
     /// Inner state protected by mutex
-    inner: Mutex<RequestContextInner>,
+    pub(crate) inner: Mutex<RequestContextInner>,
 }
 
 impl RequestContext {
@@ -72,7 +71,8 @@ impl RequestContext {
                 data_buffer: Vec::new(),
                 read_buffer: None,
                 request_body: None,
-                write_buffer: None,
+                write_buffer: Default::default(),
+                bytes_transferred: 0,
             }),
         })
     }
@@ -80,13 +80,6 @@ impl RequestContext {
     /// Returns the current state.
     pub(crate) fn state(&self) -> RequestState {
         self.inner.lock().unwrap().state
-    }
-
-    /// Sets the state and wakes the waker if registered.
-    pub(crate) fn set_state(&self, state: RequestState) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.state = state;
-        inner.waker.wake_by_ref();
     }
 
     /// Sets the state without waking or clearing the waker.
@@ -109,6 +102,13 @@ impl RequestContext {
         inner.waker.wake_by_ref();
     }
 
+    pub(crate) fn set_write_complete(&self, bytes_written: usize) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.bytes_transferred += bytes_written;
+        inner.state = RequestState::WriteComplete;
+        inner.waker.wake_by_ref();
+    }
+
     /// Sets the waker for notifications.
     pub(crate) fn set_waker(&self, waker: &Waker) {
         let mut inner = self.inner.lock().unwrap();
@@ -119,8 +119,7 @@ impl RequestContext {
     pub(crate) fn set_error(&self, error: WinHttpError) {
         let mut inner = self.inner.lock().unwrap();
         inner.error = Some(error);
-        drop(inner); // Release lock
-        self.set_state(RequestState::Error);
+        inner.waker.wake_by_ref();
     }
 
     /// Takes the error if one occurred.
@@ -140,22 +139,23 @@ impl RequestContext {
 
     /// Sets the write buffer for streaming uploads. This must be kept alive until WRITE_COMPLETE.
     pub(crate) fn set_write_buffer(&self, buffer: Vec<u8>) {
-        self.inner.lock().unwrap().write_buffer = Some(buffer);
+        let mut inner = self.inner.lock().unwrap();
+        inner.write_buffer = buffer;
+        inner.bytes_transferred = 0;
     }
 
     /// Gets a pointer to the write buffer.
     /// Returns (ptr, len) - ptr is null if no buffer.
-    pub(crate) fn get_write_buffer_ptr(&self) -> (*const u8, usize) {
-        let inner = self.inner.lock().unwrap();
-        match inner.write_buffer.as_ref() {
-            Some(data) => (data.as_ptr(), data.len()),
-            None => (std::ptr::null(), 0),
-        }
+    pub(crate) fn prepare_for_writing(&self) -> *const u8 {
+        let mut inner = self.inner.lock().unwrap();
+        inner.state = RequestState::HeadersSent;
+        inner.bytes_transferred = 0;
+        inner.write_buffer.as_ptr()
     }
 
     /// Clears the write buffer after WRITE_COMPLETE.
-    pub(crate) fn clear_write_buffer(&self) {
-        self.inner.lock().unwrap().write_buffer = None;
+    pub(crate) fn take_write_buffer(&self) -> Vec<u8> {
+        std::mem::take(&mut self.inner.lock().unwrap().write_buffer)
     }
 
     /// Gets a pointer to the request body data.

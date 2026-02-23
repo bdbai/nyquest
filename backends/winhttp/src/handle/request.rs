@@ -309,9 +309,10 @@ impl RequestHandle {
         Ok(bytes_read)
     }
 
-    /// Writes additional data for the request (for chunked uploads).
-    #[allow(dead_code)]
-    pub(crate) fn write_data(&self, data: &[u8]) -> Result<u32> {
+    /// Writes additional data for the request.
+    /// # Safety
+    /// The caller must ensure that the handle is in synchronous mode.
+    pub(crate) unsafe fn write_data(&self, data: &[u8]) -> Result<u32> {
         let mut bytes_written: u32 = 0;
 
         let result = unsafe {
