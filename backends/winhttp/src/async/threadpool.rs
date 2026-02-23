@@ -1,7 +1,5 @@
 //! Win32 threadpool integration for async WinHTTP operations.
 
-use std::sync::{Arc, Weak};
-
 use windows_sys::Win32::Foundation::FALSE;
 use windows_sys::Win32::System::Threading::{TrySubmitThreadpoolCallback, PTP_CALLBACK_INSTANCE};
 
@@ -14,7 +12,7 @@ use crate::error::{Result, WinHttpError};
 ///
 /// # Safety
 /// The callback data must remain valid until the callback completes.
-pub(crate) unsafe fn submit_callback<F>(callback: F) -> Result<()>
+pub(crate) fn submit_callback<F>(callback: F) -> Result<()>
 where
     F: FnOnce() + Send + 'static,
 {
@@ -22,16 +20,18 @@ where
     let boxed: Box<F> = Box::new(callback);
     let raw = Box::into_raw(boxed);
 
-    let result = TrySubmitThreadpoolCallback(
-        Some(threadpool_callback_wrapper::<F>),
-        raw as *mut std::ffi::c_void,
-        std::ptr::null_mut(),
-    );
+    unsafe {
+        let result = TrySubmitThreadpoolCallback(
+            Some(threadpool_callback_wrapper::<F>),
+            raw as *mut std::ffi::c_void,
+            std::ptr::null_mut(),
+        );
 
-    if result == FALSE {
-        // Callback was not submitted, we need to free the closure
-        let _ = Box::from_raw(raw);
-        return Err(WinHttpError::from_last_error("TrySubmitThreadpoolCallback"));
+        if result == FALSE {
+            // Callback was not submitted, we need to free the closure
+            let _ = Box::from_raw(raw);
+            return Err(WinHttpError::from_last_error("TrySubmitThreadpoolCallback"));
+        }
     }
 
     Ok(())
@@ -56,38 +56,4 @@ unsafe extern "system" fn threadpool_callback_wrapper<F: FnOnce() + Send + 'stat
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         boxed();
     }));
-}
-
-/// Helper struct to ensure cleanup happens even if we fail partway through setup.
-pub(crate) struct ThreadpoolTask<T> {
-    context: Weak<T>,
-}
-
-impl<T: Send + Sync + 'static> ThreadpoolTask<T> {
-    /// Creates a new threadpool task with a weak reference to the context.
-    pub(crate) fn new(context: &Arc<T>) -> Self {
-        Self {
-            context: Arc::downgrade(context),
-        }
-    }
-
-    /// Submits the task to the threadpool.
-    ///
-    /// The callback receives a strong reference to the context if it's still alive.
-    pub(crate) fn submit<F>(self, f: F) -> Result<()>
-    where
-        F: FnOnce(Arc<T>) + Send + 'static,
-    {
-        let weak = self.context;
-
-        unsafe {
-            submit_callback(move || {
-                // Try to upgrade the weak reference
-                if let Some(strong) = weak.upgrade() {
-                    f(strong);
-                }
-                // If upgrade fails, the context was dropped and we do nothing
-            })
-        }
-    }
 }

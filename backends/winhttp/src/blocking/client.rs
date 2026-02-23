@@ -91,6 +91,7 @@ impl BlockingClient for WinHttpBlockingClient {
         let content_length = request.query_content_length();
 
         Ok(WinHttpBlockingResponse::new(
+            self.session.clone(),
             connection,
             request,
             status,

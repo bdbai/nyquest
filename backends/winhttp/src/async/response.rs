@@ -8,6 +8,7 @@ use nyquest_interface::r#async::AsyncResponse;
 use nyquest_interface::Result as NyquestResult;
 
 use crate::handle::{ConnectionHandle, RequestHandle};
+use crate::session::WinHttpSession;
 
 use super::context::{RequestContext, RequestState};
 
@@ -17,6 +18,7 @@ pub struct WinHttpAsyncResponse {
     status: u16,
     content_length: Option<u64>,
     max_response_buffer_size: Option<u64>,
+    _session: Arc<WinHttpSession>, // Keep session alive for the duration of the response
     _connection: ConnectionHandle,
     request: RequestHandle,
 }
@@ -27,6 +29,7 @@ impl WinHttpAsyncResponse {
         status: u16,
         content_length: Option<u64>,
         max_response_buffer_size: Option<u64>,
+        session: Arc<WinHttpSession>,
         connection: ConnectionHandle,
         request: RequestHandle,
     ) -> Self {
@@ -35,6 +38,7 @@ impl WinHttpAsyncResponse {
             status,
             content_length,
             max_response_buffer_size,
+            _session: session,
             _connection: connection,
             request,
         }

@@ -11,10 +11,10 @@ use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use super::callback::setup_session_callback;
 use super::context::{RequestContext, RequestState};
 use super::response::WinHttpAsyncResponse;
-use super::threadpool::ThreadpoolTask;
 use crate::error::{WinHttpError, WinHttpResultExt};
-use crate::handle::{ConnectionHandle, RequestHandle};
+use crate::handle::RequestHandle;
 use crate::r#async::state_fut::wait_for_state;
+use crate::r#async::threadpool::submit_callback;
 use crate::request::{
     create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
@@ -53,7 +53,7 @@ impl AsyncClient for WinHttpAsyncClient {
             // Parse the URL
             let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri);
 
-            let method = method_to_cwstr(&req.method);
+            let method_cwstr = method_to_cwstr(&req.method);
 
             // Store additional headers before consuming body
             let additional_headers = req.additional_headers.clone();
@@ -88,35 +88,52 @@ impl AsyncClient for WinHttpAsyncClient {
             ctx.set_body(prepared_body.take_body());
 
             // Submit the blocking connect/open/send to the threadpool
-            let task = ThreadpoolTask::new(&ctx);
-            task.submit(move |ctx| {
-                let parsed_url = match ParsedUrl::parse(&url) {
-                    Some(p) => p,
-                    None => {
-                        let _ = setup_tx.send(Err(NyquestError::InvalidUrl));
+            submit_callback({
+                let ctx = Arc::downgrade(&ctx);
+                let session = session.clone();
+                move || {
+                    let parsed_url = match ParsedUrl::parse(&url) {
+                        Some(p) => p,
+                        None => {
+                            let _ = setup_tx.send(Err(NyquestError::InvalidUrl));
+                            return;
+                        }
+                    };
+
+                    let (connection, request) =
+                        match create_request(&session, &parsed_url, &method_cwstr) {
+                            Ok(handles) => handles,
+                            Err(e) => {
+                                let _ = setup_tx.send(Err(e.into()));
+                                return;
+                            }
+                        };
+                    drop(session);
+                    let Some(ctx) = ctx.upgrade() else {
                         return;
-                    }
-                };
+                    };
+                    let result = if headers_owned.is_empty() {
+                        Ok(())
+                    } else {
+                        request.add_headers(&headers_owned)
+                    };
+                    let result = result
+                        .and_then(|()| {
+                            if is_stream {
+                                #[cfg(feature = "async-stream")]
+                                {
+                                    setup_and_send_streaming_request(&request, &ctx, body_len)
+                                }
+                                #[cfg(not(feature = "async-stream"))]
+                                unreachable!("streaming requires async-stream feature")
+                            } else {
+                                setup_and_send_request(&request, &ctx)
+                            }
+                        })
+                        .map(|()| (connection, request));
 
-                let result = if is_stream {
-                    #[cfg(feature = "async-stream")]
-                    {
-                        setup_and_send_streaming_request(
-                            &session,
-                            &ctx,
-                            &parsed_url,
-                            &method,
-                            &headers_owned,
-                            body_len,
-                        )
-                    }
-                    #[cfg(not(feature = "async-stream"))]
-                    unreachable!("streaming requires async-stream feature")
-                } else {
-                    setup_and_send_request(&session, &ctx, &parsed_url, &method, &headers_owned)
-                };
-
-                let _ = setup_tx.send(result.into_nyquest());
+                    let _ = setup_tx.send(result.into_nyquest());
+                }
             })?;
 
             // Wait for the setup to complete
@@ -146,6 +163,7 @@ impl AsyncClient for WinHttpAsyncClient {
                 status,
                 content_length,
                 max_response_buffer_size,
+                session.clone(),
                 connection,
                 request,
             ))
@@ -172,21 +190,9 @@ fn get_stream_content_length(_stream: &impl Sized) -> Option<u64> {
 /// This function runs on the Win32 threadpool and performs the blocking
 /// WinHTTP operations.
 fn setup_and_send_request(
-    session: &WinHttpSession,
+    request: &RequestHandle,
     ctx: &Arc<RequestContext>,
-    parsed_url: &ParsedUrl,
-    method_cwstr: &[u16],
-    headers: &str,
-) -> Result<(ConnectionHandle, RequestHandle), WinHttpError> {
-    // Create connection and request handles
-    let (connection, request) = create_request(session, parsed_url, method_cwstr)?;
-    // Add headers
-    if !headers.is_empty() {
-        request.add_headers(headers)?;
-    }
-
-    let ctx_ptr = Arc::downgrade(ctx).into_raw() as usize;
-
+) -> Result<(), WinHttpError> {
     // Get the body pointer from the context - the body is stored there to ensure it lives
     // long enough for the async WinHTTP operation to complete.
     let (body_ptr, body_len) = ctx.get_body_ptr();
@@ -200,7 +206,7 @@ fn setup_and_send_request(
             body_ptr as *const std::ffi::c_void,
             body_len as u32,
             body_len as u32,
-            ctx_ptr,
+            Arc::into_raw(ctx.clone()) as usize,
         )
     };
 
@@ -208,7 +214,7 @@ fn setup_and_send_request(
         return Err(WinHttpError::from_last_error("WinHttpSendRequest"));
     }
 
-    Ok((connection, request))
+    Ok(())
 }
 
 /// Sets up and sends the initial part of a streaming request.
@@ -217,25 +223,13 @@ fn setup_and_send_request(
 /// no body data - the body will be written asynchronously via WinHttpWriteData.
 #[cfg(feature = "async-stream")]
 fn setup_and_send_streaming_request(
-    session: &WinHttpSession,
+    request: &RequestHandle,
     ctx: &Arc<RequestContext>,
-    parsed_url: &ParsedUrl,
-    method_cwstr: &[u16],
-    headers: &str,
     content_length: Option<u64>,
-) -> Result<(ConnectionHandle, RequestHandle), WinHttpError> {
+) -> Result<(), WinHttpError> {
     use windows_sys::Win32::Networking::WinHttp::WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH;
 
-    // Create connection and request handles
-    let (connection, request) = create_request(session, parsed_url, method_cwstr)?;
-
     // Add headers
-    if !headers.is_empty() {
-        request.add_headers(headers)?;
-    }
-
-    // Get a raw pointer to the RequestContext to use as the callback context.
-    let ctx_ptr = Arc::downgrade(ctx).into_raw() as usize;
 
     // For streaming uploads, we send with no initial body and WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH
     // if we don't know the content length (chunked transfer encoding).
@@ -252,7 +246,7 @@ fn setup_and_send_streaming_request(
             std::ptr::null(),
             0,
             total_length,
-            ctx_ptr,
+            Arc::into_raw(ctx.clone()) as usize,
         )
     };
 
@@ -261,8 +255,7 @@ fn setup_and_send_streaming_request(
             "WinHttpSendRequest (streaming)",
         ));
     }
-
-    Ok((connection, request))
+    Ok(())
 }
 
 /// Polls the stream writer to send data chunks via WinHttpWriteData.

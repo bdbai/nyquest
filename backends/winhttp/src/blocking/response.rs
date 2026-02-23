@@ -1,14 +1,18 @@
 //! Blocking WinHTTP response implementation.
 
+use std::sync::Arc;
+
 use nyquest_interface::blocking::BlockingResponse;
 use nyquest_interface::Result as NyquestResult;
 
 use crate::error::WinHttpResultExt;
 use crate::handle::{ConnectionHandle, RequestHandle};
+use crate::session::WinHttpSession;
 
 /// Blocking WinHTTP response.
 pub struct WinHttpBlockingResponse {
-    // Keep connection alive while response is being read
+    // Keep handles alive while response is being read
+    _session: Arc<WinHttpSession>,
     _connection: ConnectionHandle,
     request: RequestHandle,
     status: u16,
@@ -18,6 +22,7 @@ pub struct WinHttpBlockingResponse {
 
 impl WinHttpBlockingResponse {
     pub(crate) fn new(
+        session: Arc<WinHttpSession>,
         connection: ConnectionHandle,
         request: RequestHandle,
         status: u16,
@@ -25,6 +30,7 @@ impl WinHttpBlockingResponse {
         max_response_buffer_size: Option<u64>,
     ) -> Self {
         Self {
+            _session: session,
             _connection: connection,
             request,
             status,

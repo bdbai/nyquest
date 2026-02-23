@@ -1,6 +1,6 @@
 //! WinHTTP async callback implementation.
 
-use std::{ffi::c_void, mem::ManuallyDrop, sync::Weak};
+use std::{ffi::c_void, sync::Arc};
 
 use windows_sys::Win32::Networking::WinHttp::*;
 
@@ -26,21 +26,17 @@ pub(crate) unsafe extern "system" fn winhttp_callback(
         return;
     }
 
-    let ctx = Weak::<RequestContext>::from_raw(dw_context as *const _);
     let ctx = if dw_internet_status == WINHTTP_CALLBACK_STATUS_HANDLE_CLOSING {
+        let ctx = unsafe { Arc::<RequestContext>::from_raw(dw_context as _) };
         drop(ctx);
         return;
     } else {
-        ManuallyDrop::new(ctx)
-    };
-    let Some(ctx) = ctx.upgrade() else {
-        // Context has been dropped, likely due to request cancellation and cleanup
-        return;
+        unsafe { &*(dw_context as *const RequestContext) }
     };
 
     // Handle the callback based on status
     handle_callback(
-        &ctx,
+        ctx,
         dw_internet_status,
         lpv_status_information,
         dw_status_information_length,
