@@ -80,8 +80,7 @@ unsafe fn handle_callback(
 
 /// Handles WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE.
 fn handle_send_complete(ctx: &RequestContext) {
-    ctx.clear_body();
-    ctx.transition_state(RequestState::HeadersSent);
+    ctx.set_send_complete();
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE.
@@ -115,33 +114,11 @@ unsafe fn handle_data_available(ctx: &RequestContext, status_info: *mut c_void) 
 /// Handles WINHTTP_CALLBACK_STATUS_READ_COMPLETE.
 unsafe fn handle_read_complete(
     ctx: &RequestContext,
-    _status_info: *mut c_void,
+    status_info: *mut c_void,
     status_info_len: u32,
 ) {
-    // status_info is a pointer to the buffer (which we already have in context)
-    // status_info_len contains the number of bytes read
-    #[cfg(feature = "async-stream")]
-    {
-        let bytes_read = status_info_len as usize;
-
-        if bytes_read > 0 {
-            // Move data from read_buffer to data_buffer
-            ctx.complete_read(bytes_read);
-            // After read completes, query for more data
-            // Use HeadersReceived to trigger poll_read query logic
-            // Transition from Reading to HeadersReceived
-            ctx.transition_state(RequestState::HeadersReceived);
-        } else {
-            // No data read, we're done
-            ctx.transition_state(RequestState::Completed);
-        }
-    }
-
-    #[cfg(not(feature = "async-stream"))]
-    {
-        // For non-async-stream, just notify that read is complete
-        ctx.transition_state(RequestState::QueryingData);
-    }
+    let bytes_read = status_info_len as usize;
+    ctx.set_read_complete(status_info as _, bytes_read);
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_WRITE_COMPLETE.

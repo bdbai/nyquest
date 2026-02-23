@@ -1,6 +1,6 @@
 //! Async request context and state management.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::ops::Range;
 use std::sync::{Arc, Mutex};
 use std::task::Waker;
 
@@ -35,17 +35,13 @@ pub(crate) struct RequestContextInner {
     /// The waker to notify when state changes
     pub(crate) waker: Waker,
     /// Error that occurred, if any
-    error: Option<WinHttpError>,
-    /// Data buffer for reads (used by async-stream feature)
-    data_buffer: Vec<u8>,
-    pub(crate) bytes_transferred: usize,
-    /// Active read buffer - must be kept alive until READ_COMPLETE callback fires
-    /// Boxed to ensure stable address even when mutex is unlocked
-    read_buffer: Option<Vec<u8>>,
-    /// Request body data - must be kept alive until SENDREQUEST_COMPLETE
-    request_body: Option<Vec<u8>>,
-    /// Write buffer for streaming uploads - must be kept alive until WRITE_COMPLETE
-    write_buffer: Vec<u8>,
+    pub(crate) error: Option<WinHttpError>,
+    /// Buffer for transferring data to/from WinHTTP.
+    pub(crate) buffer: Vec<u8>,
+    /// For writing, it is 0..bytes_written.
+    /// For query data available, it is 0..available_bytes.
+    /// For reading, it is the range of valid read data in the buffer.
+    pub(crate) buffer_range: Range<usize>,
 }
 
 /// Shared state for an async request.
@@ -53,8 +49,6 @@ pub(crate) struct RequestContextInner {
 /// This is the context that is passed to WinHTTP callbacks and shared between
 /// the Future and the callback.
 pub(crate) struct RequestContext {
-    /// Number of bytes available (atomic for lock-free access from callbacks)
-    bytes_available: AtomicU32,
     /// Inner state protected by mutex
     pub(crate) inner: Mutex<RequestContextInner>,
 }
@@ -63,23 +57,14 @@ impl RequestContext {
     /// Creates a new request context.
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
-            bytes_available: AtomicU32::new(0),
             inner: Mutex::new(RequestContextInner {
                 state: RequestState::Initial,
                 waker: futures_task::noop_waker(), // FIXME: use std::task::Waker::noop() when MSRV >= 1.85
                 error: None,
-                data_buffer: Vec::new(),
-                read_buffer: None,
-                request_body: None,
-                write_buffer: Default::default(),
-                bytes_transferred: 0,
+                buffer: Default::default(),
+                buffer_range: 0..0,
             }),
         })
-    }
-
-    /// Returns the current state.
-    pub(crate) fn state(&self) -> RequestState {
-        self.inner.lock().unwrap().state
     }
 
     /// Sets the state without waking or clearing the waker.
@@ -89,12 +74,6 @@ impl RequestContext {
         self.inner.lock().unwrap().state = state;
     }
 
-    /// Transitions state from expected to new state without waking.
-    pub(crate) fn transition_state_no_wake(&self, to: RequestState) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.state = to;
-    }
-
     /// Transitions state from expected to new state and wakes the waker if successful.
     pub(crate) fn transition_state(&self, to: RequestState) {
         let mut inner = self.inner.lock().unwrap();
@@ -102,17 +81,33 @@ impl RequestContext {
         inner.waker.wake_by_ref();
     }
 
+    pub(crate) fn set_send_complete(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.buffer = vec![];
+        inner.state = RequestState::HeadersSent;
+        inner.waker.wake_by_ref();
+    }
+
     pub(crate) fn set_write_complete(&self, bytes_written: usize) {
         let mut inner = self.inner.lock().unwrap();
-        inner.bytes_transferred += bytes_written;
+        inner.buffer_range.end += bytes_written;
         inner.state = RequestState::WriteComplete;
         inner.waker.wake_by_ref();
     }
 
-    /// Sets the waker for notifications.
-    pub(crate) fn set_waker(&self, waker: &Waker) {
+    /// # Safety
+    /// ptr must be a valid pointer to the buffer.
+    /// bytes_read must be the valid number of bytes read into the buffer.
+    pub(crate) unsafe fn set_read_complete(&self, ptr: *const u8, bytes_read: usize) {
         let mut inner = self.inner.lock().unwrap();
-        inner.waker.clone_from(waker);
+        if bytes_read == 0 {
+            inner.state = RequestState::Completed
+        } else {
+            let new_start = ptr as usize - inner.buffer.as_ptr() as usize;
+            inner.buffer_range = new_start..(new_start + bytes_read);
+            inner.state = RequestState::HeadersReceived
+        }
+        inner.waker.wake_by_ref();
     }
 
     /// Sets an error and transitions to error state.
@@ -128,20 +123,15 @@ impl RequestContext {
     }
 
     /// Sets the request body data. This must be kept alive until SENDREQUEST_COMPLETE.
-    pub(crate) fn set_body(&self, body: Option<Vec<u8>>) {
-        self.inner.lock().unwrap().request_body = body;
-    }
-
-    /// Clears the request body data after it's no longer needed.
-    pub(crate) fn clear_body(&self) {
-        self.inner.lock().unwrap().request_body = None;
+    pub(crate) fn set_body(&self, body: Vec<u8>) {
+        self.inner.lock().unwrap().buffer = body;
     }
 
     /// Sets the write buffer for streaming uploads. This must be kept alive until WRITE_COMPLETE.
     pub(crate) fn set_write_buffer(&self, buffer: Vec<u8>) {
         let mut inner = self.inner.lock().unwrap();
-        inner.write_buffer = buffer;
-        inner.bytes_transferred = 0;
+        inner.buffer = buffer;
+        inner.buffer_range = 0..0;
     }
 
     /// Gets a pointer to the write buffer.
@@ -149,74 +139,26 @@ impl RequestContext {
     pub(crate) fn prepare_for_writing(&self) -> *const u8 {
         let mut inner = self.inner.lock().unwrap();
         inner.state = RequestState::HeadersSent;
-        inner.bytes_transferred = 0;
-        inner.write_buffer.as_ptr()
+        inner.buffer_range = 0..0;
+        inner.buffer.as_ptr()
     }
 
     /// Clears the write buffer after WRITE_COMPLETE.
     pub(crate) fn take_write_buffer(&self) -> Vec<u8> {
-        std::mem::take(&mut self.inner.lock().unwrap().write_buffer)
+        let mut inner = self.inner.lock().unwrap();
+        inner.buffer_range = 0..0;
+        std::mem::take(&mut inner.buffer)
     }
 
     /// Gets a pointer to the request body data.
     /// Returns (ptr, len) - ptr is null if no body.
     pub(crate) fn get_body_ptr(&self) -> (*const u8, usize) {
         let inner = self.inner.lock().unwrap();
-        match inner.request_body.as_ref() {
-            Some(data) => (data.as_ptr(), data.len()),
-            None => (std::ptr::null(), 0),
-        }
-    }
-
-    /// Returns the number of bytes consumed.
-    #[cfg(feature = "async-stream")]
-    pub(crate) fn consume_data(&self, buf: &mut [u8]) -> usize {
-        let mut inner = self.inner.lock().unwrap();
-        let len = inner.data_buffer.len().min(buf.len());
-        buf[..len].copy_from_slice(&inner.data_buffer[..len]);
-        inner.data_buffer.drain(..len);
-        len
-    }
-
-    /// Returns true if there's data in the buffer.
-    #[cfg(feature = "async-stream")]
-    pub(crate) fn has_data(&self) -> bool {
-        !self.inner.lock().unwrap().data_buffer.is_empty()
-    }
-
-    /// Sets the active read buffer for async reads and returns a pointer to it.
-    /// This buffer must be kept alive until the READ_COMPLETE callback fires.
-    /// Returns the buffer pointer that should be passed to WinHttpReadData.
-    /// The buffer is boxed to ensure a stable address.
-    #[cfg(feature = "async-stream")]
-    pub(crate) fn set_read_buffer(&self, mut buffer: Vec<u8>) -> *mut u8 {
-        let mut inner = self.inner.lock().unwrap();
-        // Get the pointer to the Vec's data before boxing
-        let ptr = buffer.as_mut_ptr();
-        inner.read_buffer = Some(buffer);
-        ptr
-    }
-
-    /// Takes ownership of the read buffer and moves its data to the data buffer.
-    /// Called from the READ_COMPLETE callback.
-    #[cfg(feature = "async-stream")]
-    pub(crate) fn complete_read(&self, bytes_read: usize) {
-        let mut inner = self.inner.lock().unwrap();
-        // Take the buffer and copy the data
-        if let Some(buffer) = inner.read_buffer.take() {
-            if bytes_read <= buffer.len() {
-                inner.data_buffer.extend_from_slice(&buffer[..bytes_read]);
-            }
-        }
-    }
-
-    /// Gets the number of bytes available.
-    pub(crate) fn bytes_available(&self) -> u32 {
-        self.bytes_available.load(Ordering::Acquire)
+        (inner.buffer.as_ptr(), inner.buffer.len())
     }
 
     /// Sets the number of bytes available.
     pub(crate) fn set_bytes_available(&self, bytes: u32) {
-        self.bytes_available.store(bytes, Ordering::Release);
+        self.inner.lock().unwrap().buffer_range = 0..bytes as usize;
     }
 }

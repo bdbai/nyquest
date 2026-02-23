@@ -77,7 +77,7 @@ impl AsyncClient for WinHttpAsyncClient {
                 }
                 let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
                 // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
-                ctx.set_body(prepared_body.take_body());
+                ctx.set_body(prepared_body.take_body().unwrap_or_default());
 
                 let ctx = Arc::downgrade(&ctx);
                 let session = session.clone();

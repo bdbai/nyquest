@@ -44,7 +44,7 @@ impl WinHttpBlockingResponse {
 impl std::io::Read for WinHttpBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // Query available data
-        let available = self.request.query_data_available()?;
+        let available = unsafe { self.request.query_data_available()? };
 
         if available == 0 {
             return Ok(0);
@@ -105,7 +105,7 @@ impl BlockingResponse for WinHttpBlockingResponse {
         };
 
         loop {
-            let available = self.request.query_data_available().into_nyquest()?;
+            let available = unsafe { self.request.query_data_available().into_nyquest()? };
 
             if available == 0 {
                 break;

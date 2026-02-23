@@ -52,7 +52,6 @@ impl RequestHandle {
     }
 
     /// Returns the raw handle.
-    #[inline]
     pub(crate) fn as_raw(&self) -> *mut std::ffi::c_void {
         self.handle.as_ptr()
     }
@@ -277,7 +276,10 @@ impl RequestHandle {
     }
 
     /// Queries available data to read.
-    pub(crate) fn query_data_available(&self) -> Result<u32> {
+    /// # Safety
+    /// The caller must ensure that the handle is in synchronous mode.
+    #[cfg(feature = "blocking")]
+    pub(crate) unsafe fn query_data_available(&self) -> Result<u32> {
         let mut available: u32 = 0;
         let result =
             unsafe { WinHttpQueryDataAvailable(self.as_raw(), &mut available as *mut u32) };
@@ -289,7 +291,39 @@ impl RequestHandle {
         Ok(available)
     }
 
+    #[cfg(feature = "async")]
+    pub(crate) fn start_query_data_available(&self) -> Result<()> {
+        let result = unsafe { WinHttpQueryDataAvailable(self.as_raw(), std::ptr::null_mut()) };
+
+        if result == 0 {
+            return Err(WinHttpError::from_last_error("WinHttpQueryDataAvailable"));
+        }
+
+        Ok(())
+    }
+
+    /// # Safety
+    /// The data pointer with at least `len` bytes must remain valid until the
+    /// read data operation completes.
+    #[cfg(feature = "async")]
+    pub(crate) unsafe fn start_read_data(&self, ptr: *const usize, len: usize) -> Result<()> {
+        let result = unsafe {
+            WinHttpReadData(
+                self.as_raw(),
+                ptr as *mut std::ffi::c_void,
+                len as _,
+                std::ptr::null_mut(),
+            )
+        };
+        if result == 0 {
+            let err = crate::error::WinHttpError::from_last_error("WinHttpReadData");
+            return Err(err);
+        }
+        Ok(())
+    }
+
     /// Reads data from the response.
+    #[cfg(feature = "blocking")]
     pub(crate) fn read_data(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<u32> {
         let mut bytes_read: u32 = 0;
 
@@ -312,6 +346,7 @@ impl RequestHandle {
     /// Writes additional data for the request.
     /// # Safety
     /// The caller must ensure that the handle is in synchronous mode.
+    #[cfg(feature = "blocking")]
     pub(crate) unsafe fn write_data(&self, data: &[u8]) -> Result<u32> {
         let mut bytes_written: u32 = 0;
 

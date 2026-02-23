@@ -38,7 +38,7 @@ fn poll_for_state(
     if state.intersects(expected_states) {
         Poll::Ready(Ok(StateChangedResult {
             state,
-            bytes_transferred: inner.bytes_transferred,
+            bytes_transferred: inner.buffer_range.end,
         }))
     } else {
         inner.waker.clone_from(cx.waker());
