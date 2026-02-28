@@ -15,7 +15,7 @@ pub(crate) struct WinHttpSession {
 }
 
 impl WinHttpSession {
-    /// Creates a new blocking WinHTTP session.
+    /// Creates a new WinHTTP session.
     pub(crate) fn new(options: ClientOptions, is_async: bool) -> Result<Arc<Self>> {
         let session = SessionHandle::new(
             options.user_agent.as_deref(),
