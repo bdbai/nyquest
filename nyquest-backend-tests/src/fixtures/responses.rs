@@ -177,10 +177,7 @@ mod tests {
                     // comma.
                     assert_eq!(&*header_value2, ["test-value, test-value2".to_string()]);
                 } else {
-                    assert_eq!(
-                        header_value2.first().cloned().as_deref(),
-                        Some(HEADER_VALUE)
-                    );
+                    assert_eq!(&*header_value2, [HEADER_VALUE, HEADER_VALUE2]);
                 }
             }
         };
