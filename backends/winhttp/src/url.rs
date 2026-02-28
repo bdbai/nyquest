@@ -118,13 +118,15 @@ pub(crate) fn concat_url(
             )
         };
 
-        if result == 0 {
+        return if result == 0 {
             // S_OK = 0, find the null terminator
             let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
             buffer.truncate(len);
             buffer.shrink_to_fit();
-            return Ok(buffer);
-        }
+            Ok(buffer)
+        } else {
+            Err(NyquestError::InvalidUrl)
+        };
     }
 
     relative_wide.pop();
