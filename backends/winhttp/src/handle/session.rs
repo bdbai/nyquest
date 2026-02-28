@@ -92,12 +92,15 @@ impl SessionHandle {
         value: &T,
         error_context: &'static str,
     ) -> Result<()> {
+        let Ok(buffer_len) = u32::try_from(std::mem::size_of::<T>()) else {
+            panic!("{error_context} Option {option} value is too large to fit in u32 length");
+        };
         let result = unsafe {
             WinHttpSetOption(
                 self.as_raw(),
                 option,
                 value as *const T as *const std::ffi::c_void,
-                std::mem::size_of::<T>() as u32,
+                buffer_len,
             )
         };
         if result == 0 {

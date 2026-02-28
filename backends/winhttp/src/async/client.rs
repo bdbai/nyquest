@@ -61,7 +61,7 @@ impl AsyncClient for WinHttpAsyncClient {
             let body_len;
             let (setup_tx, setup_rx) = oneshot::channel();
             submit_callback({
-                let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri);
+                let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri)?;
                 let method = method_to_cwstr(&req.method);
                 prepared_body = prepare_body(req.body, get_stream_content_length);
                 let headers_str = prepare_additional_headers(

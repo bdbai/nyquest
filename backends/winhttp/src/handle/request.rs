@@ -63,12 +63,13 @@ impl RequestHandle {
     /// Adds HTTP headers to the request.
     pub(crate) fn add_headers(&self, headers: &str) -> Result<()> {
         let headers_wide: Vec<u16> = headers.encode_utf16().chain(std::iter::once(0)).collect();
+        let headers_wide_len = u32::try_from(headers_wide.len()).unwrap_or(u32::MAX);
 
         let result = unsafe {
             WinHttpAddRequestHeaders(
                 self.as_raw(),
                 headers_wide.as_ptr(),
-                headers_wide.len() as u32 - 1, // Exclude null terminator
+                headers_wide_len - 1, // Exclude null terminator
                 WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE,
             )
         };
@@ -90,7 +91,7 @@ impl RequestHandle {
         body_len: usize,
         context: usize,
     ) -> Result<()> {
-        let body_len = body_len as u32;
+        let body_len = body_len as u32; // Caller should ensure this fits in u32, otherwise result is unspecified
         if body_len == 0 {
             body_ptr = std::ptr::null();
         }
@@ -141,6 +142,7 @@ impl RequestHandle {
     /// Sends the HTTP request for streaming upload with a known total content length.
     /// The body data will be written separately using WinHttpWriteData.
     pub(crate) fn send_with_total_length(&self, total_length: u64, context: usize) -> Result<()> {
+        let total_length = u32::try_from(total_length).unwrap_or(u32::MAX);
         let result = unsafe {
             WinHttpSendRequest(
                 self.as_raw(),
@@ -148,7 +150,7 @@ impl RequestHandle {
                 0,
                 std::ptr::null(),
                 0,
-                total_length as u32,
+                total_length,
                 context,
             )
         };
@@ -335,7 +337,7 @@ impl RequestHandle {
             WinHttpReadData(
                 self.as_raw(),
                 buffer.as_mut_ptr() as *mut std::ffi::c_void,
-                buffer.len() as u32,
+                u32::try_from(buffer.len()).unwrap_or(u32::MAX),
                 &mut bytes_read,
             )
         };
@@ -358,7 +360,7 @@ impl RequestHandle {
             WinHttpWriteData(
                 self.as_raw(),
                 data.as_ptr() as *const std::ffi::c_void,
-                data.len() as u32,
+                data.len().try_into().unwrap_or(u32::MAX),
                 &mut bytes_written,
             )
         };
@@ -377,12 +379,15 @@ impl RequestHandle {
     /// The caller must ensure that the value pointer is valid and of the
     /// correct type for the specified option.
     pub(crate) unsafe fn set_option<T>(&self, option: u32, value: &T) -> Result<()> {
+        let Ok(buffer_len) = u32::try_from(std::mem::size_of::<T>()) else {
+            panic!("Option {option} value is too large to fit in u32 length");
+        };
         let result = unsafe {
             WinHttpSetOption(
                 self.as_raw(),
                 option,
                 value as *const T as *const std::ffi::c_void,
-                std::mem::size_of::<T>() as u32,
+                buffer_len,
             )
         };
         if result == 0 {

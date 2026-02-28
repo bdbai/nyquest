@@ -39,7 +39,7 @@ impl BlockingClient for WinHttpBlockingClient {
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
         // Create connection and request handles
         let (connection, request) = {
-            let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri);
+            let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
             let parsed_url = ParsedUrl::parse(&url).ok_or(nyquest_interface::Error::InvalidUrl)?;
             let method = method_to_cwstr(&req.method);
             create_request(&self.session, &parsed_url, &method).into_nyquest()?

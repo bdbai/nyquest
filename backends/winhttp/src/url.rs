@@ -3,6 +3,7 @@
 use std::ptr::null_mut;
 use std::slice;
 
+use nyquest_interface::Error as NyquestError;
 use windows_sys::Win32::Networking::WinHttp::*;
 use windows_sys::Win32::UI::Shell::*;
 
@@ -38,7 +39,12 @@ impl<'b> ParsedUrl<'b> {
                 dwExtraInfoLength: 0,
             };
 
-            result = WinHttpCrackUrl(url_wide.as_ptr(), url_wide.len() as u32, 0, &mut components)
+            result = WinHttpCrackUrl(
+                url_wide.as_ptr(),
+                u32::try_from(url_wide.len()).unwrap_or(u32::MAX),
+                0,
+                &mut components,
+            )
         }
 
         if result == 0 {
@@ -83,7 +89,10 @@ impl<'b> ParsedUrl<'b> {
 }
 
 /// Concatenates base URL with relative URI using UrlCombineW.
-pub(crate) fn concat_url(base_url_wide: Option<&[u16]>, relative_uri: &str) -> Vec<u16> {
+pub(crate) fn concat_url(
+    base_url_wide: Option<&[u16]>,
+    relative_uri: &str,
+) -> Result<Vec<u16>, NyquestError> {
     let mut relative_wide: Vec<u16> = relative_uri
         .encode_utf16()
         .chain(std::iter::once(0))
@@ -96,8 +105,8 @@ pub(crate) fn concat_url(base_url_wide: Option<&[u16]>, relative_uri: &str) -> V
 
         // Allocate buffer for combined URL
         let estimated_len = base_wide.len() * 2 + relative_wide.len() + 2;
+        let mut buffer_len = u32::try_from(estimated_len).map_err(|_| NyquestError::InvalidUrl)?;
         let mut buffer = vec![0u16; estimated_len];
-        let mut buffer_len = buffer.len() as u32;
 
         let result = unsafe {
             UrlCombineW(
@@ -114,12 +123,12 @@ pub(crate) fn concat_url(base_url_wide: Option<&[u16]>, relative_uri: &str) -> V
             let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
             buffer.truncate(len);
             buffer.shrink_to_fit();
-            return buffer;
+            return Ok(buffer);
         }
     }
 
     relative_wide.pop();
-    relative_wide
+    Ok(relative_wide)
 }
 
 #[cfg(test)]
@@ -161,18 +170,20 @@ mod tests {
             concat_url(
                 Some(u16cstr!("https://api.example.com").as_slice_with_nul()),
                 "/users"
-            ),
+            )
+            .unwrap(),
             u16str!("https://api.example.com/users").as_slice()
         );
         assert_eq!(
             concat_url(
                 Some(u16cstr!("https://api.example.com/aa").as_slice_with_nul()),
                 "users?id=1"
-            ),
+            )
+            .unwrap(),
             u16str!("https://api.example.com/users?id=1").as_slice()
         );
         assert_eq!(
-            concat_url(None, "https://example.com/path"),
+            concat_url(None, "https://example.com/path").unwrap(),
             u16str!("https://example.com/path").as_slice()
         );
     }

@@ -137,10 +137,28 @@ pub(crate) fn prepare_body<S>(
         Some(Body::Bytes {
             content,
             content_type,
-        }) => PreparedBody::Complete {
-            data: content,
-            content_type,
-        },
+        }) => {
+            if u32::try_from(content.len()).is_ok() {
+                PreparedBody::Complete {
+                    content_type,
+                    data: content,
+                }
+            } else {
+                let max_chunk_size = u32::MAX as usize;
+                let mut parts = Vec::with_capacity(content.len() / u32::MAX as usize + 1);
+                let mut offset = 0;
+                while offset < content.len() {
+                    let chunk_size = max_chunk_size.min(content.len() - offset);
+                    parts.push(DataOrStream::Data(content[offset..][..chunk_size].to_vec()));
+                    offset += chunk_size;
+                }
+                PreparedBody::Stream {
+                    content_type,
+                    content_length: Some(content.len() as u64),
+                    stream_parts: parts,
+                }
+            }
+        }
         Some(Body::Form { fields }) => {
             let encoded = encode_form_fields(&fields);
             PreparedBody::Complete {
