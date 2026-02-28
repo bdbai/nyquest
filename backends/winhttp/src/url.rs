@@ -10,7 +10,7 @@ use windows_sys::Win32::UI::Shell::*;
 pub(crate) struct ParsedUrl<'b> {
     pub host: &'b [u16],
     pub port: u16,
-    pub path: &'b [u16],
+    pub path_and_query: &'b [u16],
     pub is_secure: bool,
 }
 
@@ -66,16 +66,16 @@ impl<'b> ParsedUrl<'b> {
                 components.lpszHostName,
                 components.dwHostNameLength as usize,
             );
-            let mut path =
-                slice::from_raw_parts(components.lpszUrlPath, components.dwUrlPathLength as usize);
-            if !path.starts_with(&[b'/' as u16]) {
-                path = &[b'/' as u16];
-            }
+            let path = if components.dwUrlPathLength == 0 {
+                &[b'/' as u16]
+            } else {
+                slice::from_raw_parts(components.lpszUrlPath, components.dwUrlPathLength as usize)
+            };
 
             Some(ParsedUrl {
                 host,
                 port,
-                path,
+                path_and_query: path,
                 is_secure,
             })
         }
@@ -133,7 +133,7 @@ mod tests {
         let url = ParsedUrl::parse(u16cstr!("http://example.com/path").as_slice()).unwrap();
         assert_eq!(url.host, u16cstr!("example.com").as_slice());
         assert_eq!(url.port, 80);
-        assert_eq!(url.path, u16cstr!("/path").as_slice());
+        assert_eq!(url.path_and_query, u16cstr!("/path").as_slice());
         assert!(!url.is_secure);
     }
 
@@ -142,16 +142,16 @@ mod tests {
         let url = ParsedUrl::parse(u16cstr!("https://example.com:8443/api/v1").as_slice()).unwrap();
         assert_eq!(url.host, u16cstr!("example.com").as_slice());
         assert_eq!(url.port, 8443);
-        assert_eq!(url.path, u16cstr!("/api/v1").as_slice());
+        assert_eq!(url.path_and_query, u16cstr!("/api/v1").as_slice());
         assert!(url.is_secure);
     }
 
     #[test]
     fn test_parse_url_no_path() {
-        let url = ParsedUrl::parse(u16cstr!("https://example.com/?1").as_slice()).unwrap();
+        let url = ParsedUrl::parse(u16cstr!("https://example.com?1").as_slice()).unwrap();
         assert_eq!(url.host, u16cstr!("example.com").as_slice());
         assert_eq!(url.port, 443);
-        assert_eq!(url.path, u16cstr!("/?1").as_slice());
+        assert_eq!(url.path_and_query, u16cstr!("?1").as_slice());
         assert!(url.is_secure);
     }
 

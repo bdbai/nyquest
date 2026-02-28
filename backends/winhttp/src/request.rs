@@ -300,7 +300,7 @@ pub(crate) fn create_request(
     let request = RequestHandle::open(
         &connection,
         method_cwstr,
-        parsed_url.path,
+        parsed_url.path_and_query,
         parsed_url.is_secure,
     )?;
 
