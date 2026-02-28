@@ -1,5 +1,6 @@
 //! Async request context and state management.
 
+use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
 use std::task::Waker;
@@ -37,7 +38,7 @@ pub(crate) struct RequestContextInner {
     /// Error that occurred, if any
     pub(crate) error: Option<WinHttpError>,
     /// Buffer for transferring data to/from WinHTTP.
-    pub(crate) buffer: Vec<u8>,
+    pub(crate) buffer: Cow<'static, [u8]>,
     /// For writing, it is 0..bytes_written.
     /// For query data available, it is 0..available_bytes.
     /// For reading, it is the range of valid read data in the buffer.
@@ -83,7 +84,7 @@ impl RequestContext {
 
     pub(crate) fn set_send_complete(&self) {
         let mut inner = self.inner.lock().unwrap();
-        inner.buffer = vec![];
+        inner.buffer = Cow::Borrowed(&[]);
         inner.state = RequestState::HeadersSent;
         inner.waker.wake_by_ref();
     }
@@ -123,12 +124,12 @@ impl RequestContext {
     }
 
     /// Sets the request body data. This must be kept alive until SENDREQUEST_COMPLETE.
-    pub(crate) fn set_body(&self, body: Vec<u8>) {
+    pub(crate) fn set_body(&self, body: Cow<'static, [u8]>) {
         self.inner.lock().unwrap().buffer = body;
     }
 
     /// Sets the write buffer for streaming uploads. This must be kept alive until WRITE_COMPLETE.
-    pub(crate) fn set_write_buffer(&self, buffer: Vec<u8>) {
+    pub(crate) fn set_write_buffer(&self, buffer: Cow<'static, [u8]>) {
         let mut inner = self.inner.lock().unwrap();
         inner.buffer = buffer;
         inner.buffer_range = 0..0;
@@ -144,7 +145,7 @@ impl RequestContext {
     }
 
     /// Clears the write buffer after WRITE_COMPLETE.
-    pub(crate) fn take_write_buffer(&self) -> Vec<u8> {
+    pub(crate) fn take_write_buffer(&self) -> Cow<'_, [u8]> {
         let mut inner = self.inner.lock().unwrap();
         inner.buffer_range = 0..0;
         std::mem::take(&mut inner.buffer)

@@ -8,7 +8,6 @@ use widestring::u16cstr;
 use crate::error::Result;
 use crate::handle::{ConnectionHandle, RequestHandle};
 use crate::session::WinHttpSession;
-use crate::stream::DataOrStream;
 use crate::url::ParsedUrl;
 
 /// Prepared request body data.
@@ -16,32 +15,30 @@ pub(crate) enum PreparedBody<S> {
     /// No body
     None,
     /// Complete body data
-    Complete(Vec<u8>),
+    Complete {
+        content_type: Cow<'static, str>,
+        data: Cow<'static, [u8]>,
+    },
     /// Streaming body with content type and optional content length
     Stream {
-        content_type: String,
+        content_type: Cow<'static, str>,
+        content_length: Option<u64>,
         stream_parts: Vec<crate::stream::DataOrStream<S>>,
     },
 }
 
 impl<S> PreparedBody<S> {
-    pub(crate) fn body_len(&self, get_stream_len: impl Fn(&S) -> Option<u64>) -> Option<u64> {
+    pub(crate) fn body_len(&self) -> Option<u64> {
         match self {
             PreparedBody::None => Some(0),
-            PreparedBody::Complete(data) => Some(data.len() as u64),
-            PreparedBody::Stream { stream_parts, .. } => stream_parts
-                .iter()
-                .map(|s| match s {
-                    DataOrStream::Data(data) => Some(data.len() as u64),
-                    DataOrStream::Stream(stream) => get_stream_len(stream),
-                })
-                .sum(),
+            PreparedBody::Complete { data, .. } => Some(data.len() as u64),
+            PreparedBody::Stream { content_length, .. } => *content_length,
         }
     }
 
-    pub(crate) fn take_body(&mut self) -> Option<Vec<u8>> {
-        if let PreparedBody::Complete(body) = self {
-            Some(std::mem::take(body))
+    pub(crate) fn take_body(&mut self) -> Option<Cow<'static, [u8]>> {
+        if let PreparedBody::Complete { data, .. } = self {
+            Some(std::mem::take(data))
         } else {
             None
         }
@@ -55,6 +52,61 @@ pub(crate) fn prepare_additional_headers<S>(
     body: &PreparedBody<S>,
 ) -> String {
     let mut headers = String::new();
+
+    // Add request-specific headers
+    for (name, value) in additional_headers {
+        headers.push_str(name);
+        headers.push_str(": ");
+        headers.push_str(value);
+        headers.push_str("\r\n");
+    }
+
+    // Add Content-Type if needed
+    match body {
+        PreparedBody::Complete { content_type, .. } => {
+            if !additional_headers
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+            {
+                headers.push_str("Content-Type: ");
+                headers.push_str(content_type);
+                headers.push_str("\r\n");
+            }
+        }
+        PreparedBody::Stream {
+            content_type,
+            content_length,
+            ..
+        } => {
+            if !additional_headers
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+            {
+                headers.push_str("Content-Type: ");
+                headers.push_str(content_type);
+                headers.push_str("\r\n");
+            }
+            if let Some(len) = content_length {
+                if !additional_headers
+                    .iter()
+                    .any(|(n, _)| n.eq_ignore_ascii_case("content-length"))
+                {
+                    headers.push_str("Content-Length: ");
+                    headers.push_str(&len.to_string());
+                    headers.push_str("\r\n");
+                }
+            } else {
+                // No content length, use chunked encoding
+                if !additional_headers
+                    .iter()
+                    .any(|(n, _)| n.eq_ignore_ascii_case("transfer-encoding"))
+                {
+                    headers.push_str("Transfer-Encoding: chunked\r\n");
+                }
+            }
+        }
+        PreparedBody::None => {}
+    }
 
     // Add default headers
     for (name, value) in &options.default_headers {
@@ -70,39 +122,12 @@ pub(crate) fn prepare_additional_headers<S>(
         }
     }
 
-    // Add request-specific headers
-    for (name, value) in additional_headers {
-        headers.push_str(name);
-        headers.push_str(": ");
-        headers.push_str(value);
-        headers.push_str("\r\n");
-    }
-
-    // Add Content-Type if needed
-    match body {
-        PreparedBody::Complete(_) => {
-            // Content-Type is handled when preparing body
-        }
-        PreparedBody::Stream { content_type, .. } => {
-            if !additional_headers
-                .iter()
-                .any(|(n, _)| n.eq_ignore_ascii_case("content-type"))
-            {
-                headers.push_str("Content-Type: ");
-                headers.push_str(content_type);
-                headers.push_str("\r\n");
-            }
-        }
-        PreparedBody::None => {}
-    }
-
     headers
 }
 
 /// Prepares the request body.
 pub(crate) fn prepare_body<S>(
     body: Option<Body<S>>,
-    headers: &mut String,
     get_stream_len: impl Fn(&S) -> Option<u64>,
 ) -> PreparedBody<S> {
     use crate::stream::DataOrStream;
@@ -112,45 +137,66 @@ pub(crate) fn prepare_body<S>(
         Some(Body::Bytes {
             content,
             content_type,
-        }) => {
-            headers.push_str("Content-Type: ");
-            headers.push_str(&content_type);
-            headers.push_str("\r\n");
-            PreparedBody::Complete(content.into_owned())
-        }
+        }) => PreparedBody::Complete {
+            data: content,
+            content_type,
+        },
         Some(Body::Form { fields }) => {
-            headers.push_str("Content-Type: application/x-www-form-urlencoded\r\n");
             let encoded = encode_form_fields(&fields);
-            PreparedBody::Complete(encoded.into_bytes())
+            PreparedBody::Complete {
+                content_type: "application/x-www-form-urlencoded".into(),
+                data: Cow::Owned(encoded.into_bytes()),
+            }
         }
         #[cfg(feature = "multipart")]
         Some(Body::Multipart { parts }) => {
             let boundary = crate::multipart::generate_multipart_boundary();
-            headers.push_str("Content-Type: multipart/form-data; boundary=");
-            headers.push_str(&boundary);
-            headers.push_str("\r\n");
             let body_parts = crate::multipart::generate_multipart_body(&boundary, parts);
+            let content_type = format!("multipart/form-data; boundary={}", boundary).into();
 
             // Check if there are any streams - if not, collect to complete body
-            let has_streams = body_parts
-                .iter()
-                .any(|p| matches!(p, DataOrStream::Stream(_)));
-            if !has_streams {
-                // All data parts, collect into single Vec
-                let data: Vec<u8> = body_parts
-                    .into_iter()
-                    .flat_map(|p| match p {
-                        DataOrStream::Data(d) => d,
-                        DataOrStream::Stream(_) => unreachable!(),
-                    })
-                    .collect();
-                PreparedBody::Complete(data)
-            } else {
-                // Has streams, use streaming upload
-                PreparedBody::Stream {
-                    content_type: format!("multipart/form-data; boundary={}", boundary),
-                    stream_parts: body_parts,
+            let mut body_parts_it = body_parts.into_iter();
+            let mut first_data_part = vec![];
+            let first_stream = 'only_data: {
+                for part in body_parts_it.by_ref() {
+                    match part {
+                        DataOrStream::Data(data) => {
+                            if first_data_part.is_empty() {
+                                first_data_part = data;
+                            } else {
+                                first_data_part.extend_from_slice(&data);
+                            }
+                        }
+                        DataOrStream::Stream(s) => {
+                            break 'only_data s;
+                        }
+                    }
                 }
+                return PreparedBody::Complete {
+                    content_type,
+                    data: Cow::Owned(first_data_part),
+                };
+            };
+
+            // Has streams, use streaming upload
+            let parts: Vec<_> = [
+                DataOrStream::Data(first_data_part),
+                DataOrStream::Stream(first_stream),
+            ]
+            .into_iter()
+            .chain(body_parts_it)
+            .collect();
+            let content_length = parts
+                .iter()
+                .map(|p| match p {
+                    DataOrStream::Data(data) => Some(data.len() as u64),
+                    DataOrStream::Stream(s) => get_stream_len(s),
+                })
+                .sum();
+            PreparedBody::Stream {
+                content_type,
+                content_length,
+                stream_parts: parts,
             }
         }
         #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
@@ -158,16 +204,11 @@ pub(crate) fn prepare_body<S>(
             stream,
             content_type,
         }) => {
-            // Check if stream has known length
             let content_length = get_stream_len(&stream);
-            if let Some(len) = content_length {
-                headers.push_str("Content-Length: ");
-                headers.push_str(&len.to_string());
-                headers.push_str("\r\n");
-            }
 
             PreparedBody::Stream {
-                content_type: content_type.into_owned(),
+                content_type,
+                content_length,
                 stream_parts: vec![DataOrStream::Stream(stream)],
             }
         }

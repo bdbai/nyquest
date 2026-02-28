@@ -63,18 +63,14 @@ impl AsyncClient for WinHttpAsyncClient {
             submit_callback({
                 let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri);
                 let method = method_to_cwstr(&req.method);
-                let mut headers_str = String::new();
-                prepared_body = prepare_body(req.body, &mut headers_str, get_stream_content_length);
-                headers_str.push_str(&prepare_additional_headers(
+                prepared_body = prepare_body(req.body, get_stream_content_length);
+                let headers_str = prepare_additional_headers(
                     &req.additional_headers,
                     &session.options,
                     &prepared_body,
-                ));
+                );
 
-                body_len = prepared_body.body_len(get_stream_content_length);
-                if body_len.is_none() {
-                    headers_str.push_str("Transfer-Encoding: chunked\r\n");
-                }
+                body_len = prepared_body.body_len();
                 let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
                 // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
                 ctx.set_body(prepared_body.take_body().unwrap_or_default());
@@ -215,7 +211,7 @@ async fn write_all_data_async(
     }
 
     // Store the data in the context so it remains valid during the async operation
-    ctx.set_write_buffer(data);
+    ctx.set_write_buffer(data.into());
     while !range.is_empty() {
         let ptr = ctx.prepare_for_writing();
 
@@ -236,7 +232,7 @@ async fn write_all_data_async(
         let res = wait_for_state(ctx, RequestState::WriteComplete).await?;
         range.start += res.bytes_transferred;
     }
-    Ok(ctx.take_write_buffer())
+    Ok(ctx.take_write_buffer().into_owned())
 }
 
 impl AsyncBackend for WinHttpBackend {

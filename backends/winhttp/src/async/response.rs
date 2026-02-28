@@ -77,20 +77,33 @@ impl WinHttpAsyncResponse {
         }
         match ctx.state {
             RequestState::DataAvailable => {
+                use std::borrow::Cow;
+
                 let available = ctx.buffer_range.end;
                 if available == 0 {
                     return Poll::Ready(Ok(0));
                 }
                 if ctx.buffer.len() < available {
-                    ctx.buffer.resize(available, 0);
+                    ctx.buffer = match std::mem::take(&mut ctx.buffer) {
+                        Cow::Borrowed(_) => vec![0; available].into(),
+                        Cow::Owned(mut v) => {
+                            v.resize(available, 0);
+                            v.into()
+                        }
+                    };
                 }
+                let ptr = match &mut ctx.buffer {
+                    Cow::Borrowed(_) => {
+                        unreachable!("buffer should be owned when data is available")
+                    }
+                    Cow::Owned(v) => v.as_mut_ptr(),
+                };
                 ctx.state = RequestState::Reading;
                 ctx.buffer_range = 0..0;
                 ctx.waker.clone_from(cx.waker());
                 unsafe {
-                    let ptr = ctx.buffer.as_mut_ptr() as _;
                     drop(ctx);
-                    self.request.start_read_data(ptr, available)?;
+                    self.request.start_read_data(ptr as _, available)?;
                 }
                 Poll::Pending
             }

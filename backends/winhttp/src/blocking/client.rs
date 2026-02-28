@@ -46,19 +46,14 @@ impl BlockingClient for WinHttpBlockingClient {
         };
 
         // Prepare headers and body
-        let mut headers_str = String::new();
-        let prepared_body = prepare_body(req.body, &mut headers_str, get_stream_content_length);
-        headers_str.push_str(&prepare_additional_headers(
+        let prepared_body = prepare_body(req.body, get_stream_content_length);
+        let headers_str = prepare_additional_headers(
             &req.additional_headers,
             &self.session.options,
             &prepared_body,
-        ));
+        );
 
-        let body_len = prepared_body.body_len(get_stream_content_length);
-        // For unsized streams, add Transfer-Encoding: chunked header
-        if body_len.is_none() {
-            headers_str.push_str("Transfer-Encoding: chunked\r\n");
-        }
+        let body_len = prepared_body.body_len();
 
         // Add headers
         if !headers_str.is_empty() {
@@ -72,7 +67,7 @@ impl BlockingClient for WinHttpBlockingClient {
             },
             // SAFETY: Since the request handle is in blocking mode, WinHTTP
             // will not read the body data until send() returns.
-            PreparedBody::Complete(data) => unsafe {
+            PreparedBody::Complete { data, .. } => unsafe {
                 request.send(data.as_ptr(), data.len(), 0).into_nyquest()?;
             },
             #[cfg(feature = "blocking-stream")]
