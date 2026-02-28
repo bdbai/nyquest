@@ -10,13 +10,10 @@ mod tests {
         const PATH: &str = "scenarios/early_drop/client";
 
         let _handle = crate::add_hyper_fixture(PATH, {
-            move |_req| {
-                async move {
-                    // Convert the stream to a boxed body
-                    let res = Response::new(Full::new(Bytes::from_static(b"ok")));
+            move |_req| async move {
+                let res = Response::new(Full::new(Bytes::from_static(b"ok")));
 
-                    (res, Ok(()))
-                }
+                (res, Ok(()))
             }
         });
 

@@ -82,7 +82,7 @@ Future work may include:
 - [ ] Telemetry
 - [ ] Backend: Plugin FFI via libloading
 - [ ] Backend: Mock
-- [ ] Backend: WinHTTP
+- [x] Backend: WinHTTP
 - [ ] Backend: libsoup3
 - [ ] Backend: QNetworkAccessManager
 - [ ] Explore alternative options on Android other than libcurl
