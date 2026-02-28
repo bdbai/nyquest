@@ -1318,6 +1318,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "cfg-if",
+ "form_urlencoded",
  "futures-channel",
  "futures-task",
  "getrandom 0.4.1",

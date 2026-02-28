@@ -45,3 +45,4 @@ getrandom = { version = "0.4", optional = true }
 iconv-native = { version = "0.1.0", optional = true, default-features = false }
 bitflags = { version = "2", default-features = false }
 futures-task = { version = "0.3", optional = true, default-features = false }
+form_urlencoded = { version = "1", default-features = false }
