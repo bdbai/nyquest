@@ -31,7 +31,6 @@ mod tests {
         });
 
         let expected_content = CHUNKS.concat();
-        let builder = crate::init_builder_blocking().unwrap();
 
         let assertions = |content: &str| {
             assert_eq!(content, expected_content);
@@ -39,7 +38,8 @@ mod tests {
 
         #[cfg(feature = "blocking")]
         {
-            let client = builder.clone().build_blocking().unwrap();
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder.build_blocking().unwrap();
             let res = client.request(NyquestRequest::get(PATH)).unwrap();
             let content = res.text().unwrap();
             assertions(&content);
@@ -48,6 +48,7 @@ mod tests {
         #[cfg(feature = "async")]
         {
             let content = TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
                 let client = builder.build_async().await.unwrap();
                 let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
                 res.text().await.unwrap()

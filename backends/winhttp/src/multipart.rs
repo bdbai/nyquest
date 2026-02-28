@@ -1,16 +1,19 @@
+//! Multipart form body generation.
+//!
+//! This implementation follows the pattern from nsurlsession backend,
+//! supporting both bytes and stream parts.
+
 use std::borrow::Cow;
 
 use nyquest_interface::{Part, PartBody};
 
 use crate::stream::DataOrStream;
 
-unsafe extern "C" {
-    fn arc4random() -> u32;
-}
+/// Generates a random multipart boundary string.
+pub(crate) fn generate_multipart_boundary() -> String {
+    let rnd = getrandom::u64().expect("Failed to get random number for multipart boundary");
 
-pub fn generate_multipart_boundary() -> String {
-    let [rnd1, rnd2] = unsafe { [arc4random(), arc4random()] };
-    format!("----nyquest.boundary.{rnd1:08x}{rnd2:08x}")
+    format!("----nyquest.boundary.{rnd:016x}")
 }
 
 fn quick_escape_header(key: &mut Cow<'static, str>, value: &mut Cow<'static, str>) {
@@ -45,11 +48,11 @@ fn estimate_next_data_chunk_size_until_stream<S>(boundary: &str, parts: &[Part<S
     let mut contents_and_one_stream_groups =
         parts.split_inclusive(|p| matches!(p.body, PartBody::Stream { .. }));
     let contents_and_one_stream = contents_and_one_stream_groups.next().unwrap_or_default();
-    let trailing = contents_and_one_stream_groups
-        .next()
-        .is_none()
-        .then_some(boundary.len() + 8)
-        .unwrap_or_default();
+    let trailing = if contents_and_one_stream_groups.next().is_none() {
+        boundary.len() + 8
+    } else {
+        Default::default()
+    };
     trailing
         + contents_and_one_stream
             .iter()
@@ -64,7 +67,14 @@ fn estimate_next_data_chunk_size_until_stream<S>(boundary: &str, parts: &[Part<S
             .sum::<usize>()
 }
 
-pub fn generate_multipart_body<S>(boundary: &str, mut parts: Vec<Part<S>>) -> Vec<DataOrStream<S>> {
+/// Generates a multipart body from parts, supporting both bytes and stream parts.
+///
+/// Returns a vector of `DataOrStream` items that should be written in order.
+/// For parts with stream bodies, the stream is included in the output.
+pub(crate) fn generate_multipart_body<S>(
+    boundary: &str,
+    mut parts: Vec<Part<S>>,
+) -> Vec<DataOrStream<S>> {
     let stream_count = parts
         .iter()
         .filter(|part| matches!(part.body, PartBody::Stream { .. }))
@@ -79,24 +89,33 @@ pub fn generate_multipart_body<S>(boundary: &str, mut parts: Vec<Part<S>>) -> Ve
     ));
     'group: loop {
         for part in contents_and_one_stream {
+            // Boundary
             body.extend_from_slice(b"--");
             body.extend_from_slice(boundary.as_bytes());
-            body.extend_from_slice(b"\r\nContent-Disposition: form-data; name=\"");
+            body.extend_from_slice(b"\r\n");
+
+            // Content-Disposition header
+            body.extend_from_slice(b"Content-Disposition: form-data; name=\"");
             body.extend_from_slice(part.name.as_bytes());
-            body.extend_from_slice(b"\"");
-            if let Some(mut filename) = part.filename.clone() {
+            body.push(b'"');
+
+            if let Some(ref mut filename) = part.filename {
                 body.extend_from_slice(b"; filename=\"");
                 const STRIPPED_CHARS: &[char] = &['"', '\\', '/'];
                 if filename.contains(STRIPPED_CHARS) {
-                    filename = filename.replace(STRIPPED_CHARS, "_").into();
+                    *filename = filename.replace(STRIPPED_CHARS, "_").into();
                 }
                 body.extend_from_slice(filename.as_bytes());
-                body.extend_from_slice(b"\"");
+                body.push(b'"');
             }
             body.extend_from_slice(b"\r\n");
+
+            // Content-Type header
             body.extend_from_slice(b"Content-Type: ");
             body.extend_from_slice(part.content_type.as_bytes());
             body.extend_from_slice(b"\r\n");
+
+            // Additional headers
             for (mut k, mut v) in part.headers.clone() {
                 quick_escape_header(&mut k, &mut v);
                 body.extend_from_slice(k.as_bytes());
@@ -104,7 +123,11 @@ pub fn generate_multipart_body<S>(boundary: &str, mut parts: Vec<Part<S>>) -> Ve
                 body.extend_from_slice(v.as_bytes());
                 body.extend_from_slice(b"\r\n");
             }
+
+            // Empty line before content
             body.extend_from_slice(b"\r\n");
+
+            // Content - replace with dummy to take ownership of stream
             match std::mem::replace(
                 &mut part.body,
                 PartBody::Bytes {
@@ -123,7 +146,7 @@ pub fn generate_multipart_body<S>(boundary: &str, mut parts: Vec<Part<S>>) -> Ve
                     body = Vec::with_capacity(
                         estimate_next_data_chunk_size_until_stream(
                             boundary,
-                            &contents_and_one_stream,
+                            contents_and_one_stream,
                         ) + boundary.len(),
                     );
                     body.extend_from_slice(b"\r\n");
@@ -133,6 +156,8 @@ pub fn generate_multipart_body<S>(boundary: &str, mut parts: Vec<Part<S>>) -> Ve
         }
         break;
     }
+
+    // Final boundary
     body.extend_from_slice(b"--");
     body.extend_from_slice(boundary.as_bytes());
     body.extend_from_slice(b"--\r\n");

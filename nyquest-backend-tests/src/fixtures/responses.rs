@@ -154,29 +154,52 @@ mod tests {
         const PATH: &str = "responses/get_header";
         const HEADER_NAME: &str = "X-Test-Header";
         const HEADER_VALUE: &str = "test-value";
+        const HEADER_NAME2: &str = "X-Test-Header2";
+        const HEADER_VALUE2: &str = "test-value2";
         let _handle = crate::add_hyper_fixture(PATH, |_req| async move {
             let mut res = Response::<Full<Bytes>>::default();
             res.headers_mut()
                 .insert(HEADER_NAME, HEADER_VALUE.parse().unwrap());
+            res.headers_mut()
+                .append(HEADER_NAME2, HEADER_VALUE.parse().unwrap());
+            res.headers_mut()
+                .append(HEADER_NAME2, HEADER_VALUE2.parse().unwrap());
             (res, Ok(()))
         });
         let builder = crate::init_builder_blocking().unwrap();
-        let assertions = |header_value: Option<String>| {
-            assert_eq!(header_value.as_deref(), Some(HEADER_VALUE));
+        let assertions = |(header_value, header_value2): (Vec<String>, Vec<String>)| {
+            assert_eq!(&*header_value, [HEADER_VALUE]);
+            cfg_if::cfg_if! {
+                if #[cfg(any(feature = "winrt", feature = "nsurlsession"))] {
+                    // Those platforms treat headers as a dictionary and doesn't
+                    // support multiple headers with the same name. However,
+                    // they should still return all values concatenated with a
+                    // comma.
+                    assert_eq!(&*header_value2, ["test-value, test-value2".to_string()]);
+                } else {
+                    assert_eq!(&*header_value2, [HEADER_VALUE, HEADER_VALUE2]);
+                }
+            }
         };
         #[cfg(feature = "blocking")]
         {
             let client = builder.clone().build_blocking().unwrap();
             let res = client.request(NyquestRequest::get(PATH)).unwrap();
-            let header_value = res.get_header(HEADER_NAME).unwrap().pop();
-            assertions(header_value);
+            let facts = (
+                res.get_header(HEADER_NAME).unwrap(),
+                res.get_header(HEADER_NAME2).unwrap(),
+            );
+            assertions(facts);
         }
         #[cfg(feature = "async")]
         {
             let facts = TOKIO_RT.block_on(async {
                 let client = builder.build_async().await.unwrap();
                 let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
-                res.get_header(HEADER_NAME).unwrap().pop()
+                (
+                    res.get_header(HEADER_NAME).unwrap(),
+                    res.get_header(HEADER_NAME2).unwrap(),
+                )
             });
             assertions(facts);
         }

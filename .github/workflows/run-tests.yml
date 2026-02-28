@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  test-linux-generic:
 
     runs-on: ubuntu-latest
 
@@ -20,10 +20,40 @@ jobs:
       run: cargo build --verbose --all-features
     - name: Run tests
       run: cargo test --verbose --all-features
+    - name: Run backend/curl tests
+      run: cargo test --verbose --all-features -p nyquest-backend-curl
+    - name: Run backend/reqwest tests
+      run: cargo test --verbose --all-features -p nyquest-backend-reqwest
     - name: Run clippy
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
     - name: Run rustfmt
       run: cargo fmt --all --check
+
+  test-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose --all-features
+    - name: Run backend/curl tests
+      run: cargo test --verbose --all-features -p nyquest-backend-curl
+    - name: Run backend/winrt tests
+      run: cargo test --verbose --all-features -p nyquest-backend-winrt
+    - name: Run backend/winhttp tests
+      run: cargo test --verbose --all-features -p nyquest-backend-winhttp
+
+  test-macos:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose --all-features
+    - name: Run backend/curl tests
+      run: cargo test --verbose --all-features -p nyquest-backend-curl
+    - name: Run backend/nsurlsession tests
+      run: cargo test --verbose --all-features -p nyquest-backend-nsurlsession
 
   test-wasm:
     runs-on: ubuntu-latest

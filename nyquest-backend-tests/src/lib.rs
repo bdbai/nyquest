@@ -214,6 +214,7 @@ fn init_backend() {
         ("curl", nyquest_backend_curl),
         ("nsurlsession", nyquest_backend_nsurlsession),
         ("winrt", nyquest_backend_winrt),
+        ("winhttp", nyquest_backend_winhttp),
         ("reqwest", nyquest_backend_reqwest),
     );
 }
