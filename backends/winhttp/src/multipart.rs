@@ -85,7 +85,7 @@ pub(crate) fn generate_multipart_body<S>(
     let mut contents_and_one_stream = contents_and_one_stream_groups.next().unwrap_or_default();
     let mut body = Vec::with_capacity(estimate_next_data_chunk_size_until_stream(
         boundary,
-        contents_and_one_stream_groups.next().unwrap_or_default(),
+        contents_and_one_stream,
     ));
     'group: loop {
         for part in contents_and_one_stream {
