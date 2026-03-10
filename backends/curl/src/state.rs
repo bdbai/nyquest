@@ -42,4 +42,9 @@ impl RequestState {
         // TODO: handle max response buffer size
         self.response_buffer.extend_from_slice(data);
     }
+
+    #[cfg(feature = "async")]
+    pub(crate) fn data_available(&self) -> bool {
+        !self.response_buffer.is_empty()
+    }
 }
