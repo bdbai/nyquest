@@ -422,6 +422,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     {
                         let res = Err(e.into());
                         ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
+                        ctx.waker.wake();
                     }
                 }
                 LoopTask::UnpauseSendHandle(id) => {
@@ -437,6 +438,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     }) {
                         let res = Err(e.into());
                         ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
+                        ctx.waker.wake();
                     }
                 }
                 LoopTask::DropHandle(id) => {
