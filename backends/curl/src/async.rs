@@ -84,7 +84,7 @@ impl AsyncResponse for CurlAsyncResponse {
         let mut buf = vec![];
         while let Some(()) = this
             .handle
-            .poll_bytes_async(|data| {
+            .wait_for_bytes(|data| {
                 if let Some(max_response_buffer_size) = this.max_response_buffer_size {
                     if buf.len() + data.len() > max_response_buffer_size as usize {
                         return Err(NyquestError::ResponseTooLarge);

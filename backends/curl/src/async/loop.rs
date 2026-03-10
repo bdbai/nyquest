@@ -19,6 +19,7 @@ pub(super) struct RequestHandle {
     id: usize,
     shared_state: Arc<SharedRequestStates>,
     manager: LoopManagerShared,
+    is_recv_unpause_sent: bool,
 }
 
 enum LoopTask {
@@ -79,7 +80,7 @@ impl RequestHandle {
         .await
     }
 
-    pub(super) async fn poll_bytes_async<T>(
+    pub(super) async fn wait_for_bytes<T>(
         &mut self,
         cb: impl FnOnce(&mut Vec<u8>) -> nyquest_interface::Result<T>,
     ) -> nyquest_interface::Result<Option<T>> {
@@ -100,16 +101,20 @@ impl RequestHandle {
         cb: impl FnOnce(&mut Vec<u8>) -> nyquest_interface::Result<T>,
     ) -> Poll<nyquest_interface::Result<Option<T>>> {
         let mut state = self.shared_state.state.lock().unwrap();
-        if !state.state.response_buffer.is_empty() {
+        if state.state.data_available() {
             let res = cb(&mut state.state.response_buffer);
+            self.is_recv_unpause_sent = false;
             return Poll::Ready(res.map(Some));
         }
         if let RequestResult::Done { res, .. } = std::mem::take(&mut state.result) {
+            self.is_recv_unpause_sent = false;
             return Poll::Ready(res.map(|_| None));
         };
-        self.manager
-            .dispatch_task(LoopTask::UnpauseRecvHandle(self.id))
-            .ok();
+        if !std::mem::replace(&mut self.is_recv_unpause_sent, true) {
+            self.manager
+                .dispatch_task(LoopTask::UnpauseRecvHandle(self.id))
+                .ok();
+        }
         self.shared_state.waker.register(cx.waker());
         Poll::Pending
     }
@@ -244,6 +249,7 @@ impl LoopManager {
                         id: res,
                         shared_state,
                         manager: inner,
+                        is_recv_unpause_sent: false,
                     })
                 }
                 Err(res) => res,
@@ -333,7 +339,6 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
     {
         return;
     }
-    // TODO: store ctx in Easy2Handle
     let mut tasks = Default::default();
     let mut last_call = false;
     loop {
@@ -408,20 +413,32 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     };
                 }
                 LoopTask::UnpauseRecvHandle(id) => {
-                    if let Some(easy) = multi.lookup(id) {
-                        // Ignore the error. Also see
-                        // https://github.com/sagebind/isahc/blob/9d1edd475231ad5cfd5842d939db1382dc3a88f5/src/agent/mod.rs#L432
-                        easy.as_raw_easy_mut().unpause_recv().ok();
+                    let Some(mut handle) = multi.lookup(id) else {
+                        continue;
+                    };
+                    let ctx = handle.as_callback_mut().ctx.clone();
+                    if let Err(e) =
+                        handle.with_error_message(|e| e.as_raw_easy_mut().unpause_recv())
+                    {
+                        let res = Err(e.into());
+                        ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
+                        ctx.waker.wake();
                     }
                 }
                 LoopTask::UnpauseSendHandle(id) => {
-                    if let Some(mut easy) = multi.lookup(id) {
+                    let Some(mut handle) = multi.lookup(id) else {
+                        continue;
+                    };
+                    let ctx = handle.as_callback_mut().ctx.clone();
+                    if let Err(e) = handle.with_error_message(|mut e| {
                         // curl seems buggy with unsized upload multipart streams (i.e. chunked)
                         // Pausing and unpausing again seems to make it work
-                        easy.as_mut().as_raw_easy_mut().pause_send().ok();
-                        // Ignore the error. Also see
-                        // https://github.com/sagebind/isahc/blob/9d1edd475231ad5cfd5842d939db1382dc3a88f5/src/agent/mod.rs#L432
-                        easy.as_raw_easy_mut().unpause_send().ok();
+                        e.as_mut().as_raw_easy_mut().pause_send()?;
+                        e.as_raw_easy_mut().unpause_send()
+                    }) {
+                        let res = Err(e.into());
+                        ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
+                        ctx.waker.wake();
                     }
                 }
                 LoopTask::DropHandle(id) => {

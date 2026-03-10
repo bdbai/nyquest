@@ -32,16 +32,15 @@ impl EasyCallback for AsyncHandler {
             // ... signals an error condition to the library and returns CURLE_WRITE_ERROR.
             return Ok(0);
         };
-        {
-            let mut state = inner.ctx.state.lock().unwrap();
-            let state = &mut state.state;
-            state.write_data(data);
-        }
-        unsafe {
-            inner.pause.pause_recv();
-        }
+        let mut state = inner.ctx.state.lock().unwrap();
+        let state = &mut state.state;
         inner.ctx.waker.wake();
-        Ok(data.len())
+        if state.data_available() {
+            Err(WriteError::Pause)
+        } else {
+            state.write_data(data);
+            Ok(data.len())
+        }
     }
 
     fn header(&mut self, data: &[u8]) -> bool {
@@ -54,7 +53,9 @@ impl EasyCallback for AsyncHandler {
             let state = &mut state.state;
             if state.push_header_data(data) {
                 unsafe {
-                    inner.pause.pause_recv();
+                    if inner.pause.pause_recv().is_err() {
+                        return false;
+                    }
                 }
             }
         }
