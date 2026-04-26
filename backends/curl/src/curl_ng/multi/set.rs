@@ -32,6 +32,7 @@ pub unsafe trait MultiEasySet {
     fn is_empty(&self) -> bool;
     fn shrink_to_fit(&mut self);
     fn iter_mut<'s>(&'s mut self) -> Self::IterMut<'s>;
+    fn count(&self) -> usize;
 }
 
 /// # Safety
@@ -62,6 +63,10 @@ impl<M, S> MultiWithSet<M, S> {
 impl<M, S: MultiEasySet> MultiWithSet<M, S> {
     pub fn lookup(&mut self, token: usize) -> Option<Pin<&mut <S::Ptr as Deref>::Target>> {
         unsafe { self.set.lookup(token) }
+    }
+
+    pub fn len(&self) -> usize {
+        self.set.count()
     }
 
     pub fn is_empty(&self) -> bool {

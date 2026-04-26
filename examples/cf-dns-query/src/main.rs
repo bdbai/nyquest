@@ -2,8 +2,16 @@ use std::borrow::Cow;
 
 use futures::future::join;
 use nyquest::{AsyncClient, Request};
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 fn main() {
+    // initialize tracing subscriber for logging
+    // only enable for crate nyquest-backend-curl with log level debug or higher
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::from("debug")))
+        .init();
+
     nyquest_preset::register();
 
     futures::executor::block_on(async {

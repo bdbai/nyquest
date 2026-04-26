@@ -42,4 +42,8 @@ unsafe impl MultiEasySet for SlabMultiSet {
     fn iter_mut<'s>(&'s mut self) -> Self::IterMut<'s> {
         self.slab.iter_mut()
     }
+
+    fn count(&self) -> usize {
+        self.slab.len()
+    }
 }

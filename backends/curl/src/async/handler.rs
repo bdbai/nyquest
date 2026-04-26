@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use curl::easy::WriteError;
+use tracing::debug;
 
 use super::pause::EasyPause;
 use super::shared::SharedRequestStates;
@@ -30,35 +31,45 @@ impl EasyCallback for AsyncHandler {
     fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
         let Some(inner) = self.get_ref() else {
             // ... signals an error condition to the library and returns CURLE_WRITE_ERROR.
+            debug!("Failed to acquire AsyncHandlerRef in write callback");
             return Ok(0);
         };
-        let mut state = inner.ctx.state.lock().unwrap();
-        let state = &mut state.state;
-        inner.ctx.waker.wake();
-        if state.data_available() {
-            Err(WriteError::Pause)
-        } else {
-            state.write_data(data);
-            Ok(data.len())
-        }
+        let res = {
+            let mut state = inner.ctx.state.lock().unwrap();
+            let state = &mut state.state;
+            inner.ctx.waker.wake();
+            if state.data_available() {
+                Err(WriteError::Pause)
+            } else {
+                state.write_data(data);
+                Ok(data.len())
+            }
+        };
+        debug!("writecb: len={}, res={:?}", data.len(), res);
+        res
     }
 
     fn header(&mut self, data: &[u8]) -> bool {
         let Some(inner) = self.get_ref() else {
             // ... signals an error condition to the library and returns CURLE_WRITE_ERROR.
+            debug!("Failed to acquire AsyncHandlerRef in header callback");
             return false;
         };
-        {
+        let pause_res = {
             let mut state = inner.ctx.state.lock().unwrap();
             let state = &mut state.state;
             if state.push_header_data(data) {
-                unsafe {
-                    if inner.pause.pause_recv().is_err() {
-                        return false;
-                    }
-                }
+                unsafe { Some(inner.pause.pause_recv()) }
+            } else {
+                None
             }
+        };
+        debug!("headercb: len={}, pause_res={:?}", data.len(), pause_res);
+        if let Some(Err(e)) = pause_res {
+            debug!("Failed to pause in header callback: {:?}", e);
+            return false;
         }
+
         inner.ctx.waker.wake();
         true
     }

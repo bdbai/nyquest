@@ -5,6 +5,7 @@ use std::{pin::Pin, sync::Arc};
 use futures_util::future::{select, Either};
 use nyquest_interface::r#async::AsyncResponse;
 use nyquest_interface::Error as NyquestError;
+use tracing::debug;
 
 mod handler;
 mod r#loop;
@@ -82,6 +83,7 @@ impl AsyncResponse for CurlAsyncResponse {
     async fn bytes(self: Pin<&mut Self>) -> nyquest_interface::Result<Vec<u8>> {
         let this = self.get_mut();
         let mut buf = vec![];
+        debug!("Start reading response body");
         while let Some(()) = this
             .handle
             .wait_for_bytes(|data| {
@@ -96,6 +98,7 @@ impl AsyncResponse for CurlAsyncResponse {
             })
             .await?
         {}
+        debug!(buf_len = buf.len(), "Finished reading response body");
         Ok(buf)
     }
 }
@@ -135,6 +138,7 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         &self,
         req: nyquest_interface::r#async::Request,
     ) -> nyquest_interface::Result<Self::Response> {
+        debug!(method = ?req.method, relative_uri = ?req.relative_uri, "Starting request");
         let (req, read_task_collection) = {
             let mut easy = create_easy(AsyncHandler::default(), &self.inner.share)?;
             let raw = easy.as_mut().as_raw_easy_mut().raw();
@@ -170,6 +174,7 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
             Either::Right((Ok(_), _)) => unreachable!(),
         };
         res.max_response_buffer_size = self.inner.options.max_response_buffer_size;
+        debug!(status = res.status, "Received response");
         Ok(res)
     }
 }

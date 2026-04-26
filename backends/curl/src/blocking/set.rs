@@ -51,4 +51,8 @@ unsafe impl MultiEasySet for SingleMultiSet {
     fn iter_mut<'s>(&'s mut self) -> Self::IterMut<'s> {
         self.slot.iter_mut().enumerate()
     }
+
+    fn count(&self) -> usize {
+        self.slot.iter().len()
+    }
 }

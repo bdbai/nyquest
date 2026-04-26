@@ -7,6 +7,7 @@ use std::{io, thread};
 
 use futures_channel::oneshot;
 use futures_util::lock::Mutex as FuturesMutex;
+use tracing::debug;
 
 use crate::curl_ng::easy::AsRawEasyMut as _;
 use crate::curl_ng::multi::{MultiWaker, MultiWithSet, RawMulti, WakeableMulti};
@@ -102,11 +103,16 @@ impl RequestHandle {
     ) -> Poll<nyquest_interface::Result<Option<T>>> {
         let mut state = self.shared_state.state.lock().unwrap();
         if state.state.data_available() {
+            debug!(
+                available_bytes = state.state.response_buffer.len(),
+                "Data available to read"
+            );
             let res = cb(&mut state.state.response_buffer);
             self.is_recv_unpause_sent = false;
             return Poll::Ready(res.map(Some));
         }
         if let RequestResult::Done { res, .. } = std::mem::take(&mut state.result) {
+            debug!(?res, "Request done while waiting for bytes");
             self.is_recv_unpause_sent = false;
             return Poll::Ready(res.map(|_| None));
         };
@@ -115,6 +121,7 @@ impl RequestHandle {
                 .dispatch_task(LoopTask::UnpauseRecvHandle(self.id))
                 .ok();
         }
+        debug!("Unpaused recv to wait for bytes");
         self.shared_state.waker.register(cx.waker());
         Poll::Pending
     }
@@ -323,6 +330,7 @@ impl Drop for LoopManager {
 }
 
 fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
+    debug!("Starting curl multi loop");
     let slab = SlabMultiSet::default();
     let multi = WakeableMulti::new(RawMulti::new());
     let multi_waker = multi.get_waker();
@@ -343,6 +351,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
     let mut last_call = false;
     loop {
         let poll_res = multi.poll(120 * 1000);
+        debug!(?poll_res, "multi polled, {} handles", multi.len());
         std::mem::swap(&mut request_manager.lock().unwrap().tasks, &mut tasks);
         for task in tasks.drain(..) {
             match task {
@@ -414,6 +423,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                 }
                 LoopTask::UnpauseRecvHandle(id) => {
                     let Some(mut handle) = multi.lookup(id) else {
+                        debug!("Handle not found for unpausing recv: {id}");
                         continue;
                     };
                     let ctx = handle.as_callback_mut().ctx.clone();
@@ -424,9 +434,11 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                         ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
                         ctx.waker.wake();
                     }
+                    debug!("Unpaused recv for handle {id}");
                 }
                 LoopTask::UnpauseSendHandle(id) => {
                     let Some(mut handle) = multi.lookup(id) else {
+                        debug!("Handle not found for unpausing send: {id}");
                         continue;
                     };
                     let ctx = handle.as_callback_mut().ctx.clone();
@@ -440,17 +452,21 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                         ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
                         ctx.waker.wake();
                     }
+                    debug!("Unpaused send for handle {id}");
                 }
                 LoopTask::DropHandle(id) => {
                     multi.remove(id).ok();
+                    debug!("Dropped handle {id}");
                 }
                 LoopTask::Shutdown => {
                     // TODO: handle shutdown
                     last_call = true;
+                    debug!("Shutdown requested");
                 }
             }
         }
         let perform_res = multi.perform();
+        debug!(?perform_res, "multi performed, {} handles", multi.len());
         let loop_res = match (poll_res, perform_res) {
             (Ok(poll_res), Ok(perform_res)) => Ok((poll_res, perform_res)),
             (Err(e), _) | (_, Err(e)) => Err(e),
@@ -458,6 +474,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
         let (_poll_res, _perform_res) = match loop_res {
             Ok(res) => res,
             Err(err) => {
+                debug!("Error occurred, closing all handles and stopping loop");
                 for (id, ctx) in multi.iter_mut() {
                     let ctx = &*ctx.as_callback_mut().ctx;
                     let state = ctx.state.lock();
@@ -488,6 +505,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
         });
         if multi.is_empty() {
             if last_call {
+                debug!("No more handles in multi, exiting loop");
                 break;
             }
             last_call = true;
