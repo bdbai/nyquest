@@ -1326,6 +1326,7 @@ dependencies = [
  "nyquest-interface",
  "widestring",
  "windows-sys 0.61.0",
+ "windows-threading",
 ]
 
 [[package]]

@@ -33,6 +33,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Threading",
     "Win32_UI_Shell",
 ] }
+windows-threading = "0.2"
 
 [dependencies]
 nyquest-interface = { version = "0.4.0", path = "../../nyquest-interface", default-features = false }
