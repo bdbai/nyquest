@@ -71,7 +71,7 @@ pub fn build_reqwest_client(options: &ClientOptions) -> Result<Client> {
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        builder = build_non_wasm(builder, options);
+        builder = build_non_wasm(builder, options).map_err(ReqwestBackendError::Reqwest)?;
     }
 
     builder
@@ -84,9 +84,31 @@ pub fn build_reqwest_client(options: &ClientOptions) -> Result<Client> {
 fn build_non_wasm(
     mut builder: reqwest::ClientBuilder,
     options: &ClientOptions,
-) -> reqwest::ClientBuilder {
-    if !options.use_default_proxy {
-        builder = builder.no_proxy();
+) -> reqwest::Result<reqwest::ClientBuilder> {
+    use nyquest_interface::client::ProxyOptions;
+
+    match &options.proxy_options {
+        ProxyOptions::Default => {
+            // Do nothing, use reqwest's default proxy settings
+        }
+        ProxyOptions::None => {
+            builder = builder.no_proxy();
+        }
+        ProxyOptions::Custom {
+            proxy_url_for_http,
+            proxy_url_for_https,
+            proxy_bypass,
+        } => {
+            use reqwest::{NoProxy, Proxy};
+
+            let no_proxy = proxy_bypass.as_deref().and_then(NoProxy::from_string);
+            if let Ok(proxy_http) = Proxy::http(&**proxy_url_for_http) {
+                builder = builder.proxy(proxy_http.no_proxy(no_proxy.clone()));
+            }
+            if let Some(Ok(proxy_https)) = proxy_url_for_https.as_deref().map(Proxy::https) {
+                builder = builder.proxy(proxy_https.no_proxy(no_proxy));
+            }
+        }
     }
     builder = builder
         .cookie_store(options.use_cookies)
@@ -107,5 +129,5 @@ fn build_non_wasm(
     if let Some(timeout) = options.request_timeout {
         builder = builder.timeout(timeout);
     }
-    builder
+    Ok(builder)
 }

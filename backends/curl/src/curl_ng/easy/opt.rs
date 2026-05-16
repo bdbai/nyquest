@@ -61,6 +61,26 @@ impl RawEasy {
         }
     }
 
+    pub fn set_proxy<'s>(
+        self: Pin<&mut Self>,
+        proxy: impl Into<Cow<'s, str>>,
+    ) -> Result<(), CurlCodeContext> {
+        unsafe {
+            self.setopt_str(curl_sys::CURLOPT_PROXY, proxy.into())
+                .with_easy_context("setopt CURLOPT_PROXY")
+        }
+    }
+
+    pub fn set_http_proxy_tunnel(
+        self: Pin<&mut Self>,
+        tunnel: bool,
+    ) -> Result<(), CurlCodeContext> {
+        unsafe {
+            self.setopt_long(curl_sys::CURLOPT_HTTPPROXYTUNNEL, tunnel as c_long)
+                .with_easy_context("setopt CURLOPT_HTTPPROXYTUNNEL")
+        }
+    }
+
     pub fn set_useragent<'s>(
         self: Pin<&mut Self>,
         user_agent: impl Into<Cow<'s, str>>,

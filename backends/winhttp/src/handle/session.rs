@@ -2,6 +2,7 @@
 
 use std::ptr::NonNull;
 
+use nyquest_interface::client::ProxyOptions;
 use windows_sys::Win32::Networking::WinHttp::*;
 
 use crate::error::{Result, WinHttpError};
@@ -24,7 +25,7 @@ impl SessionHandle {
     pub(crate) fn new(
         user_agent: Option<&str>,
         is_async: bool,
-        use_default_proxy: bool,
+        proxy: &ProxyOptions,
     ) -> Result<Self> {
         let user_agent_wide: Vec<u16>;
         let user_agent_ptr = match user_agent {
@@ -35,20 +36,61 @@ impl SessionHandle {
             None => std::ptr::null(),
         };
 
-        let access_type = if use_default_proxy {
-            WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
-        } else {
-            WINHTTP_ACCESS_TYPE_NO_PROXY
-        };
         let flags = if is_async { WINHTTP_FLAG_ASYNC } else { 0 };
-        let handle = unsafe {
-            WinHttpOpen(
-                user_agent_ptr,
-                access_type,
-                std::ptr::null(),
-                std::ptr::null(),
-                flags,
-            )
+        let handle = match proxy {
+            ProxyOptions::Default => unsafe {
+                WinHttpOpen(
+                    user_agent_ptr,
+                    WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    flags,
+                )
+            },
+            ProxyOptions::None => unsafe {
+                WinHttpOpen(
+                    user_agent_ptr,
+                    WINHTTP_ACCESS_TYPE_NO_PROXY,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    flags,
+                )
+            },
+            ProxyOptions::Custom {
+                proxy_url_for_http,
+                proxy_url_for_https,
+                proxy_bypass,
+            } => {
+                let proxy_wide: Vec<u16> = if let Some(proxy_https) = proxy_url_for_https {
+                    format!("http={proxy_url_for_http};https={proxy_https}")
+                } else {
+                    format!("http={proxy_url_for_http}")
+                }
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+                let proxy_ptr = proxy_wide.as_ptr();
+
+                let bypass_wide: Option<Vec<u16>> = proxy_bypass.as_ref().map(|bypass| {
+                    bypass
+                        .encode_utf16()
+                        .chain(std::iter::once(0))
+                        .collect::<Vec<u16>>()
+                });
+                let bypass_ptr = bypass_wide
+                    .as_ref()
+                    .map_or(std::ptr::null(), |bypass| bypass.as_ptr());
+
+                unsafe {
+                    WinHttpOpen(
+                        user_agent_ptr,
+                        WINHTTP_ACCESS_TYPE_NAMED_PROXY,
+                        proxy_ptr,
+                        bypass_ptr,
+                        flags,
+                    )
+                }
+            }
         };
 
         NonNull::new(handle)

@@ -5,4 +5,4 @@
 
 mod options;
 
-pub use options::{CachingBehavior, ClientOptions};
+pub use options::{CachingBehavior, ClientOptions, ProxyOptions};

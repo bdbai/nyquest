@@ -22,7 +22,7 @@ pub(crate) trait BlockingTimeoutExt {
 impl<T: RuntimeType, P: RuntimeType> BlockingGet for IAsyncOperationWithProgress<T, P> {
     type Output = windows_core::Result<T>;
     fn get(self) -> Self::Output {
-        IAsyncOperationWithProgress::get(&self)
+        IAsyncOperationWithProgress::join(&self)
     }
 }
 

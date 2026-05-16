@@ -1,5 +1,3 @@
-#[cfg(feature = "async-stream")]
-use std::future::IntoFuture;
 use std::io;
 use std::pin::{pin, Pin};
 
@@ -7,9 +5,9 @@ use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse, Request};
 use nyquest_interface::Result as NyquestResult;
 use windows::Web::Http::HttpCompletionOption;
-#[cfg(feature = "async-stream")]
-use windows_future::IAsyncOperation;
 
+#[cfg(feature = "async-stream")]
+mod read_task;
 #[cfg(feature = "async-stream")]
 mod stream_content;
 mod timer_ext;
@@ -26,7 +24,7 @@ use timer_ext::AsyncTimeoutExt;
 pub struct WinrtAsyncResponse {
     inner: WinrtResponse,
     #[cfg(feature = "async-stream")]
-    load_data_task: Option<<IAsyncOperation<u32> as IntoFuture>::IntoFuture>,
+    read_task: read_task::ReadTask,
 }
 
 impl crate::WinrtBackend {
@@ -72,9 +70,9 @@ impl WinrtClient {
         let inner =
             WinrtResponse::new(res, self.max_response_buffer_size, timer).into_nyquest_result()?;
         Ok(WinrtAsyncResponse {
-            inner,
             #[cfg(feature = "async-stream")]
-            load_data_task: None,
+            read_task: read_task::ReadTask::new(inner.content().as_ref().ok()),
+            inner,
         })
     }
 }
@@ -132,34 +130,11 @@ impl AsyncResponse for WinrtAsyncResponse {
 #[cfg(feature = "async-stream")]
 impl nyquest_interface::r#async::futures_io::AsyncRead for WinrtAsyncResponse {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<io::Result<usize>> {
-        use std::future::Future as _;
-        use std::task::{ready, Poll};
-
-        let this = self.get_mut();
-        loop {
-            if let Some(load_data_task) = this.load_data_task.as_mut() {
-                let loaded = ready!(Pin::new(load_data_task).poll(cx)?);
-                this.load_data_task = None;
-                if loaded == 0 {
-                    return Poll::Ready(Ok(0));
-                }
-            }
-
-            let reader = this.inner.reader_mut()?;
-            let size = reader.UnconsumedBufferLength()?;
-            if size == 0 {
-                this.load_data_task = Some(reader.LoadAsync(buf.len() as u32)?.into_future());
-                continue;
-            }
-            let size = buf.len().min(size as usize);
-            let buf = &mut buf[..size];
-            reader.ReadBytes(buf)?;
-            break Poll::Ready(Ok(size));
-        }
+        Pin::new(&mut self.read_task).poll_read(cx, buf)
     }
 }
 

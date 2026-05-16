@@ -4,6 +4,7 @@ use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingRespo
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::Result as NyquestResult;
 use timer_ext::BlockingTimeoutExt;
+use windows::Storage::Streams::{DataReader, InputStreamOptions};
 use windows::Web::Http::HttpCompletionOption;
 
 #[cfg(feature = "blocking-stream")]
@@ -20,6 +21,7 @@ use crate::timer::Timer;
 
 pub struct WinrtBlockingResponse {
     inner: WinrtResponse,
+    reader: Option<DataReader>,
 }
 
 impl crate::WinrtBackend {
@@ -49,7 +51,10 @@ impl WinrtClient {
             .timeout_by(&mut timer)?;
         let inner =
             WinrtResponse::new(res, self.max_response_buffer_size, timer).into_nyquest_result()?;
-        Ok(WinrtBlockingResponse { inner })
+        Ok(WinrtBlockingResponse {
+            inner,
+            reader: None,
+        })
     }
 }
 
@@ -120,11 +125,11 @@ impl BlockingResponse for WinrtBlockingResponse {
 #[cfg(feature = "blocking-stream")]
 impl io::Read for WinrtBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let reader = self.inner.reader_mut()?;
+        let reader = self.reader_mut()?;
 
         let mut size = reader.UnconsumedBufferLength()?;
         if size == 0 {
-            let loaded = reader.LoadAsync(buf.len() as u32)?.get()?;
+            let loaded = reader.LoadAsync(buf.len() as u32)?.join()?;
             if loaded == 0 {
                 return Ok(0);
             }
@@ -134,5 +139,18 @@ impl io::Read for WinrtBlockingResponse {
         let buf = &mut buf[..size];
         reader.ReadBytes(buf)?;
         Ok(size)
+    }
+}
+
+impl WinrtBlockingResponse {
+    fn reader_mut(&mut self) -> io::Result<&mut DataReader> {
+        if self.reader.is_none() {
+            let content = self.inner.content()?;
+            let content = content.ReadAsInputStreamAsync()?.join()?;
+            let reader = DataReader::CreateDataReader(&content)?;
+            reader.SetInputStreamOptions(InputStreamOptions::Partial)?;
+            self.reader = Some(reader);
+        }
+        Ok(self.reader.as_mut().expect("DataReader is None"))
     }
 }
