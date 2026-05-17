@@ -5,7 +5,7 @@ use nyquest_interface::client::{CachingBehavior, ClientOptions, ProxyOptions};
 use nyquest_interface::{Body, Error as NyquestError, Method, Request, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2::AllocAnyThread;
+use objc2::{AllocAnyThread, Message};
 use objc2_foundation::{
     ns_string, NSCharacterSet, NSData, NSDictionary, NSMutableCharacterSet, NSMutableDictionary,
     NSMutableURLRequest, NSNumber, NSString, NSTimeInterval, NSURLComponents,
@@ -48,17 +48,13 @@ impl NSUrlSessionClient {
                                 ns_string!("HTTPProxy"),
                                 ns_string!("HTTPPort"),
                             ],
-                            &[
-                                NSNumber::new_i32(1).into_super().into_super(),
-                                http_proxy.0.into_super(),
-                                http_proxy.1.into_super().into_super(),
-                            ],
+                            &[ns_string!("1").retain(), http_proxy.0, http_proxy.1],
                         );
 
                         if let Some(https_proxy) =
                             proxy_url_for_https.and_then(|url| parse_proxy_host_port(&url))
                         {
-                            dict.insert(ns_string!("HTTPSEnable"), &NSNumber::new_i32(1));
+                            dict.insert(ns_string!("HTTPSEnable"), &ns_string!("1").retain());
                             dict.insert(ns_string!("HTTPSProxy"), &https_proxy.0);
                             dict.insert(ns_string!("HTTPSPort"), &https_proxy.1);
                         }
@@ -232,10 +228,10 @@ impl NSUrlSessionClient {
     }
 }
 
-fn parse_proxy_host_port(proxy_url: &str) -> Option<(Retained<NSString>, Retained<NSNumber>)> {
+fn parse_proxy_host_port(proxy_url: &str) -> Option<(Retained<NSString>, Retained<NSString>)> {
     let url = NSURLComponents::componentsWithString(&NSString::from_str(proxy_url))?;
     let host = url.host()?;
-    let port = url.port()?;
+    let port = url.port()?.stringValue();
     Some((host, port))
 }
 
