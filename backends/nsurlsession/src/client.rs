@@ -51,7 +51,7 @@ impl NSUrlSessionClient {
                             &[
                                 NSNumber::new_i32(1).into_super().into_super(),
                                 http_proxy.0.into_super(),
-                                http_proxy.1.into_super(),
+                                http_proxy.1.into_super().into_super(),
                             ],
                         );
 
@@ -232,10 +232,10 @@ impl NSUrlSessionClient {
     }
 }
 
-fn parse_proxy_host_port(proxy_url: &str) -> Option<(Retained<NSString>, Retained<NSString>)> {
+fn parse_proxy_host_port(proxy_url: &str) -> Option<(Retained<NSString>, Retained<NSNumber>)> {
     let url = NSURLComponents::componentsWithString(&NSString::from_str(proxy_url))?;
     let host = url.host()?;
-    let port = url.port()?.stringValue();
+    let port = url.port()?;
     Some((host, port))
 }
 
