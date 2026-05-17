@@ -54,7 +54,7 @@ impl ClientBuilder {
     /// # Note
     ///
     /// The backend may ignore the custom proxy settings if the underlying implementation does not
-    /// support them. Also see [`CustomProxy`].
+    /// support them (e.g., WinRT backend). Also see [`CustomProxy`].
     ///
     /// This overrides the [`Self::no_proxy`] setting.
     #[inline]
