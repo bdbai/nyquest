@@ -35,9 +35,7 @@ impl std::io::Read for NSUrlSessionBlockingResponse {
 
             let inner_waker = coerce_waker(inner.shared.waker_ref());
             inner_waker.register_current_thread();
-            unsafe {
-                inner.task.resume();
-            }
+            inner.task.resume();
             std::thread::park();
         }
     }
@@ -66,18 +64,14 @@ impl BlockingResponse for NSUrlSessionBlockingResponse {
             .shared
             .set_max_response_buffer_size(self.max_response_buffer_size);
         let inner_waker = coerce_waker(self.inner.shared.waker_ref());
-        unsafe {
-            self.inner.task.resume();
-        }
+        self.inner.task.resume();
         inner_waker.register_current_thread();
 
         while !self.inner.shared.is_completed() {
             std::thread::park();
         }
         let res = self.inner.shared.take_response_buffer()?;
-        unsafe {
-            self.inner.task.error().into_nyquest_result()?;
-        }
+        self.inner.task.error().into_nyquest_result()?;
         Ok(res)
     }
 }
@@ -102,7 +96,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
                 unreachable!("blocking-stream feature is disabled")
             }
         })?;
-        let shared = unsafe {
+        let shared = {
             let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
@@ -119,9 +113,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
                     max_response_buffer_size: self.inner.max_response_buffer_size,
                 });
             }
-            unsafe {
-                task.error().into_nyquest_result()?;
-            }
+            task.error().into_nyquest_result()?;
 
             // FIXME: use dispatch2 to perform blocking read in background
             #[cfg(feature = "blocking-stream")]

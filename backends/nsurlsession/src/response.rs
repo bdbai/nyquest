@@ -17,21 +17,20 @@ pub(crate) struct NSUrlSessionResponse {
 
 impl NSUrlSessionResponse {
     pub(crate) fn status(&self) -> u16 {
-        unsafe { self.response.statusCode() as u16 }
+        self.response.statusCode() as u16
     }
 
     pub(crate) fn content_length(&self) -> Option<u64> {
-        match unsafe { self.response.expectedContentLength() } {
+        match self.response.expectedContentLength() {
             -1 => None,
             len => Some(len as u64),
         }
     }
 
     pub(crate) fn get_header(&self, header: &str) -> nyquest_interface::Result<Vec<String>> {
-        let value = unsafe {
-            self.response
-                .valueForHTTPHeaderField(&NSString::from_str(header))
-        };
+        let value = self
+            .response
+            .valueForHTTPHeaderField(&NSString::from_str(header));
         Ok(value
             .map(|v| autoreleasepool(|pool| unsafe { v.to_str(pool).to_owned() }))
             .into_iter()
@@ -39,10 +38,9 @@ impl NSUrlSessionResponse {
     }
 
     fn detect_response_encoding(&self) -> Option<NSStringEncoding> {
-        let content_type = unsafe {
-            self.response
-                .valueForHTTPHeaderField(ns_string!("Content-Type"))?
-        };
+        let content_type = self
+            .response
+            .valueForHTTPHeaderField(ns_string!("Content-Type"))?;
         let cf_encoding: u32 = autoreleasepool(|pool| {
             let content_type = unsafe { content_type.to_str(pool) };
             let (_, mut charset) = content_type
@@ -98,12 +96,10 @@ impl NSUrlSessionResponse {
 
         let read_len = self.shared.with_response_buffer_for_stream_mut(|data| {
             let read_len = if data.len() > buf.len() {
-                unsafe {
-                    // Triggering a suspend when the task is already suspended can cause it to not
-                    // wake up.
-                    if self.task.state() == NSURLSessionTaskState::Running {
-                        self.task.suspend();
-                    }
+                // Triggering a suspend when the task is already suspended can cause it to not
+                // wake up.
+                if self.task.state() == NSURLSessionTaskState::Running {
+                    self.task.suspend();
                 }
                 buf.len()
             } else {
@@ -126,8 +122,6 @@ impl NSUrlSessionResponse {
 
 impl Drop for NSUrlSessionResponse {
     fn drop(&mut self) {
-        unsafe {
-            self.task.cancel();
-        }
+        self.task.cancel();
     }
 }

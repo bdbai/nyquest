@@ -60,6 +60,7 @@ The following items are planned in MVP:
 - [x] Nyquest blocking API
 - [x] Nyquest async API
 - [x] Backend: WinRT HttpClient
+- [x] Backend: WinHTTP
 - [x] Backend: libcurl
 - [x] Backend: NSURLSession
 - [x] Backend: reqwest (with WASM support)
@@ -82,7 +83,6 @@ Future work may include:
 - [ ] Telemetry
 - [ ] Backend: Plugin FFI via libloading
 - [ ] Backend: Mock
-- [x] Backend: WinHTTP
 - [ ] Backend: libsoup3
 - [ ] Backend: QNetworkAccessManager
 - [ ] Explore alternative options on Android other than libcurl

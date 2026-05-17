@@ -1,160 +1,27 @@
 #![cfg(test)]
 
 use std::{
-    collections::BTreeMap,
-    convert::Infallible,
     future::Future,
     io,
-    net::SocketAddr,
-    pin::Pin,
     sync::{LazyLock, Mutex, Once},
 };
 
 use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{self, Bytes},
-    server::conn::http1,
-    service::service_fn,
     Request, Response,
 };
-use hyper_util::rt::TokioIo;
 use nyquest::ClientBuilder;
-use tokio::net::TcpListener;
+use tokio::sync::OnceCell;
 
 mod fixtures;
+mod hyper_fixture_collection;
 mod request_ext;
 
+use hyper_fixture_collection::FixtureAssertionResult;
 pub use request_ext::RequestExt;
 
-#[must_use]
-struct HyperFixtureHandle(String);
-
-impl Drop for HyperFixtureHandle {
-    fn drop(&mut self) {
-        let failed_request = {
-            let mut services = HYPER_SERVICE_FIXTURES.lock().unwrap();
-            services
-                .get_mut(&*self.0)
-                .expect("fixture not found")
-                .assertion_failed_request
-                .take()
-        };
-        if let Some(req) = failed_request {
-            panic!("assertion failed for request {}: {:?}", self.0, req);
-        }
-    }
-}
-
-// BoxedBody for supporting streaming/chunked responses
-type BoxedBody = http_body_util::combinators::BoxBody<Bytes, hyper::Error>;
-
-// New type allowing both Full<Bytes> and BoxedBody response types
-// This makes existing tests compatible with the new changes
-type FixtureAssertionResult = (ResponseWrapper, Result<(), Request<body::Incoming>>);
-
-struct ResponseWrapper(Response<BoxedBody>);
-
-impl From<Response<Full<Bytes>>> for ResponseWrapper {
-    fn from(resp: Response<Full<Bytes>>) -> Self {
-        let resp = resp.map(|body| body.map_err(|_| unreachable!()).boxed());
-        ResponseWrapper(resp)
-    }
-}
-
-impl From<Response<BoxedBody>> for ResponseWrapper {
-    fn from(resp: Response<BoxedBody>) -> Self {
-        ResponseWrapper(resp)
-    }
-}
-
-type HyperServiceFixtureCallback = Box<
-    dyn Fn(Request<body::Incoming>) -> Pin<Box<dyn Future<Output = FixtureAssertionResult> + Send>>
-        + Send
-        + Sync,
->;
-struct HyperServiceFixture {
-    svc: HyperServiceFixtureCallback,
-    assertion_failed_request: Option<Request<body::Incoming>>,
-}
-
-static HYPER_SERVICE_FIXTURES: Mutex<BTreeMap<String, HyperServiceFixture>> =
-    Mutex::new(BTreeMap::new());
-
-fn add_hyper_fixture<Fut, Resp>(
-    url: impl Into<String>,
-    svc_fn: impl Fn(Request<body::Incoming>) -> Fut + Send + Sync + 'static,
-) -> HyperFixtureHandle
-where
-    Fut: Future<Output = (Resp, Result<(), Request<body::Incoming>>)> + Send + 'static,
-    Resp: Into<ResponseWrapper>,
-{
-    let mut url: String = url.into();
-    if !url.starts_with('/') {
-        url.insert(0, '/');
-    }
-    let svc = Box::new(move |req| {
-        let fut = svc_fn(req);
-        Box::pin(async move {
-            let (resp, result) = fut.await;
-            (resp.into(), result)
-        }) as _
-    });
-    let fixture = HyperServiceFixture {
-        svc,
-        assertion_failed_request: None,
-    };
-    {
-        let url = url.clone();
-        let mut services = HYPER_SERVICE_FIXTURES.lock().unwrap();
-        services.insert(url, fixture);
-    }
-    HyperFixtureHandle(url)
-}
-
-async fn handle_service(req: Request<body::Incoming>) -> Result<Response<BoxedBody>, Infallible> {
-    let path = req.uri().path().to_owned();
-    let fut = {
-        let services = HYPER_SERVICE_FIXTURES.lock().unwrap();
-        let fixture = services.get(&*path).unwrap();
-        (fixture.svc)(req)
-    };
-    let (response, result) = fut.await;
-
-    if let Err(req) = result {
-        let mut services = HYPER_SERVICE_FIXTURES.lock().unwrap();
-        let fixture = services.get_mut(&*path).unwrap();
-        fixture.assertion_failed_request = Some(req);
-    }
-
-    Ok(response.0)
-}
-
-async fn setup_hyper_impl() -> Result<String, io::Error> {
-    // TODO: handle panic
-    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
-
-    let listener = TcpListener::bind(addr).await?;
-    let port = listener.local_addr()?.port();
-
-    tokio::spawn(async move {
-        loop {
-            let (stream, _) = listener.accept().await.expect("accept failed");
-            let io = TokioIo::new(stream);
-
-            tokio::task::spawn(async move {
-                if let Err(err) = http1::Builder::new()
-                    // `service_fn` converts our function in a `Service`
-                    .serve_connection(io, service_fn(handle_service))
-                    .await
-                {
-                    eprintln!("Error serving connection: {err:?}");
-                }
-            });
-        }
-    });
-
-    Ok(format!("http://127.0.0.1:{port}"))
-}
+use crate::hyper_fixture_collection::HyperFixtureCollection;
 
 static TOKIO_RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
     tokio::runtime::Builder::new_multi_thread()
@@ -163,17 +30,30 @@ static TOKIO_RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
         .unwrap()
 });
 
-async fn init_builder() -> io::Result<ClientBuilder> {
-    use tokio::sync::OnceCell;
+static MAIN_HYPER_FIXTURE_COLLECTION: HyperFixtureCollection = HyperFixtureCollection::new();
 
+async fn init_main_service_port() -> io::Result<u16> {
+    static HYPER_SERVICE_INIT: OnceCell<io::Result<u16>> = OnceCell::const_new();
+    match HYPER_SERVICE_INIT
+        .get_or_init(|| async {
+            let port =
+                hyper_fixture_collection::spawn_service(&MAIN_HYPER_FIXTURE_COLLECTION).await?;
+            Ok(port)
+        })
+        .await
+    {
+        Ok(url) => Ok(*url),
+        Err(err) => Err(io::Error::new(err.kind(), err.to_string())),
+    }
+}
+
+async fn init_builder() -> io::Result<ClientBuilder> {
     static BACKEND_INIT: Once = Once::new();
     BACKEND_INIT.call_once(init_backend);
 
-    static HYPER_SERVICE_INIT: OnceCell<io::Result<String>> = OnceCell::const_new();
-    match HYPER_SERVICE_INIT.get_or_init(setup_hyper_impl).await {
-        Ok(url) => Ok(ClientBuilder::default().base_url(url.clone())),
-        Err(err) => Err(io::Error::new(err.kind(), err.to_string())),
-    }
+    let port = init_main_service_port().await?;
+    let base_url = format!("http://localhost.:{port}"); // Use localhost. to avoid potential proxy bypass due to "localhost" being a special domain in some environments
+    Ok(ClientBuilder::default().base_url(base_url))
 }
 
 fn init_builder_blocking() -> io::Result<ClientBuilder> {
@@ -182,6 +62,17 @@ fn init_builder_blocking() -> io::Result<ClientBuilder> {
             .await
             .map(|cb| cb.with_header("blocking", "1"))
     })
+}
+
+fn add_hyper_fixture<Fut, Resp>(
+    path: impl Into<String>,
+    svc_fn: impl Fn(Request<body::Incoming>) -> Fut + Send + Sync + 'static,
+) -> hyper_fixture_collection::HyperFixtureHandle<&'static HyperFixtureCollection>
+where
+    Fut: Future<Output = (Resp, Result<(), Request<body::Incoming>>)> + Send + 'static,
+    Resp: Into<hyper_fixture_collection::ResponseWrapper>,
+{
+    hyper_fixture_collection::add_hyper_fixture(&MAIN_HYPER_FIXTURE_COLLECTION, path, svc_fn)
 }
 
 macro_rules! declare_backends {

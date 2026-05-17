@@ -1,14 +1,15 @@
 use std::borrow::Cow;
 use std::sync::LazyLock;
 
-use nyquest_interface::client::{CachingBehavior, ClientOptions};
+use nyquest_interface::client::{CachingBehavior, ClientOptions, ProxyOptions};
 use nyquest_interface::{Body, Error as NyquestError, Method, Request, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
-    ns_string, NSCharacterSet, NSData, NSDictionary, NSMutableCharacterSet, NSMutableURLRequest,
-    NSString, NSTimeInterval, NSURLRequestCachePolicy, NSUTF8StringEncoding, NSURL,
+    ns_string, NSCharacterSet, NSCopying, NSData, NSDictionary, NSMutableArray,
+    NSMutableCharacterSet, NSMutableDictionary, NSMutableURLRequest, NSNumber, NSString,
+    NSTimeInterval, NSURLComponents, NSURLRequestCachePolicy, NSUTF8StringEncoding, NSURL,
 };
 
 use crate::challenge::BypassServerVerifyDelegate;
@@ -30,8 +31,55 @@ impl NSUrlSessionClient {
             if options.caching_behavior == CachingBehavior::Disabled {
                 config.setRequestCachePolicy(NSURLRequestCachePolicy::ReloadIgnoringLocalCacheData);
             }
-            if !options.use_default_proxy {
-                config.setConnectionProxyDictionary(Some(&*NSDictionary::new()));
+            match options.proxy_options {
+                ProxyOptions::Default => {}
+                ProxyOptions::None => {
+                    config.setConnectionProxyDictionary(Some(&*NSDictionary::new()));
+                }
+                ProxyOptions::Custom {
+                    proxy_url_for_http,
+                    proxy_url_for_https,
+                    proxy_bypass,
+                } => {
+                    if let Some(http_proxy) = parse_proxy_host_port(&proxy_url_for_http) {
+                        let dict = NSMutableDictionary::from_retained_objects(
+                            &[
+                                ns_string!("HTTPEnable"),
+                                ns_string!("HTTPProxy"),
+                                ns_string!("HTTPPort"),
+                            ],
+                            &[
+                                NSNumber::new_i32(1).into_super().into_super(),
+                                http_proxy.0.into_super(),
+                                http_proxy.1.into_super().into_super(),
+                            ],
+                        );
+
+                        if let Some(https_proxy) =
+                            proxy_url_for_https.and_then(|url| parse_proxy_host_port(&url))
+                        {
+                            dict.insert(ns_string!("HTTPSEnable"), &NSNumber::new_i32(1));
+                            dict.insert(ns_string!("HTTPSProxy"), &https_proxy.0);
+                            dict.insert(ns_string!("HTTPSPort"), &https_proxy.1);
+                        }
+
+                        if let Some(bypass) = proxy_bypass {
+                            let bypass_list = NSMutableArray::from_retained_slice(
+                                &bypass
+                                    .split([';', ','])
+                                    .map(str::trim)
+                                    .filter(|s| !s.is_empty())
+                                    .map(|s| NSString::from_str(s))
+                                    .collect::<Vec<_>>(),
+                            )
+                            .copy();
+                            dict.insert(ns_string!("ExceptionsList"), &bypass_list);
+                        }
+
+                        let dict = Retained::cast_unchecked::<NSDictionary>(dict.into_super());
+                        config.setConnectionProxyDictionary(Some(&dict));
+                    }
+                }
             }
             if !options.use_cookies {
                 config.setHTTPShouldSetCookies(false);
@@ -72,7 +120,7 @@ impl NSUrlSessionClient {
         };
         let base_url = options
             .base_url
-            .map(|url| unsafe {
+            .map(|url| {
                 NSURL::URLWithString(&NSString::from_str(&url)).ok_or(NyquestError::InvalidUrl)
             })
             .transpose()?;
@@ -94,125 +142,124 @@ impl NSUrlSessionClient {
         Option<StreamWriter<S>>,
     )> {
         let nsreq = NSMutableURLRequest::alloc();
-        unsafe {
-            let url = NSURL::URLWithString_relativeToURL(
-                &NSString::from_str(&req.relative_uri),
-                self.base_url.as_deref(),
-            )
-            .ok_or(NyquestError::InvalidUrl)?;
-            let nsreq = NSMutableURLRequest::initWithURL(nsreq, &url);
-            {
-                let mut method_storage = None;
-                nsreq.setHTTPMethod(match req.method {
-                    Method::Get => ns_string!("GET"),
-                    Method::Post => ns_string!("POST"),
-                    Method::Put => ns_string!("PUT"),
-                    Method::Delete => ns_string!("DELETE"),
-                    Method::Patch => ns_string!("PATCH"),
-                    Method::Head => ns_string!("HEAD"),
-                    Method::Other(method) => &*method_storage.insert(NSString::from_str(&method)),
-                });
-            }
-            for (name, value) in &req.additional_headers {
-                nsreq.setValue_forHTTPHeaderField(
-                    Some(&NSString::from_str(value)),
-                    &NSString::from_str(name),
-                );
-            }
-            let mut stream_parts = vec![];
-            if let Some(body) = req.body {
-                match body {
-                    Body::Bytes {
-                        content,
-                        content_type,
-                    } => {
-                        nsreq.setValue_forHTTPHeaderField(
-                            Some(&NSString::from_str(&content_type)),
-                            ns_string!("content-type"),
-                        );
-                        nsreq.setHTTPBody(Some(&NSData::from_vec(content.into())));
-                    }
-                    Body::Form { fields } => {
-                        static FORM_URLENCODER: LazyLock<FormUrlEncoder> =
-                            LazyLock::new(FormUrlEncoder::new);
-                        let data = FORM_URLENCODER.encode_fields(&fields);
-                        nsreq.setValue_forHTTPHeaderField(
-                            Some(ns_string!("application/x-www-form-urlencoded")),
-                            ns_string!("content-type"),
-                        );
-                        nsreq.setHTTPBody(Some(&data));
-                    }
-                    #[cfg(feature = "multipart")]
-                    Body::Multipart { parts } => {
-                        use crate::multipart::{
-                            generate_multipart_body, generate_multipart_boundary,
-                        };
-                        let boundary = generate_multipart_boundary();
-                        let content_type = format!("multipart/form-data; boundary={boundary}");
-                        nsreq.setValue_forHTTPHeaderField(
-                            Some(&NSString::from_str(&content_type)),
-                            ns_string!("content-type"),
-                        );
-                        stream_parts = generate_multipart_body(&boundary, parts);
-                    }
-                    Body::Stream {
-                        stream,
-                        content_type,
-                    } => {
-                        nsreq.setValue_forHTTPHeaderField(
-                            Some(&NSString::from_str(&content_type)),
-                            ns_string!("content-type"),
-                        );
-                        if let Some(len) = get_stream_len(&stream) {
-                            nsreq.setValue_forHTTPHeaderField(
-                                Some(&NSString::from_str(&len.to_string())),
-                                ns_string!("content-length"),
-                            );
-                        }
-                        stream_parts = vec![DataOrStream::Stream(stream)];
-                    }
+        let url = NSURL::URLWithString_relativeToURL(
+            &NSString::from_str(&req.relative_uri),
+            self.base_url.as_deref(),
+        )
+        .ok_or(NyquestError::InvalidUrl)?;
+        let nsreq = NSMutableURLRequest::initWithURL(nsreq, &url);
+        {
+            let mut method_storage = None;
+            nsreq.setHTTPMethod(match req.method {
+                Method::Get => ns_string!("GET"),
+                Method::Post => ns_string!("POST"),
+                Method::Put => ns_string!("PUT"),
+                Method::Delete => ns_string!("DELETE"),
+                Method::Patch => ns_string!("PATCH"),
+                Method::Head => ns_string!("HEAD"),
+                Method::Other(method) => &*method_storage.insert(NSString::from_str(&method)),
+            });
+        }
+        for (name, value) in &req.additional_headers {
+            nsreq.setValue_forHTTPHeaderField(
+                Some(&NSString::from_str(value)),
+                &NSString::from_str(name),
+            );
+        }
+        let mut stream_parts = vec![];
+        if let Some(body) = req.body {
+            match body {
+                Body::Bytes {
+                    content,
+                    content_type,
+                } => {
+                    nsreq.setValue_forHTTPHeaderField(
+                        Some(&NSString::from_str(&content_type)),
+                        ns_string!("content-type"),
+                    );
+                    nsreq.setHTTPBody(Some(&NSData::from_vec(content.into())));
                 }
-            }
-
-            match stream_parts.split_first_mut() {
-                None => return Ok((self.session.dataTaskWithRequest(&nsreq), None)),
-                Some((DataOrStream::Data(first_data), [])) => {
-                    nsreq.setHTTPBody(Some(&NSData::from_vec(std::mem::take(first_data))));
-                    return Ok((self.session.dataTaskWithRequest(&nsreq), None));
+                Body::Form { fields } => {
+                    static FORM_URLENCODER: LazyLock<FormUrlEncoder> =
+                        LazyLock::new(FormUrlEncoder::new);
+                    let data = FORM_URLENCODER.encode_fields(&fields);
+                    nsreq.setValue_forHTTPHeaderField(
+                        Some(ns_string!("application/x-www-form-urlencoded")),
+                        ns_string!("content-type"),
+                    );
+                    nsreq.setHTTPBody(Some(&data));
                 }
-                _ => {}
-            };
-            #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
-            {
-                let input_stream = crate::stream::InputStream::new(waker.clone());
-                nsreq.setHTTPBodyStream(Some(&input_stream));
-                let writer = StreamWriter::new(&input_stream, stream_parts);
-                Ok((self.session.dataTaskWithRequest(&nsreq), Some(writer)))
-            }
-            #[cfg(not(any(feature = "async-stream", feature = "blocking-stream")))]
-            {
-                unreachable!("async-stream or blocking-stream feature is required for stream body")
+                #[cfg(feature = "multipart")]
+                Body::Multipart { parts } => {
+                    use crate::multipart::{generate_multipart_body, generate_multipart_boundary};
+                    let boundary = generate_multipart_boundary();
+                    let content_type = format!("multipart/form-data; boundary={boundary}");
+                    nsreq.setValue_forHTTPHeaderField(
+                        Some(&NSString::from_str(&content_type)),
+                        ns_string!("content-type"),
+                    );
+                    stream_parts = generate_multipart_body(&boundary, parts);
+                }
+                Body::Stream {
+                    stream,
+                    content_type,
+                } => {
+                    nsreq.setValue_forHTTPHeaderField(
+                        Some(&NSString::from_str(&content_type)),
+                        ns_string!("content-type"),
+                    );
+                    if let Some(len) = get_stream_len(&stream) {
+                        nsreq.setValue_forHTTPHeaderField(
+                            Some(&NSString::from_str(&len.to_string())),
+                            ns_string!("content-length"),
+                        );
+                    }
+                    stream_parts = vec![DataOrStream::Stream(stream)];
+                }
             }
         }
+
+        match stream_parts.split_first_mut() {
+            None => return Ok((self.session.dataTaskWithRequest(&nsreq), None)),
+            Some((DataOrStream::Data(first_data), [])) => {
+                nsreq.setHTTPBody(Some(&NSData::from_vec(std::mem::take(first_data))));
+                return Ok((self.session.dataTaskWithRequest(&nsreq), None));
+            }
+            _ => {}
+        };
+        #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
+        {
+            let input_stream = crate::stream::InputStream::new(waker.clone());
+            nsreq.setHTTPBodyStream(Some(&input_stream));
+            let writer = StreamWriter::new(&input_stream, stream_parts);
+            Ok((self.session.dataTaskWithRequest(&nsreq), Some(writer)))
+        }
+        #[cfg(not(any(feature = "async-stream", feature = "blocking-stream")))]
+        {
+            unreachable!("async-stream or blocking-stream feature is required for stream body")
+        }
     }
+}
+
+fn parse_proxy_host_port(proxy_url: &str) -> Option<(Retained<NSString>, Retained<NSNumber>)> {
+    let url = NSURLComponents::componentsWithString(&NSString::from_str(proxy_url))?;
+    let host = url.host()?;
+    let port = url.port()?;
+    Some((host, port))
 }
 
 struct FormUrlEncoder(Retained<NSCharacterSet>);
 impl FormUrlEncoder {
     fn new() -> Self {
-        unsafe {
-            let set = NSMutableCharacterSet::alphanumericCharacterSet();
-            set.addCharactersInString(ns_string!("-._* "));
-            Self(set.downcast().unwrap())
-        }
+        let set = NSMutableCharacterSet::alphanumericCharacterSet();
+        set.addCharactersInString(ns_string!("-._* "));
+        Self(set.downcast().unwrap())
     }
     fn encode(&self, s: &str) -> Retained<NSString> {
-        unsafe {
-            NSString::from_str(s)
-                .stringByAddingPercentEncodingWithAllowedCharacters(&self.0)
-                .unwrap_or_default()
-                .stringByReplacingOccurrencesOfString_withString(ns_string!(" "), ns_string!("+"))
-        }
+        NSString::from_str(s)
+            .stringByAddingPercentEncodingWithAllowedCharacters(&self.0)
+            .unwrap_or_default()
+            .stringByReplacingOccurrencesOfString_withString(ns_string!(" "), ns_string!("+"))
     }
     fn encode_fields(&self, fields: &[(Cow<'static, str>, Cow<'static, str>)]) -> Retained<NSData> {
         let Some(((first_key, first_val), fields)) = fields.split_first() else {
@@ -229,7 +276,7 @@ impl FormUrlEncoder {
                 .stringByAppendingString(ns_string!("="))
                 .stringByAppendingString(&self.encode(val));
         }
-        let data = unsafe { encoded.dataUsingEncoding(NSUTF8StringEncoding) };
+        let data = encoded.dataUsingEncoding(NSUTF8StringEncoding);
         data.unwrap_or_default()
     }
 }

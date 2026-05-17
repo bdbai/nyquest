@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 
+use nyquest_interface::client::ProxyOptions;
 use nyquest_interface::{Body, Method, Request, Result as NyquestResult};
 
 use crate::curl_ng::CurlCodeContext;
@@ -36,7 +37,7 @@ pub fn create_easy<C: EasyCallback>(callback: C, share: &Share) -> NyquestResult
 pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
     url: &str,
     mut req: Request<S>,
-    options: &nyquest_interface::client::ClientOptions,
+    options: &nyquest_interface::client::ClientOptions, // FIXME: strings in options are copied to be null-terminated. Can we avoid that?
     easy: Pin<&mut EasyHandle<C>>,
     populate_stream: impl FnOnce(Pin<&mut EasyHandle<C>>, S) -> Result<(), CurlCodeContext>,
     #[cfg_attr(not(feature = "multipart"), allow(unused, unused_mut))]
@@ -45,8 +46,25 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
     let mut headers = CurlStringList::default();
     easy.with_error_message(|mut e| {
         let mut raw = e.as_mut().as_raw_easy_mut();
-        if !options.use_default_proxy {
-            raw.as_mut().set_noproxy("*")?;
+        match &options.proxy_options {
+            ProxyOptions::Default => {}
+            ProxyOptions::None => raw.as_mut().set_noproxy("*")?,
+            ProxyOptions::Custom {
+                proxy_url_for_http,
+                proxy_url_for_https,
+                proxy_bypass,
+            } => {
+                raw.as_mut().set_proxy(&**proxy_url_for_http)?;
+                if proxy_url_for_https.is_some() {
+                    // TODO: curl doesn't have a separate option for HTTPS proxy.
+                    raw.as_mut().set_http_proxy_tunnel(true)?;
+                    raw.as_mut().set_suppress_connect_headers(true)?;
+                }
+
+                if let Some(proxy_bypass) = proxy_bypass {
+                    raw.as_mut().set_noproxy(&**proxy_bypass)?;
+                }
+            }
         }
         if let Some(user_agent) = options.user_agent.as_deref() {
             raw.as_mut().set_useragent(user_agent)?;

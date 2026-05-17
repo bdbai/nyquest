@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use nyquest_interface::client::{CachingBehavior, ClientOptions};
+use nyquest_interface::client::{CachingBehavior, ClientOptions, ProxyOptions};
+
+use crate::client::CustomProxy;
 
 /// A builder for creating an async or blocking client with custom options.
 ///
@@ -39,9 +41,29 @@ impl ClientBuilder {
     }
 
     /// Instructs the backend to bypass preset proxies.
+    ///
+    /// This overrides the [`Self::custom_proxy`] setting.
     #[inline]
     pub fn no_proxy(mut self) -> Self {
-        self.options.use_default_proxy = false;
+        self.options.proxy_options = ProxyOptions::None;
+        self
+    }
+
+    /// Sets custom proxy settings.
+    ///
+    /// # Note
+    ///
+    /// The backend may ignore the custom proxy settings if the underlying implementation does not
+    /// support them (e.g., WinRT backend). Also see [`CustomProxy`].
+    ///
+    /// This overrides the [`Self::no_proxy`] setting.
+    #[inline]
+    pub fn custom_proxy(mut self, proxy: CustomProxy) -> Self {
+        self.options.proxy_options = ProxyOptions::Custom {
+            proxy_url_for_http: proxy.proxy_url_for_http,
+            proxy_url_for_https: proxy.proxy_url_for_https,
+            proxy_bypass: proxy.proxy_bypass,
+        };
         self
     }
 

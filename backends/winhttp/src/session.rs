@@ -20,7 +20,7 @@ impl WinHttpSession {
         let session = SessionHandle::new(
             options.user_agent.as_deref(),
             is_async,
-            options.use_default_proxy,
+            &options.proxy_options,
         )?;
         Self::configure_session(&session, &options)?;
         let base_cwurl = options

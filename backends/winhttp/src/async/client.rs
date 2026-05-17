@@ -16,7 +16,6 @@ use super::response::WinHttpAsyncResponse;
 use crate::error::{WinHttpError, WinHttpResultExt};
 use crate::handle::RequestHandle;
 use crate::r#async::state_fut::wait_for_state;
-use crate::r#async::threadpool::submit_callback;
 use crate::request::{
     create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
@@ -60,7 +59,7 @@ impl AsyncClient for WinHttpAsyncClient {
 
             let body_len;
             let (setup_tx, setup_rx) = oneshot::channel();
-            submit_callback({
+            windows_threading::submit({
                 let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri)?;
                 let method = method_to_cwstr(&req.method);
                 prepared_body = prepare_body(req.body, get_stream_content_length);
@@ -121,7 +120,7 @@ impl AsyncClient for WinHttpAsyncClient {
 
                     let _ = setup_tx.send(result.map(|()| (connection, request)).into_nyquest());
                 }
-            })?;
+            });
 
             // Wait for the setup to complete
             let (connection, request) = setup_rx.await.map_err(|_| {

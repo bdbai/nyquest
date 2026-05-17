@@ -1,7 +1,7 @@
 use std::io;
 use std::time::Duration;
 
-use nyquest_interface::client::{CachingBehavior, ClientOptions};
+use nyquest_interface::client::{CachingBehavior, ClientOptions, ProxyOptions};
 use windows::core::{h, HSTRING};
 use windows::Security::Cryptography::Certificates::ChainValidationResult;
 use windows::Web::Http::Filters::{
@@ -30,7 +30,8 @@ impl WinrtClient {
             cache_control.SetReadBehavior(HttpCacheReadBehavior::NoCache)?;
             cache_control.SetWriteBehavior(HttpCacheWriteBehavior::NoCache)?;
         }
-        if !options.use_default_proxy {
+        // TODO: custom proxy options?
+        if let ProxyOptions::None = options.proxy_options {
             filter.SetUseProxy(false)?;
         }
         if !options.use_cookies {

@@ -27,12 +27,13 @@ charset = ["dep:iconv-native"]
 charset-defaults = ["charset", "iconv-native/default"]
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Networking_WinHttp",
     "Win32_System_Threading",
     "Win32_UI_Shell",
 ] }
+windows-threading = "0.2"
 
 [dependencies]
 nyquest-interface = { version = "0.4.0", path = "../../nyquest-interface", default-features = false }
