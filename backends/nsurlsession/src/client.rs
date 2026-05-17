@@ -63,7 +63,7 @@ impl NSUrlSessionClient {
                             dict.insert(ns_string!("ExceptionsList"), &NSString::from_str(&bypass));
                         }
 
-                        let dict = Retained::cast_unchecked::<NSDictionary>(dict);
+                        let dict = Retained::cast_unchecked::<NSDictionary>(dict.into_super());
                         config.setConnectionProxyDictionary(Some(&dict));
                     }
                 }
