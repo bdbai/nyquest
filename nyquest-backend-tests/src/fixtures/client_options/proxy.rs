@@ -48,6 +48,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "winrt"))] // WinRT HttpClient does not support custom proxies
     fn test_custom_proxy() {
         const PATH: &str = "client_options/custom_proxy";
         let proxy_fixture_setup = setup_proxy_fixture(PATH);
@@ -93,6 +94,7 @@ mod tests {
 
     // TODO: test against an actual HTTPS endpoint.
     #[test]
+    #[cfg(not(feature = "winrt"))] // WinRT HttpClient does not support custom proxies
     fn test_custom_proxy_https() {
         const PATH: &str = "client_options/custom_proxy_https";
         let proxy_fixture_setup = setup_proxy_fixture(PATH);
@@ -147,10 +149,9 @@ mod tests {
             assert_eq!(body, "direct");
         };
 
-        let main_port = TOKIO_RT.block_on(crate::init_main_service_port()).unwrap();
         let custom_proxy = CustomProxy::new(proxy_fixture_setup.proxy_url.clone())
             .with_https_proxy(proxy_fixture_setup.proxy_url)
-            .with_bypass(format!("localhost.:{main_port}"));
+            .with_bypass("localhost.");
 
         #[cfg(feature = "blocking")]
         {

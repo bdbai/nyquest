@@ -30,7 +30,7 @@ impl CustomProxy {
         self
     }
 
-    /// Sets the proxy bypass list.
+    /// Sets the list of host patterns that should bypass the proxy.
     pub fn with_bypass(mut self, proxy_bypass: impl Into<Cow<'static, str>>) -> Self {
         self.proxy_bypass = Some(proxy_bypass.into());
         self
