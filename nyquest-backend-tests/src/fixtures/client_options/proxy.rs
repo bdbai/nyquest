@@ -1,21 +1,55 @@
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{convert::Infallible, sync::Arc};
 
     use http_body_util::Full;
+    use hyper::{ext::ReasonPhrase, service::service_fn};
     use nyquest::{client::CustomProxy, Request as NyquestRequest};
 
     use crate::{hyper_fixture_collection::HyperFixtureHandle, *};
+
+    fn gen_response_proxied() -> Response<Full<Bytes>> {
+        Response::new(Full::new(Bytes::from("proxied")))
+    }
+    fn gen_response_direct() -> Response<Full<Bytes>> {
+        Response::new(Full::new(Bytes::from("direct")))
+    }
 
     async fn proxy_handler(req: Request<body::Incoming>) -> FixtureAssertionResult {
         let is_proxied = req.uri().host().is_some();
 
         let res = if is_proxied {
-            Response::new(Full::new(Bytes::from("proxied")))
+            gen_response_proxied()
         } else {
-            Response::new(Full::new(Bytes::from("direct")))
+            gen_response_direct()
         };
         (res.into(), Ok(()))
+    }
+
+    async fn connect_handler(req: Request<body::Incoming>) -> FixtureAssertionResult {
+        if req.method() == hyper::Method::CONNECT {
+            // libcurl uses a CONNECT request tunnel even for HTTP requests
+            tokio::spawn(async move {
+                let upgraded = hyper::upgrade::on(req).await.unwrap();
+                hyper::server::conn::http1::Builder::new()
+                    .serve_connection(
+                        upgraded,
+                        service_fn(|_| async { Ok::<_, Infallible>(gen_response_proxied()) }),
+                    )
+                    .await
+                    .ok();
+            });
+            let mut res = Response::new(Full::default());
+            res.extensions_mut()
+                .insert(ReasonPhrase::from_static(b"Connection Established"));
+            (res.into(), Ok(()))
+        } else {
+            let res = Response::builder()
+                .status(400)
+                .body(Full::default())
+                .unwrap();
+            (res.into(), Ok(()))
+        }
     }
 
     #[must_use = "the fixture handles must be kept alive for the duration of the test"]
@@ -23,6 +57,7 @@ mod tests {
         proxy_url: String,
         _main_handle: HyperFixtureHandle<&'static HyperFixtureCollection>,
         _proxy_handle: HyperFixtureHandle<Arc<HyperFixtureCollection>>,
+        _proxy_connect_handle: HyperFixtureHandle<Arc<HyperFixtureCollection>>,
     }
 
     fn setup_proxy_fixture(path: &str) -> ProxyFixtureSetup {
@@ -35,15 +70,21 @@ mod tests {
             .unwrap();
         let _main_handle = crate::add_hyper_fixture(path, proxy_handler);
         let _proxy_handle = hyper_fixture_collection::add_hyper_fixture(
-            proxy_hyper_collection,
+            proxy_hyper_collection.clone(),
             path,
             proxy_handler,
+        );
+        let _proxy_connect_handle = hyper_fixture_collection::add_hyper_fixture(
+            proxy_hyper_collection,
+            "",
+            connect_handler,
         );
 
         ProxyFixtureSetup {
             proxy_url: format!("http://127.0.0.1:{proxy_port}"),
             _main_handle,
             _proxy_handle,
+            _proxy_connect_handle,
         }
     }
 

@@ -56,8 +56,9 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
             } => {
                 raw.as_mut().set_proxy(&**proxy_url_for_http)?;
                 if proxy_url_for_https.is_some() {
-                    // TODO: curl doesn't have a separate option for HTTPS proxy。
+                    // TODO: curl doesn't have a separate option for HTTPS proxy.
                     raw.as_mut().set_http_proxy_tunnel(true)?;
+                    raw.as_mut().set_suppress_connect_headers(true)?;
                 }
 
                 if let Some(proxy_bypass) = proxy_bypass {

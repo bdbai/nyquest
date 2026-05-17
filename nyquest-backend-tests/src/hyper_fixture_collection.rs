@@ -92,7 +92,7 @@ where
     Resp: Into<ResponseWrapper>,
 {
     let mut path: String = path.into();
-    if !path.starts_with('/') {
+    if !path.starts_with('/') && !path.is_empty() {
         path.insert(0, '/');
     }
     let svc = Box::new(move |req| {
@@ -157,6 +157,7 @@ pub(crate) async fn spawn_service(
                         io,
                         service_fn(move |req| handle_service(collection.clone(), req)),
                     )
+                    .with_upgrades()
                     .await
                 {
                     eprintln!("Error serving connection: {err:?}");
