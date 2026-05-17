@@ -30,7 +30,7 @@ cfg-if.workspace = true
 [target.'cfg(target_vendor = "apple")'.dependencies]
 block2 = { version = "0.6", default-features = false }
 objc2 = { version = "0.6", default-features = false }
-objc2-foundation = { version = "0.3", default-features = false, features = [
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "alloc",
     "block2",
     "NSError",
@@ -38,6 +38,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSCharacterSet",
     "NSArray",
     "NSString",
+    "NSValue",
     "NSData",
     "NSDate",
     "NSURL",

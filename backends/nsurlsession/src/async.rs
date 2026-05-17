@@ -51,9 +51,7 @@ impl AsyncResponse for NSUrlSessionAsyncResponse {
             .set_max_response_buffer_size(self.max_response_buffer_size);
         let inner = &mut self.inner;
         let inner_waker = coerce_waker(inner.shared.waker_ref());
-        unsafe {
-            inner.task.resume();
-        }
+        inner.task.resume();
         poll_fn(|cx| {
             if inner.shared.is_completed() {
                 return Poll::Ready(());
@@ -63,9 +61,7 @@ impl AsyncResponse for NSUrlSessionAsyncResponse {
         })
         .await;
         let res = inner.shared.take_response_buffer()?;
-        unsafe {
-            inner.task.error().into_nyquest_result()?;
-        }
+        inner.task.error().into_nyquest_result()?;
         Ok(res)
     }
 }
@@ -85,9 +81,7 @@ impl nyquest_interface::r#async::futures_io::AsyncRead for NSUrlSessionAsyncResp
 
         let inner_waker = coerce_waker(inner.shared.waker_ref());
         inner_waker.register(cx);
-        unsafe {
-            inner.task.resume();
-        }
+        inner.task.resume();
         Poll::Pending
     }
 }
@@ -115,7 +109,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
                 unreachable!("async-stream feature is disabled")
             }
         })?;
-        let shared = unsafe {
+        let shared = {
             let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
@@ -140,9 +134,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             Poll::Pending
         })
         .await?;
-        unsafe {
-            task.error().into_nyquest_result()?;
-        }
+        task.error().into_nyquest_result()?;
         Ok(NSUrlSessionAsyncResponse {
             inner: NSUrlSessionResponse {
                 task,

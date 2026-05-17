@@ -128,9 +128,7 @@ impl DataTaskDelegate {
         response: &NSURLResponse,
         completion_handler: &DynBlock<dyn Fn(NSURLSessionResponseDisposition)>,
     ) {
-        unsafe {
-            data_task.suspend();
-        }
+        data_task.suspend();
         completion_handler.call((NSURLSessionResponseDisposition::Allow,));
         let ivars = self.ivars();
         ivars.shared.response.store(Some(response.copy().into()));
@@ -184,9 +182,7 @@ impl DataTaskDelegate {
         {
             drop(buffer);
             ivars.set_error(NyquestError::ResponseTooLarge);
-            unsafe {
-                data_task.cancel();
-            }
+            data_task.cancel();
             return;
         }
         buffer.extend_from_slice(data);
