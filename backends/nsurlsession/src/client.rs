@@ -7,9 +7,9 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
-    ns_string, NSCharacterSet, NSData, NSDictionary, NSMutableCharacterSet, NSMutableDictionary,
-    NSMutableURLRequest, NSNumber, NSString, NSTimeInterval, NSURLComponents,
-    NSURLRequestCachePolicy, NSUTF8StringEncoding, NSURL,
+    ns_string, NSCharacterSet, NSCopying, NSData, NSDictionary, NSMutableArray,
+    NSMutableCharacterSet, NSMutableDictionary, NSMutableURLRequest, NSNumber, NSString,
+    NSTimeInterval, NSURLComponents, NSURLRequestCachePolicy, NSUTF8StringEncoding, NSURL,
 };
 
 use crate::challenge::BypassServerVerifyDelegate;
@@ -64,7 +64,16 @@ impl NSUrlSessionClient {
                         }
 
                         if let Some(bypass) = proxy_bypass {
-                            dict.insert(ns_string!("ExceptionsList"), &NSString::from_str(&bypass));
+                            let bypass_list = NSMutableArray::from_retained_slice(
+                                &bypass
+                                    .split([';', ','])
+                                    .map(str::trim)
+                                    .filter(|s| !s.is_empty())
+                                    .map(|s| NSString::from_str(s))
+                                    .collect::<Vec<_>>(),
+                            )
+                            .copy();
+                            dict.insert(ns_string!("ExceptionsList"), &bypass_list);
                         }
 
                         let dict = Retained::cast_unchecked::<NSDictionary>(dict.into_super());
