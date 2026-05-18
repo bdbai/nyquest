@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use nyquest_interface::client::{CachingBehavior, ClientOptions, ProxyOptions};
 use nyquest_interface::{Body, Error as NyquestError, Method, Request, Result as NyquestResult};
 use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
+use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::AllocAnyThread;
 use objc2_foundation::{
     ns_string, NSCharacterSet, NSCopying, NSData, NSDictionary, NSMutableArray,
@@ -37,48 +37,40 @@ impl NSUrlSessionClient {
                     config.setConnectionProxyDictionary(Some(&*NSDictionary::new()));
                 }
                 ProxyOptions::Custom {
-                    proxy_url_for_http,
-                    proxy_url_for_https,
+                    http,
+                    https,
                     proxy_bypass,
                 } => {
-                    if let Some(http_proxy) = parse_proxy_host_port(&proxy_url_for_http) {
-                        let dict = NSMutableDictionary::from_retained_objects(
-                            &[
-                                ns_string!("HTTPEnable"),
-                                ns_string!("HTTPProxy"),
-                                ns_string!("HTTPPort"),
-                            ],
-                            &[
-                                NSNumber::new_i32(1).into_super().into_super(),
-                                http_proxy.0.into_super(),
-                                http_proxy.1.into_super().into_super(),
-                            ],
-                        );
+                    let dict: Retained<NSMutableDictionary<NSString>> =
+                        NSMutableDictionary::<_, AnyObject>::new();
 
-                        if let Some(https_proxy) =
-                            proxy_url_for_https.and_then(|url| parse_proxy_host_port(&url))
-                        {
-                            dict.insert(ns_string!("HTTPSEnable"), &NSNumber::new_i32(1));
-                            dict.insert(ns_string!("HTTPSProxy"), &https_proxy.0);
-                            dict.insert(ns_string!("HTTPSPort"), &https_proxy.1);
-                        }
-
-                        if let Some(bypass) = proxy_bypass {
-                            let bypass_list = NSMutableArray::from_retained_slice(
-                                &bypass
-                                    .split([';', ','])
-                                    .map(str::trim)
-                                    .filter(|s| !s.is_empty())
-                                    .map(|s| NSString::from_str(s))
-                                    .collect::<Vec<_>>(),
-                            )
-                            .copy();
-                            dict.insert(ns_string!("ExceptionsList"), &bypass_list);
-                        }
-
-                        let dict = Retained::cast_unchecked::<NSDictionary>(dict.into_super());
-                        config.setConnectionProxyDictionary(Some(&dict));
+                    if let Some(http_proxy) = http.and_then(|url| parse_proxy_host_port(&url)) {
+                        dict.insert(ns_string!("HTTPEnable"), &NSNumber::new_i32(1));
+                        dict.insert(ns_string!("HTTPProxy"), &http_proxy.0);
+                        dict.insert(ns_string!("HTTPPort"), &http_proxy.1);
                     }
+
+                    if let Some(https_proxy) = https.and_then(|url| parse_proxy_host_port(&url)) {
+                        dict.insert(ns_string!("HTTPSEnable"), &NSNumber::new_i32(1));
+                        dict.insert(ns_string!("HTTPSProxy"), &https_proxy.0);
+                        dict.insert(ns_string!("HTTPSPort"), &https_proxy.1);
+                    }
+
+                    if let Some(bypass) = proxy_bypass {
+                        let bypass_list = NSMutableArray::from_retained_slice(
+                            &bypass
+                                .split([';', ','])
+                                .map(str::trim)
+                                .filter(|s| !s.is_empty())
+                                .map(|s| NSString::from_str(s))
+                                .collect::<Vec<_>>(),
+                        )
+                        .copy();
+                        dict.insert(ns_string!("ExceptionsList"), &bypass_list);
+                    }
+
+                    let dict = Retained::cast_unchecked::<NSDictionary>(dict.into_super());
+                    config.setConnectionProxyDictionary(Some(&dict));
                 }
             }
             if !options.use_cookies {
@@ -244,7 +236,7 @@ impl NSUrlSessionClient {
 fn parse_proxy_host_port(proxy_url: &str) -> Option<(Retained<NSString>, Retained<NSNumber>)> {
     let url = NSURLComponents::componentsWithString(&NSString::from_str(proxy_url))?;
     let host = url.host()?;
-    let port = url.port()?;
+    let port = url.port().unwrap_or_else(|| NSNumber::new_u16(80));
     Some((host, port))
 }
 

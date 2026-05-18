@@ -41,7 +41,7 @@ impl SessionHandle {
             ProxyOptions::Default => unsafe {
                 WinHttpOpen(
                     user_agent_ptr,
-                    WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                    WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                     std::ptr::null(),
                     std::ptr::null(),
                     flags,
@@ -57,14 +57,17 @@ impl SessionHandle {
                 )
             },
             ProxyOptions::Custom {
-                proxy_url_for_http,
-                proxy_url_for_https,
+                http,
+                https,
                 proxy_bypass,
             } => {
-                let proxy_wide: Vec<u16> = if let Some(proxy_https) = proxy_url_for_https {
-                    format!("http={proxy_url_for_http};https={proxy_https}")
-                } else {
-                    format!("http={proxy_url_for_http}")
+                let proxy_wide: Vec<u16> = match (http, https) {
+                    (Some(http_url), Some(https_url)) => {
+                        format!("http={http_url};https={https_url}")
+                    }
+                    (Some(http_url), None) => format!("http={http_url}"),
+                    (None, Some(https_url)) => format!("https={https_url}"),
+                    (None, None) => "".into(),
                 }
                 .encode_utf16()
                 .chain(std::iter::once(0))
