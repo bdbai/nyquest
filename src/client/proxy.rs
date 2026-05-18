@@ -8,16 +8,19 @@ use nyquest_interface::client::ProxyOptions;
 ///
 /// To set a custom proxy for HTTP requests only:
 /// ```rust
+/// # use nyquest::client::CustomProxy;
 /// let proxy = CustomProxy::http("http://my-http-proxy:8080");
 /// ```
 ///
 /// To set a custom proxy for HTTPS requests only:
 /// ```rust
+/// # use nyquest::client::CustomProxy;
 /// let proxy = CustomProxy::https("http://my-https-proxy:8080");
 /// ```
 ///
 /// To set custom proxies for both HTTP and HTTPS requests with a bypass list:
 /// ```rust
+/// # use nyquest::client::CustomProxy;
 /// let proxy = CustomProxy::http("http://my-http-proxy:8080")
 ///     .with_https("http://my-https-proxy:8080")
 ///     .with_bypass("excluded-domain.com");
