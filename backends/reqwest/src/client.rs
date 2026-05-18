@@ -95,17 +95,17 @@ fn build_non_wasm(
             builder = builder.no_proxy();
         }
         ProxyOptions::Custom {
-            proxy_url_for_http,
-            proxy_url_for_https,
+            http,
+            https,
             proxy_bypass,
         } => {
             use reqwest::{NoProxy, Proxy};
 
             let no_proxy = proxy_bypass.as_deref().and_then(NoProxy::from_string);
-            if let Ok(proxy_http) = Proxy::http(&**proxy_url_for_http) {
+            if let Some(Ok(proxy_http)) = http.as_deref().map(Proxy::http) {
                 builder = builder.proxy(proxy_http.no_proxy(no_proxy.clone()));
             }
-            if let Some(Ok(proxy_https)) = proxy_url_for_https.as_deref().map(Proxy::https) {
+            if let Some(Ok(proxy_https)) = https.as_deref().map(Proxy::https) {
                 builder = builder.proxy(proxy_https.no_proxy(no_proxy));
             }
         }

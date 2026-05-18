@@ -23,9 +23,9 @@ pub enum ProxyOptions {
     /// Use custom proxy settings.
     Custom {
         /// The proxy URL to use for HTTP requests.
-        proxy_url_for_http: Cow<'static, str>,
+        http: Option<Cow<'static, str>>,
         /// The proxy URL to use for HTTPS requests.
-        proxy_url_for_https: Option<Cow<'static, str>>,
+        https: Option<Cow<'static, str>>,
         /// Optional list of host patterns that should bypass the proxy.
         proxy_bypass: Option<Cow<'static, str>>,
     },

@@ -50,15 +50,21 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
             ProxyOptions::Default => {}
             ProxyOptions::None => raw.as_mut().set_noproxy("*")?,
             ProxyOptions::Custom {
-                proxy_url_for_http,
-                proxy_url_for_https,
+                http,
+                https,
                 proxy_bypass,
             } => {
-                raw.as_mut().set_proxy(&**proxy_url_for_http)?;
-                if proxy_url_for_https.is_some() {
-                    // TODO: curl doesn't have a separate option for HTTPS proxy.
-                    raw.as_mut().set_http_proxy_tunnel(true)?;
-                    raw.as_mut().set_suppress_connect_headers(true)?;
+                let is_https = url
+                    .get(0..5)
+                    .is_some_and(|proto| proto.eq_ignore_ascii_case("https"));
+                match (is_https, http, https) {
+                    (false, Some(http), _) => raw.as_mut().set_proxy(&**http)?,
+                    (true, _, Some(https)) => {
+                        raw.as_mut().set_proxy(&**https)?;
+                        raw.as_mut().set_http_proxy_tunnel(true)?;
+                        raw.as_mut().set_suppress_connect_headers(true)?;
+                    }
+                    _ => {}
                 }
 
                 if let Some(proxy_bypass) = proxy_bypass {

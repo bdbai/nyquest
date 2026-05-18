@@ -90,8 +90,8 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "winrt"))] // WinRT HttpClient does not support custom proxies
-    fn test_custom_proxy() {
-        const PATH: &str = "client_options/custom_proxy";
+    fn test_custom_http_proxy() {
+        const PATH: &str = "client_options/custom_http_proxy";
         let proxy_fixture_setup = setup_proxy_fixture(PATH);
 
         let assertions = |status: u16, body: String| {
@@ -99,7 +99,7 @@ mod tests {
             assert_eq!(body, "proxied");
         };
 
-        let custom_proxy = CustomProxy::new(proxy_fixture_setup.proxy_url);
+        let custom_proxy = CustomProxy::http(proxy_fixture_setup.proxy_url);
 
         #[cfg(feature = "blocking")]
         {
@@ -133,11 +133,11 @@ mod tests {
         }
     }
 
-    // TODO: test against an actual HTTPS endpoint.
+    // TODO: test_custom_all_proxy_for_https, test_custom_https_proxy_for_https
     #[test]
     #[cfg(not(feature = "winrt"))] // WinRT HttpClient does not support custom proxies
-    fn test_custom_proxy_https() {
-        const PATH: &str = "client_options/custom_proxy_https";
+    fn test_custom_all_proxy_for_http() {
+        const PATH: &str = "client_options/custom_all_proxy_for_http";
         let proxy_fixture_setup = setup_proxy_fixture(PATH);
 
         let assertions = |status: u16, body: String| {
@@ -145,8 +145,52 @@ mod tests {
             assert_eq!(body, "proxied");
         };
 
-        let custom_proxy = CustomProxy::new(proxy_fixture_setup.proxy_url.clone())
-            .with_https_proxy(proxy_fixture_setup.proxy_url);
+        let custom_proxy = CustomProxy::http(proxy_fixture_setup.proxy_url.clone())
+            .with_https(proxy_fixture_setup.proxy_url);
+
+        #[cfg(feature = "blocking")]
+        {
+            let builder = crate::init_builder_blocking().unwrap();
+            let client = builder
+                .custom_proxy(custom_proxy.clone())
+                .build_blocking()
+                .unwrap();
+            let res = client.request(NyquestRequest::get(PATH)).unwrap();
+            let status = res.status().into();
+            let body = res.text().unwrap();
+            assertions(status, body);
+        }
+
+        #[cfg(feature = "async")]
+        {
+            let (status, body) = TOKIO_RT.block_on(async {
+                let builder = crate::init_builder().await.unwrap();
+                let client = builder
+                    .custom_proxy(custom_proxy)
+                    .build_async()
+                    .await
+                    .unwrap();
+                let res = client.request(NyquestRequest::get(PATH)).await.unwrap();
+                let status = res.status().into();
+                let body = res.text().await.unwrap();
+                (status, body)
+            });
+
+            assertions(status, body);
+        }
+    }
+
+    #[test]
+    fn test_custom_https_proxy_for_http() {
+        const PATH: &str = "client_options/custom_https_proxy_for_http";
+        let proxy_fixture_setup = setup_proxy_fixture(PATH);
+
+        let assertions = |status: u16, body: String| {
+            assert_eq!(status, 200);
+            assert_eq!(body, "direct");
+        };
+
+        let custom_proxy = CustomProxy::https(proxy_fixture_setup.proxy_url);
 
         #[cfg(feature = "blocking")]
         {
@@ -190,8 +234,8 @@ mod tests {
             assert_eq!(body, "direct");
         };
 
-        let custom_proxy = CustomProxy::new(proxy_fixture_setup.proxy_url.clone())
-            .with_https_proxy(proxy_fixture_setup.proxy_url)
+        let custom_proxy = CustomProxy::http(proxy_fixture_setup.proxy_url.clone())
+            .with_https(proxy_fixture_setup.proxy_url)
             .with_bypass("localhost.");
 
         #[cfg(feature = "blocking")]
