@@ -20,7 +20,7 @@ declare this crate as a dependency. Libraries should use [`nyquest`] instead.
 Add the following at your program startup:
 
 ```rust
-nyquest_perset::register();
+nyquest_preset::register();
 ```
 
 Based on the target platform, a [`nyquest`] backend will be registered as the default. Refer to
