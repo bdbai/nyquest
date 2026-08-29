@@ -73,6 +73,7 @@ futures-util = "0.3"
 
 [dependencies]
 nyquest = { path = "../", features = ["json"] }
+nyquest-interface = { path = "../nyquest-interface" }
 nyquest-backend-winrt = { path = "../backends/winrt", optional = true }
 nyquest-backend-winhttp = { path = "../backends/winhttp", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }

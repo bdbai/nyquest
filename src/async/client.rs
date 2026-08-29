@@ -1,7 +1,10 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use nyquest_interface::{r#async::AnyAsyncClient, register::BACKEND};
+use nyquest_interface::{
+    r#async::{AnyAsyncBackend, AnyAsyncClient},
+    register::BACKEND,
+};
 
 use super::response::Response;
 use crate::ClientBuilder;
@@ -16,6 +19,15 @@ use crate::ClientBuilder;
 #[derive(Clone)]
 pub struct AsyncClient {
     pub(super) client: Arc<dyn AnyAsyncClient>,
+}
+
+impl<Backend: AnyAsyncBackend> ClientBuilder<&Backend> {
+    /// Build a new async client with the given options.
+    pub async fn build_async(self) -> crate::Result<AsyncClient> {
+        Ok(AsyncClient {
+            client: self.backend.create_async_client(self.options).await?,
+        })
+    }
 }
 
 impl ClientBuilder {

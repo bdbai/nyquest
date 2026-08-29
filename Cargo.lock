@@ -1308,6 +1308,7 @@ dependencies = [
  "nyquest-backend-reqwest",
  "nyquest-backend-winhttp",
  "nyquest-backend-winrt",
+ "nyquest-interface",
  "serde",
  "tokio",
 ]
