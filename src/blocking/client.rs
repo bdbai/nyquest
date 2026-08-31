@@ -1,7 +1,10 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use nyquest_interface::{blocking::AnyBlockingClient, register::BACKEND};
+use nyquest_interface::{
+    blocking::{AnyBlockingBackend, AnyBlockingClient},
+    register::BACKEND,
+};
 
 use super::{response::Response, Request};
 use crate::client::ClientBuilder;
@@ -23,6 +26,15 @@ use crate::client::ClientBuilder;
 #[derive(Clone)]
 pub struct BlockingClient {
     pub(super) client: Arc<dyn AnyBlockingClient>,
+}
+
+impl<Backend: AnyBlockingBackend> ClientBuilder<&Backend> {
+    /// Build a new blocking client with the given options and custom backend.
+    pub fn build_blocking(self) -> crate::Result<BlockingClient> {
+        Ok(BlockingClient {
+            client: self.backend.create_blocking_client(self.options)?,
+        })
+    }
 }
 
 impl ClientBuilder {

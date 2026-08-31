@@ -55,3 +55,6 @@ thiserror.workspace = true
 
 serde = { version = "1", optional = true }
 serde_json = { version = "1.0.140", optional = true }
+
+[dev-dependencies]
+futures.workspace = true

@@ -5,15 +5,44 @@ use nyquest_interface::client::{CachingBehavior, ClientOptions, ProxyOptions};
 #[cfg(doc)]
 use crate::client::CustomProxy;
 
+#[derive(Debug, Clone, Default)]
+#[doc(hidden)]
+pub struct GlobalBackend;
+
 /// A builder for creating an async or blocking client with custom options.
 ///
 /// Use [`ClientBuilder::default()`] to create a new builder instance.
-#[derive(Debug, Clone, Default)]
-pub struct ClientBuilder {
+#[derive(Debug, Clone)]
+pub struct ClientBuilder<B = GlobalBackend> {
     pub(crate) options: ClientOptions,
+    pub(crate) backend: B,
 }
 
-impl ClientBuilder {
+impl Default for ClientBuilder<GlobalBackend> {
+    fn default() -> Self {
+        Self {
+            options: ClientOptions::default(),
+            backend: GlobalBackend,
+        }
+    }
+}
+
+impl ClientBuilder<GlobalBackend> {
+    /// Uses `backend` for the client built by this builder.
+    ///
+    /// The client-specific backend is used instead of the globally registered backend. This is
+    /// useful for libraries that accept a configured HTTP client, applications that need more than
+    /// one backend, and tests that inject a local backend. Other builders and existing clients are
+    /// not affected.
+    pub fn custom_backend<Backend>(self, backend: &Backend) -> ClientBuilder<&Backend> {
+        ClientBuilder {
+            options: self.options,
+            backend,
+        }
+    }
+}
+
+impl<Backend> ClientBuilder<Backend> {
     /// Sets the base URL for the client.
     pub fn base_url(mut self, base_url: impl Into<String>) -> Self {
         self.options.base_url = Some(base_url.into());

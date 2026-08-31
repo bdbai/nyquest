@@ -1,7 +1,10 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use nyquest_interface::{r#async::AnyAsyncClient, register::BACKEND};
+use nyquest_interface::{
+    r#async::{AnyAsyncBackend, AnyAsyncClient},
+    register::BACKEND,
+};
 
 use super::response::Response;
 use crate::ClientBuilder;
@@ -18,6 +21,15 @@ pub struct AsyncClient {
     pub(super) client: Arc<dyn AnyAsyncClient>,
 }
 
+impl<Backend: AnyAsyncBackend> ClientBuilder<&Backend> {
+    /// Build a new async client with the given options and custom backend.
+    pub async fn build_async(self) -> crate::Result<AsyncClient> {
+        Ok(AsyncClient {
+            client: self.backend.create_async_client(self.options).await?,
+        })
+    }
+}
+
 impl ClientBuilder {
     /// Build a new async client with the given options.
     ///
@@ -30,7 +42,7 @@ impl ClientBuilder {
                 .get()
                 .expect("No backend registered. Please find a backend crate (e.g. nyquest-preset) and call the `register` method at program startup.")
                 .create_async_client(self.options)
-                .await?
+                .await?,
         })
     }
 }
