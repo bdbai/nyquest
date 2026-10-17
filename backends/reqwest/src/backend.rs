@@ -29,9 +29,14 @@ impl ReqwestBackend {
     /// use nyquest_backend_reqwest::{reqwest, ReqwestBackend};
     ///
     /// let backend = ReqwestBackend::customize(|builder| {
+    ///     #[cfg(not(target_arch = "wasm32"))]
+    ///     {
+    ///         builder
+    ///             .pool_max_idle_per_host(0)
+    ///             .redirect(reqwest::redirect::Policy::limited(2))
+    ///     }
+    ///     #[cfg(target_arch = "wasm32")]
     ///     builder
-    ///         .pool_max_idle_per_host(0)
-    ///         .redirect(reqwest::redirect::Policy::limited(2))
     /// });
     /// ```
     ///
