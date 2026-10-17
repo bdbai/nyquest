@@ -45,11 +45,17 @@ On top of the `nyquest-interface` crate and backend crates, the `nyquest` crate 
 - `nyquest-interface`: The interface crate that defines the API for Nyquest backends and hosts the global default Nyquest backend.
 - `nyquest-preset`: The umbralla crate of recommended Nyquest backends on various platforms.
 - `nyquest-backend-<backend>`: The backend crate that implements the Nyquest interface for a specific HTTP client library or platform API. Currently, we have:
-  - `nyquest-backend-libcurl`: libcurl
+  - `nyquest-backend-curl`: libcurl
   - `nyquest-backend-winrt`: UWP/WinRT [HttpClient](https://learn.microsoft.com/en-us/uwp/api/Windows.Web.Http.HttpClient)
+  - `nyquest-backend-winhttp`: WinHTTP
   - `nyquest-backend-nsurlsession`: `NSURLSession`
   - `nyquest-backend-reqwest`: reqwest (with WASM support)
 - `nyquest-backend-tests`: The test framework for Nyquest backends going through `nyquest`.
+
+## Community-supported Backends
+
+- [`compio-rs/cyper`](https://github.com/compio-rs/cyper): An HTTP library based on compio and hyper.
+- []
 
 ## Roadmap
 

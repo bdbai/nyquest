@@ -9,6 +9,7 @@ use nyquest_interface::Result as NyquestResult;
 use tokio::runtime::{Handle, Runtime};
 
 use crate::client::ReqwestClient;
+use crate::customizer::Customizer;
 use crate::error::{ReqwestBackendError, Result};
 use crate::response::ReqwestResponse;
 
@@ -21,8 +22,8 @@ pub struct ReqwestAsyncClient {
 }
 
 impl ReqwestAsyncClient {
-    pub fn new(options: ClientOptions) -> NyquestResult<Self> {
-        let inner = ReqwestClient::new(options)?;
+    pub(crate) fn new(options: ClientOptions, customizer: &Customizer) -> NyquestResult<Self> {
+        let inner = ReqwestClient::new(options, customizer)?;
         Ok(Self { inner })
     }
 }
@@ -212,6 +213,6 @@ impl nyquest_interface::r#async::AsyncBackend for crate::ReqwestBackend {
         &self,
         options: nyquest_interface::client::ClientOptions,
     ) -> NyquestResult<Self::AsyncClient> {
-        ReqwestAsyncClient::new(options)
+        ReqwestAsyncClient::new(options, self.customizer())
     }
 }

@@ -131,7 +131,7 @@ impl AsyncBackend for crate::ReqwestBackend {
         &self,
         options: nyquest_interface::client::ClientOptions,
     ) -> nyquest_interface::Result<Self::AsyncClient> {
-        let inner = ReqwestClient::new(options)?;
+        let inner = ReqwestClient::new(options, self.customizer())?;
         Ok(ReqwestAsyncClient { inner })
     }
 }

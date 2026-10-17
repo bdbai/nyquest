@@ -11,7 +11,7 @@ const DNS_CONTENT_TYPE: &str = "application/dns-json";
 
 #[wasm_bindgen_test]
 async fn get_1111_query() {
-    let backend = ReqwestBackend;
+    let backend = ReqwestBackend::default();
     let mut options = ClientOptions::default();
     options.base_url = Some(BASE_ADDR.into());
     options.user_agent = Some(USER_AGENT.into());
@@ -37,7 +37,7 @@ async fn get_1111_query() {
 
 #[wasm_bindgen_test]
 async fn post_1111_query() {
-    let backend = ReqwestBackend;
+    let backend = ReqwestBackend::default();
     let mut options = ClientOptions::default();
     options.base_url = Some(BASE_ADDR.into());
     options.user_agent = Some(USER_AGENT.into());

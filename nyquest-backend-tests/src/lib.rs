@@ -64,6 +64,26 @@ fn init_builder_blocking() -> io::Result<ClientBuilder> {
     })
 }
 
+async fn init_builder_from_backend<Backend>(
+    backend: &Backend,
+) -> io::Result<ClientBuilder<&Backend>> {
+    let port = init_main_service_port().await?;
+    let base_url = format!("http://localhost.:{port}"); // Use localhost. to avoid potential proxy bypass due to "localhost" being a special domain in some environments
+    Ok(ClientBuilder::default()
+        .base_url(base_url)
+        .custom_backend(backend))
+}
+
+fn init_builder_from_backend_blocking<Backend>(
+    backend: &Backend,
+) -> io::Result<ClientBuilder<&Backend>> {
+    TOKIO_RT.block_on(async {
+        init_builder_from_backend(backend)
+            .await
+            .map(|cb| cb.with_header("blocking", "1"))
+    })
+}
+
 fn add_hyper_fixture<Fut, Resp>(
     path: impl Into<String>,
     svc_fn: impl Fn(Request<body::Incoming>) -> Fut + Send + Sync + 'static,

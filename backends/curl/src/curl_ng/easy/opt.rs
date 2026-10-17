@@ -14,7 +14,7 @@ use crate::curl_ng::{
 const CURLOPT_SUPPRESS_CONNECT_HEADERS: curl_sys::CURLoption = curl_sys::CURLOPTTYPE_LONG + 265;
 
 impl RawEasy {
-    pub(super) unsafe fn setopt_str(
+    pub(crate) unsafe fn setopt_str(
         self: Pin<&mut Self>,
         opt: curl_sys::CURLoption,
         mut val: Cow<'_, str>,
@@ -22,7 +22,7 @@ impl RawEasy {
         self.setopt_ptr(opt, transform_cow_str_to_c_str(&mut val))
     }
 
-    pub(super) unsafe fn setopt_ptr(
+    pub(crate) unsafe fn setopt_ptr(
         self: Pin<&mut Self>,
         opt: curl_sys::CURLoption,
         val: *const c_char,
@@ -30,7 +30,7 @@ impl RawEasy {
         unsafe { curl_sys::curl_easy_setopt(self.as_raw_easy_mut().raw(), opt, val) }
     }
 
-    pub(super) unsafe fn setopt_long(
+    pub(crate) unsafe fn setopt_long(
         self: Pin<&mut Self>,
         opt: curl_sys::CURLoption,
         val: libc::c_long,
@@ -38,7 +38,7 @@ impl RawEasy {
         unsafe { curl_sys::curl_easy_setopt(self.as_raw_easy_mut().raw(), opt, val) }
     }
 
-    pub(super) unsafe fn setopt_off_t(
+    pub(crate) unsafe fn setopt_off_t(
         self: Pin<&mut Self>,
         opt: curl_sys::CURLoption,
         val: curl_sys::curl_off_t,
