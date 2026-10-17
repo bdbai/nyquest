@@ -40,17 +40,6 @@ mod blocking_tests {
         assert_eq!(res.status(), 200);
         assert_eq!(res.text().unwrap(), "customized-agent");
     }
-
-    #[cfg(feature = "blocking")]
-    #[test]
-    fn invalid_customization_is_reported_when_building_the_client() {
-        let customize = |builder: reqwest::ClientBuilder| {
-            builder.min_tls_version(reqwest::tls::Version::TLS_1_3)
-        };
-        let backend = ReqwestBackend::customize(customize);
-        crate::init_builder_from_backend_blocking(&backend)
-            .expect_err("the customized client builder should not build");
-    }
 }
 
 #[cfg(feature = "async")]

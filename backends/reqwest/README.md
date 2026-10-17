@@ -46,9 +46,14 @@ use nyquest_backend_reqwest::{reqwest, ReqwestBackend};
 // There is no need to call `nyquest_backend_reqwest::register()`: this client uses the
 // backend below instead of the global default.
 let backend = ReqwestBackend::customize(|builder| {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        builder
+            .pool_max_idle_per_host(0)
+            .timeout(std::time::Duration::from_secs(30))
+    }
+    #[cfg(target_arch = "wasm32")]
     builder
-        .pool_max_idle_per_host(0)
-        .timeout(std::time::Duration::from_secs(30))
 });
 
 // Then use the backend to build a client:
