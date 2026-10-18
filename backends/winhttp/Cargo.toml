@@ -1,7 +1,7 @@
 [package]
 name = "nyquest-backend-winhttp"
 description = "WinHTTP backend for nyquest"
-version = "0.1.0"
+version = "0.2.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -36,7 +36,7 @@ windows-sys = { version = "0.61", features = [
 windows-threading = "0.2"
 
 [dependencies]
-nyquest-interface = { version = "0.4.0", path = "../../nyquest-interface", default-features = false }
+nyquest-interface = { version = "0.5.0", path = "../../nyquest-interface", default-features = false }
 cfg-if.workspace = true
 futures-channel = { version = "0.3", optional = true, default-features = false, features = [
     "alloc",

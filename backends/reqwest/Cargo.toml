@@ -1,7 +1,7 @@
 [package]
 name = "nyquest-backend-reqwest"
 description = "reqwest backend for nyquest HTTP client library"
-version = "0.2.1"
+version = "0.3.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -25,11 +25,14 @@ multipart = ["nyquest-interface/multipart", "reqwest/multipart"]
 charset = ["dep:encoding_rs", "dep:mime"]
 default-tls = ["reqwest/default-tls"]
 native-tls = ["reqwest/native-tls"]
-rustls-tls-minimal = ["reqwest/rustls-tls-manual-roots-no-provider"]
+rustls-tls-minimal = ["reqwest/rustls-no-provider"]
 
 [dependencies]
-nyquest-interface = { version = "0.4.0", path = "../../nyquest-interface", default-features = false }
-reqwest = { version = "0.12", default-features = false, features = ["cookies"] }
+nyquest-interface = { version = "0.5.0", path = "../../nyquest-interface", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = [
+    "form",
+    "cookies",
+] }
 cfg-if.workspace = true
 thiserror.workspace = true
 futures.workspace = true
@@ -53,9 +56,9 @@ version = "0.1"
 features = ["web-encoding"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.reqwest]
-version = "0.12"
+version = "0.13"
 default-features = false
-features = ["stream", "cookies"]
+features = ["form", "stream", "cookies"]
 
 [dev-dependencies]
 nyquest-backend-tests = { path = "../../nyquest-backend-tests" }

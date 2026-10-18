@@ -57,7 +57,7 @@ pub use sys::Backend;
 
 #[cfg(feature = "auto-register")]
 ctor::declarative::ctor! {
-    #[ctor]
+    #[ctor(unsafe)]
     fn auto_register() {
         register();
     }
