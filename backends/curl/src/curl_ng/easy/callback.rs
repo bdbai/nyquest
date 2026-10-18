@@ -116,6 +116,7 @@ extern "C" fn open_socket_callback(
     addr: *const curl_sys::curl_sockaddr,
 ) -> curl_sys::curl_socket_t {
     panic::catch_unwind(|| {
+        // See https://github.com/sagebind/curl-rust/blob/2fb602bb1d3a34ded4548cbe8a7c7202b1ab4ba2/src/easy/handler.rs#L262-L300
         use socket2::Socket;
 
         #[cfg(unix)]

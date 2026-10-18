@@ -55,7 +55,6 @@ On top of the `nyquest-interface` crate and backend crates, the `nyquest` crate 
 ## Community-supported Backends
 
 - [`compio-rs/cyper`](https://github.com/compio-rs/cyper): An HTTP library based on compio and hyper.
-- []
 
 ## Roadmap
 

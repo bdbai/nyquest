@@ -43,13 +43,14 @@ impl Clone for CurlStringList {
     fn clone(&self) -> Self {
         let mut copy = Self::default();
         let mut from_slist = self.raw;
-        let to_slist = &mut copy.raw;
+        let mut to_slist = &mut copy.raw;
 
         while !from_slist.is_null() {
             unsafe {
                 let new_slist = curl_sys::curl_slist_append(*to_slist, (*from_slist).data);
                 assert!(!new_slist.is_null());
                 *to_slist = new_slist;
+                to_slist = &mut (**to_slist).next;
                 from_slist = (*from_slist).next;
             }
         }
@@ -110,5 +111,54 @@ impl<'a> fmt::Debug for Iter<'a> {
         f.debug_list()
             .entries(self.clone().map(String::from_utf8_lossy))
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_curl_string_list() {
+        let mut list = CurlStringList::default();
+        list.append("hello");
+        list.append("world");
+        assert_eq!(
+            list.into_iter().collect::<Vec<_>>(),
+            vec![b"hello", b"world"]
+        );
+    }
+
+    #[test]
+    fn test_curl_string_list_clone_empty() {
+        let list = CurlStringList::default();
+        let cloned_list = list.clone();
+        assert_eq!(list.raw, ptr::null_mut());
+        assert_eq!(cloned_list.raw, ptr::null_mut());
+    }
+
+    #[test]
+    fn test_curl_string_list_clone_one_item() {
+        let mut list = CurlStringList::default();
+        list.append("item");
+        let cloned_list = list.clone();
+        assert_eq!(list.into_iter().collect::<Vec<_>>(), vec![b"item"]);
+        assert_eq!(cloned_list.into_iter().collect::<Vec<_>>(), vec![b"item"]);
+    }
+
+    #[test]
+    fn test_curl_string_list_clone_multiple_items() {
+        let mut list = CurlStringList::default();
+        list.append("first");
+        list.append("second");
+        let cloned_list = list.clone();
+        assert_eq!(
+            list.into_iter().collect::<Vec<_>>(),
+            vec![&b"first"[..], b"second"]
+        );
+        assert_eq!(
+            cloned_list.into_iter().collect::<Vec<_>>(),
+            vec![&b"first"[..], b"second"]
+        );
     }
 }

@@ -36,6 +36,23 @@ mod blocking_tests {
             ) -> Result<(), nyquest_backend_curl::CurlCodeContext> {
                 self.calls.fetch_add(1, Ordering::SeqCst);
                 unsafe {
+                    handle.setopt_ptr_owned(curl_sys::CURLOPT_DEBUGDATA, [0_u8; 1])?;
+                    let mut aliases = nyquest_backend_curl::CurlStringList::default();
+                    aliases.append("200 OK");
+                    handle.setopt_slist(curl_sys::CURLOPT_HTTP200ALIASES, aliases)?;
+                    handle.setopt_blob(curl_sys::CURLOPT_CAINFO_BLOB, b"")?;
+                    handle.setopt_long(curl_sys::CURLOPT_TCP_KEEPALIVE, 1)?;
+                    handle.setopt_off_t(curl_sys::CURLOPT_MAX_RECV_SPEED_LARGE, 1_000_000)?;
+                    let mut response_code = 0;
+                    assert_eq!(
+                        curl_sys::curl_easy_getinfo(
+                            handle.as_raw(),
+                            curl_sys::CURLINFO_RESPONSE_CODE,
+                            &mut response_code,
+                        ),
+                        curl_sys::CURLE_OK
+                    );
+                    assert_eq!(response_code, 0);
                     handle.setopt_ptr_raw(curl_sys::CURLOPT_REFERER, c"reused-handle".as_ptr())?;
                 }
                 Ok(())

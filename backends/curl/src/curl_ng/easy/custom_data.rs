@@ -123,6 +123,8 @@ impl<E: AsRawEasyMut> EasyWithCustomData<E> {
 
         let mut easy = this.easy.as_raw_easy_mut();
         let ptr = item.as_ptr();
+        // FIXME: the pointer to the OwnedBlob points to a temporary variable that is only valid
+        // before being moved into the storage. Find a way to avoid dangling the pointer.
         unsafe { RawEasy::setopt_ptr(easy.as_mut(), opt, ptr) }.with_easy_context(context)?;
 
         struct Guard<'a> {
@@ -210,7 +212,7 @@ impl SlotItemValue {
     pub(crate) fn as_ptr(&self) -> *const c_char {
         match self {
             SlotItemValue::Slist(list) => list.raw() as *const _ as *const _,
-            SlotItemValue::Blob(blob) => blob.data.as_ptr() as *const _,
+            SlotItemValue::Blob(blob) => &blob.raw as *const curl_sys::curl_blob as *const _,
             SlotItemValue::Any(any) => any.as_ref() as *const (dyn Any + Send) as *const _,
         }
     }
