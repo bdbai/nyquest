@@ -12,7 +12,7 @@
 //! ## Quick Start
 //!
 //! Add the following at your program startup:
-//! ```no_run
+//! ```rust
 //! nyquest_backend::register();
 //! ```
 //! Based on the target platform, a [`nyquest`] backend will be registered as the default. Refer to

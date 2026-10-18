@@ -40,7 +40,7 @@ impl<E, C> EasyWithCallback<E, C> {
         }
     }
 
-    pub fn _as_easy_mut(self: Pin<&mut Self>) -> Pin<&mut E> {
+    pub fn as_easy_mut(self: Pin<&mut Self>) -> Pin<&mut E> {
         self.project().easy
     }
     pub fn as_callback_mut(self: Pin<&mut Self>) -> &mut C {
@@ -54,6 +54,12 @@ impl<E: AsRawEasyMut, C: EasyCallback> EasyWithCallback<E, C> {
         let this = self.as_mut().project();
         let mut raw = this.easy.as_raw_easy_mut();
         unsafe {
+            raw.as_mut()
+                .setopt_ptr(
+                    curl_sys::CURLOPT_OPENSOCKETFUNCTION,
+                    open_socket_callback as _,
+                )
+                .with_easy_context("setopt OPENSOCKETFUNCTION")?;
             raw.as_mut()
                 .setopt_ptr(curl_sys::CURLOPT_WRITEDATA, self_ptr as _)
                 .with_easy_context("setopt WRITEDATA")?;
@@ -104,7 +110,47 @@ impl<E: AsRawEasyMut, C: EasyCallback> AsRawEasyMut for EasyWithCallback<E, C> {
     }
 }
 
-fn write_callback<E: AsRawEasyMut, C: EasyCallback>(
+extern "C" fn open_socket_callback(
+    _client: *mut c_void,
+    _purpose: curl_sys::curlsocktype,
+    addr: *const curl_sys::curl_sockaddr,
+) -> curl_sys::curl_socket_t {
+    panic::catch_unwind(|| {
+        // See https://github.com/sagebind/curl-rust/blob/2fb602bb1d3a34ded4548cbe8a7c7202b1ab4ba2/src/easy/handler.rs#L262-L300
+        use socket2::Socket;
+
+        #[cfg(unix)]
+        fn cvt(socket: Socket) -> curl_sys::curl_socket_t {
+            use std::os::unix::prelude::*;
+            socket.into_raw_fd()
+        }
+
+        #[cfg(windows)]
+        fn cvt(socket: Socket) -> curl_sys::curl_socket_t {
+            use std::os::windows::prelude::*;
+            socket.into_raw_socket()
+        }
+
+        let curl_sys::curl_sockaddr {
+            family,
+            socktype,
+            protocol,
+            ..
+        } = unsafe { &*addr };
+        Socket::new(
+            (*family).into(),
+            (*socktype).into(),
+            Some((*protocol).into()),
+        )
+        .ok()
+        .map(cvt)
+    })
+    .ok()
+    .flatten()
+    .unwrap_or(curl_sys::CURL_SOCKET_BAD)
+}
+
+extern "C" fn write_callback<E: AsRawEasyMut, C: EasyCallback>(
     data: *mut c_char,
     size: usize,
     nmemb: usize,
@@ -122,7 +168,7 @@ fn write_callback<E: AsRawEasyMut, C: EasyCallback>(
     .unwrap_or(!0)
 }
 
-fn read_callback<E: AsRawEasyMut, C: EasyCallback>(
+extern "C" fn read_callback<E: AsRawEasyMut, C: EasyCallback>(
     buffer: *mut c_char,
     size: usize,
     nitems: usize,
@@ -141,7 +187,7 @@ fn read_callback<E: AsRawEasyMut, C: EasyCallback>(
     .unwrap_or(!0)
 }
 
-fn header_callback<E: AsRawEasyMut, C: EasyCallback>(
+extern "C" fn header_callback<E: AsRawEasyMut, C: EasyCallback>(
     buffer: *mut c_char,
     size: usize,
     nitems: usize,
@@ -160,7 +206,7 @@ fn header_callback<E: AsRawEasyMut, C: EasyCallback>(
     .unwrap_or(!0)
 }
 
-fn seek_callback<E: AsRawEasyMut, C: EasyCallback>(
+extern "C" fn seek_callback<E: AsRawEasyMut, C: EasyCallback>(
     userdata: *mut c_void,
     offset: curl_sys::curl_off_t,
     origin: c_int,

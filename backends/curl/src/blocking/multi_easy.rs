@@ -120,6 +120,7 @@ impl MultiEasy {
         url: &str,
         req: Request,
         options: &nyquest_interface::client::ClientOptions,
+        customizer: &super::CustomizerFn,
     ) -> NyquestResult<()> {
         use nyquest_interface::blocking::BoxedStream;
 
@@ -130,6 +131,7 @@ impl MultiEasy {
                 url,
                 req,
                 options,
+                customizer,
                 easy,
                 |mut easy, stream| {
                     if let BoxedStream::Sized { content_length, .. } = &stream {
@@ -161,6 +163,7 @@ impl MultiEasy {
         url: &str,
         req: Request,
         options: &nyquest_interface::client::ClientOptions,
+        customizer: &super::CustomizerFn,
     ) -> NyquestResult<()> {
         self.with_detached_easy(|easy| {
             use crate::curl_ng::mime::DummyMimePartReader;
@@ -169,6 +172,7 @@ impl MultiEasy {
                 url,
                 req,
                 options,
+                customizer,
                 easy,
                 |_, _| Ok(()),
                 |_| -> MimePartContent<DummyMimePartReader> {

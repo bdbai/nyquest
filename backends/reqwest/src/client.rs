@@ -1,12 +1,17 @@
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::OnceLock;
 
 use http::{HeaderMap, HeaderName, HeaderValue};
 use nyquest_interface::{client::ClientOptions, Result as NyquestResult};
 use reqwest::Client;
 use url::Url;
 
-use crate::error::{ReqwestBackendError, Result};
+use crate::{
+    customizer::Customizer,
+    error::{ReqwestBackendError, Result},
+};
 
 #[derive(Clone)]
 pub struct ReqwestClient {
@@ -20,8 +25,8 @@ pub struct ReqwestClient {
 }
 
 impl ReqwestClient {
-    pub fn new(options: ClientOptions) -> NyquestResult<Self> {
-        let client = build_reqwest_client(&options)?;
+    pub fn new(options: ClientOptions, customizer: &Customizer) -> NyquestResult<Self> {
+        let client = build_reqwest_client(&options, customizer)?;
 
         let base_url = if let Some(ref base_url_str) = options.base_url {
             Some(Url::parse(base_url_str).map_err(|_| {
@@ -50,7 +55,7 @@ impl ReqwestClient {
     }
 }
 
-pub fn build_reqwest_client(options: &ClientOptions) -> Result<Client> {
+pub fn build_reqwest_client(options: &ClientOptions, customizer: &Customizer) -> Result<Client> {
     let mut builder = Client::builder();
 
     if let Some(user_agent) = &options.user_agent {
@@ -74,10 +79,13 @@ pub fn build_reqwest_client(options: &ClientOptions) -> Result<Client> {
         builder = build_non_wasm(builder, options).map_err(ReqwestBackendError::Reqwest)?;
     }
 
-    builder
-        .default_headers(default_headers?)
-        .build()
-        .map_err(ReqwestBackendError::Reqwest)
+    builder = builder.default_headers(default_headers?);
+
+    // The customizer is the last thing to run so that the user has the final say over the
+    // built-in options applied above.
+    builder = customizer.customize(builder);
+
+    builder.build().map_err(ReqwestBackendError::Reqwest)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

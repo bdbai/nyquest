@@ -17,7 +17,7 @@ const TEST_URL: &str = "https://ip.sb/";
 #[cfg(feature = "blocking")]
 #[test]
 fn test_blocking_outside_runtime() {
-    let backend = ReqwestBackend;
+    let backend = ReqwestBackend::default();
     let options = ClientOptions::default();
 
     let client = backend.create_blocking_client(options).unwrap();
@@ -42,7 +42,7 @@ fn test_blocking_outside_runtime() {
 #[cfg(feature = "blocking")]
 #[tokio::test]
 async fn test_blocking_inside_tokio_runtime() {
-    let backend = ReqwestBackend;
+    let backend = ReqwestBackend::default();
     let options = ClientOptions::default();
 
     let client = backend.create_blocking_client(options).unwrap();
@@ -68,7 +68,7 @@ async fn test_blocking_inside_tokio_runtime() {
 #[cfg(feature = "async")]
 #[tokio::test]
 async fn test_async_inside_tokio_runtime() {
-    let backend = ReqwestBackend;
+    let backend = ReqwestBackend::default();
     let options = ClientOptions::default();
 
     let client = backend.create_async_client(options).await.unwrap();
@@ -107,7 +107,7 @@ fn test_async_inside_futures_executor() {
             .unwrap();
 
         rt.block_on(async {
-            let backend = ReqwestBackend;
+            let backend = ReqwestBackend::default();
             let options = ClientOptions::default();
 
             let client = backend.create_async_client(options).await.unwrap();
@@ -153,7 +153,7 @@ fn test_async_inside_async_std_runtime() {
             .unwrap();
 
         rt.block_on(async {
-            let backend = ReqwestBackend;
+            let backend = ReqwestBackend::default();
             let options = ClientOptions::default();
 
             let client = backend.create_async_client(options).await.unwrap();
@@ -185,7 +185,7 @@ fn test_async_inside_async_std_runtime() {
 #[cfg(feature = "async")]
 #[tokio::test]
 async fn test_concurrent_async_requests() {
-    let backend = ReqwestBackend;
+    let backend = ReqwestBackend::default();
     let options = ClientOptions::default();
 
     let client = backend.create_async_client(options).await.unwrap();
@@ -225,7 +225,7 @@ async fn test_concurrent_async_requests() {
 #[cfg(feature = "blocking")]
 #[test]
 fn test_concurrent_blocking_requests() {
-    let backend = ReqwestBackend;
+    let backend = ReqwestBackend::default();
     let options = ClientOptions::default();
 
     let client = backend.create_blocking_client(options).unwrap();
@@ -265,7 +265,7 @@ fn test_concurrent_blocking_requests() {
 #[cfg(all(feature = "async", feature = "blocking"))]
 #[tokio::test]
 async fn test_mixed_runtime_usage() {
-    let backend = ReqwestBackend;
+    let backend = ReqwestBackend::default();
     let options = ClientOptions::default();
 
     // Create both async and blocking clients

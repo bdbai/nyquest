@@ -5,13 +5,17 @@ use std::ptr::NonNull;
 use crate::curl_ng::easy::AsRawEasyMut;
 use crate::curl_ng::{CurlCodeContext, WithCurlCodeContext as _};
 
-#[derive(Debug)]
 pub struct RawEasy {
     raw: NonNull<curl_sys::CURL>,
 }
 
 unsafe impl Send for RawEasy {}
-unsafe impl Sync for RawEasy {}
+
+impl std::fmt::Debug for RawEasy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawEasy").field("raw", &self.raw).finish()
+    }
+}
 
 impl RawEasy {
     pub fn new() -> Self {

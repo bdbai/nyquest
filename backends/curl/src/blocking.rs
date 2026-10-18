@@ -14,11 +14,16 @@ mod set;
 
 use crate::curl_ng::easy::Share;
 use crate::url::concat_url;
+use crate::{CurlCodeContext, CurlHandle, HandleCustomizer};
 use multi_easy::MultiEasy;
+
+type CustomizerFn = dyn Fn(CurlHandle<'_>, &Request) -> Result<(), CurlCodeContext> + Send + Sync;
+pub(crate) type Customizer = Arc<CustomizerFn>;
 
 #[derive(Clone)]
 pub struct CurlEasyClient {
     options: Arc<nyquest_interface::client::ClientOptions>,
+    customizer: Customizer,
     slot: Arc<MultiEasySlot>,
     share: Share,
 }
@@ -76,9 +81,10 @@ impl<S: AsRef<MultiEasySlot>> Drop for EasyHandleGuard<S> {
 }
 
 impl CurlEasyClient {
-    pub fn new(options: nyquest_interface::client::ClientOptions) -> Self {
+    pub fn new(options: nyquest_interface::client::ClientOptions, customizer: Customizer) -> Self {
         Self {
             options: Arc::new(options),
+            customizer,
             slot: Arc::new(MultiEasySlot {
                 multi_easy: Mutex::new(None),
             }),
@@ -181,7 +187,7 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
         // FIXME: properly concat base_url and url
         let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);
         let handle: &mut MultiEasy = handle_guard.handle_mut();
-        handle.populate_request(&url, req, &self.options)?;
+        handle.populate_request(&url, req, &self.options, &*self.customizer)?;
         handle.poll_until_response_headers()?;
         let mut headers_buf = handle.take_response_headers_buffer();
         let headers = headers_buf
@@ -207,6 +213,15 @@ impl nyquest_interface::blocking::BlockingBackend for crate::CurlBackend {
         &self,
         options: nyquest_interface::client::ClientOptions,
     ) -> NyquestResult<Self::BlockingClient> {
-        Ok(CurlEasyClient::new(options))
+        Ok(CurlEasyClient::new(
+            options,
+            self.blocking_customizer.clone(),
+        ))
     }
+}
+
+pub(crate) fn create_customizer(
+    customizer: Arc<impl HandleCustomizer + Send + Sync + 'static>,
+) -> Customizer {
+    Arc::new(move |handle, request| customizer.customize_handle_with_request(handle, request))
 }

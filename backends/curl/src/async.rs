@@ -21,11 +21,18 @@ use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
 use crate::r#async::handler::AsyncHandler;
 use crate::request::{create_easy, AsCallbackMut as _};
 use crate::url::concat_url;
+use crate::{CurlCodeContext, CurlHandle, HandleCustomizer};
 
 type Easy = crate::request::BoxEasyHandle<handler::AsyncHandler>;
+pub(crate) type Customizer = Arc<
+    dyn Fn(CurlHandle<'_>, &nyquest_interface::r#async::Request) -> Result<(), CurlCodeContext>
+        + Send
+        + Sync,
+>;
 
 pub struct CurlMultiClientInner {
     options: nyquest_interface::client::ClientOptions,
+    customizer: Customizer,
     loop_manager: r#loop::LoopManager,
     share: Share,
 }
@@ -147,6 +154,7 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
                 &url,
                 req,
                 &self.inner.options,
+                &*self.inner.customizer,
                 easy.as_mut(),
                 |easy, stream| {
                     read_task_collection
@@ -185,8 +193,17 @@ impl nyquest_interface::r#async::AsyncBackend for crate::CurlBackend {
             inner: Arc::new(CurlMultiClientInner {
                 loop_manager: r#loop::LoopManager::new(),
                 options,
+                customizer: self.async_customizer.clone(),
                 share: Share::new(),
             }),
         })
     }
+}
+
+pub(crate) fn create_customizer(
+    customizer: Arc<impl HandleCustomizer + Send + Sync + 'static>,
+) -> Customizer {
+    Arc::new(move |handle, req: &nyquest_interface::r#async::Request| {
+        customizer.customize_handle_with_request(handle, req)
+    })
 }

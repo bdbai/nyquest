@@ -34,7 +34,35 @@ While mixing async and blocking code is generally discouraged, some situations m
 - **rustls-tls-minimal**: Enable `reqwest`'s `rustls-tls-manual-roots-no-provider` feature
 - **native-tls**: Enable `reqwest`'s `native-tls` feature
 
-At least one TLS feature must be enabled for this crate to function. Since `reqwest` provides numerous features, we only expose the essential TLS-related ones rather than re-exporting them all. If you require finer control over `reqwest` features, we recommend adding `reqwest` as a direct dependency in your project.
+At least one TLS feature must be enabled for this crate to function. Since `reqwest` provides numerous features, we only expose the essential TLS-related ones rather than re-exporting them all. If you require finer control over `reqwest` features, we recommend adding `reqwest` as a direct dependency in your project. The `reqwest` crate this backend is built against is re-exported as `nyquest_backend_reqwest::reqwest`, so its types can be named without adding a matching dependency.
+
+## Client-specific Customization
+
+The application can customize the `reqwest::ClientBuilder` that is used to create the client, without affecting the globally registered backend or any other client. Build a customized backend and hand it to `ClientBuilder::custom_backend`:
+
+```rust
+use nyquest_backend_reqwest::{reqwest, ReqwestBackend};
+
+// There is no need to call `nyquest_backend_reqwest::register()`: this client uses the
+// backend below instead of the global default.
+let backend = ReqwestBackend::customize(|builder| {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        builder
+            .pool_max_idle_per_host(0)
+            .timeout(std::time::Duration::from_secs(30))
+    }
+    #[cfg(target_arch = "wasm32")]
+    builder
+});
+
+// Then use the backend to build a client:
+// let client = nyquest::ClientBuilder::default()
+//     .custom_backend(&backend)
+//     .build_blocking()?;
+```
+
+The hook receives the `reqwest::ClientBuilder` after the built-in `nyquest_interface::client::ClientOptions` have been applied, so it has the final say over the resulting client: it may override the root certificates, the HTTP version-specific options, the TLS configuration, or anything else reqwest exposes. It runs once per client and may be called from several threads, hence the `Send + Sync` bound, and a configuration that reqwest rejects is reported as an error by the `build_async` / `build_blocking` call. Use `ReqwestBackend::with_customizer` with a `Customizer` when the customizing function needs to be constructed separately.
 
 ## Usage
 

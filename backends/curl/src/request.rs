@@ -4,28 +4,33 @@ use std::pin::Pin;
 use nyquest_interface::client::ProxyOptions;
 use nyquest_interface::{Body, Method, Request, Result as NyquestResult};
 
-use crate::curl_ng::CurlCodeContext;
 use crate::{
     curl_ng::{
         easy::{
-            AsRawEasyMut, EasyCallback, EasyWithCallback, EasyWithHeaderList, MimeHandle,
-            OwnedEasyWithErrorBuf, RawEasy, Share, ShareHandle,
+            AsRawEasyMut, EasyCallback, EasyWithCallback, EasyWithCustomData, EasyWithHeaderList,
+            MimeHandle, OwnedEasyWithErrorBuf, RawEasy, Share, ShareHandle,
         },
         mime::{MimePartContent, MimePartReader},
-        CurlStringList,
+        CurlCodeContext, CurlStringList,
     },
     url::form_url_encode,
+    CurlHandle,
 };
 
+/// The easy handle of a request.
+///
+/// [`EasyWithCustomData`] is the innermost layer, so that the options a customizer sets are backed
+/// by data the same handle owns.
 pub type EasyHandle<C> = OwnedEasyWithErrorBuf<
-    MimeHandle<ShareHandle<EasyWithHeaderList<EasyWithCallback<RawEasy, C>>>>,
+    MimeHandle<ShareHandle<EasyWithHeaderList<EasyWithCallback<EasyWithCustomData<RawEasy>, C>>>>,
 >;
 pub type BoxEasyHandle<C> = Pin<Box<EasyHandle<C>>>;
 pub fn create_easy<C: EasyCallback>(callback: C, share: &Share) -> NyquestResult<BoxEasyHandle<C>> {
     let easy = RawEasy::new();
+    let easy = EasyWithCustomData::new(easy);
     let easy = EasyWithCallback::new(easy, callback);
     let easy = EasyWithHeaderList::new(easy);
-    let easy: ShareHandle<EasyWithHeaderList<EasyWithCallback<RawEasy, C>>> =
+    let easy: ShareHandle<EasyWithHeaderList<EasyWithCallback<EasyWithCustomData<RawEasy>, C>>> =
         share.spawn_easy(easy);
     let easy = MimeHandle::new(easy);
     let easy = OwnedEasyWithErrorBuf::new(easy);
@@ -38,13 +43,16 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
     url: &str,
     mut req: Request<S>,
     options: &nyquest_interface::client::ClientOptions, // FIXME: strings in options are copied to be null-terminated. Can we avoid that?
+    customizer: &(impl Fn(CurlHandle<'_>, &Request<S>) -> Result<(), CurlCodeContext> + ?Sized),
     easy: Pin<&mut EasyHandle<C>>,
     populate_stream: impl FnOnce(Pin<&mut EasyHandle<C>>, S) -> Result<(), CurlCodeContext>,
     #[cfg_attr(not(feature = "multipart"), allow(unused, unused_mut))]
     mut populate_mime_stream: impl FnMut(S) -> MimePartContent<R>,
 ) -> NyquestResult<()> {
     let mut headers = CurlStringList::default();
-    easy.with_error_message(|mut e| {
+    let mut easy = easy;
+
+    easy.as_mut().with_error_message(|mut e| {
         let mut raw = e.as_mut().as_raw_easy_mut();
         match &options.proxy_options {
             ProxyOptions::Default => {}
@@ -94,7 +102,7 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
             }
         }
         let need_body = req.method == Method::Post || req.method == Method::Put;
-        match req.method {
+        match &req.method {
             Method::Get if req.body.is_none() => raw.as_mut().set_get(true)?,
             Method::Get => raw.as_mut().set_custom_request("get")?,
             Method::Post => raw.as_mut().set_post(true)?,
@@ -103,7 +111,7 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
             Method::Delete => raw.as_mut().set_custom_request("delete")?,
             Method::Patch => raw.as_mut().set_custom_request("patch")?,
             Method::Head => raw.as_mut().set_nobody(true)?,
-            Method::Other(method) => raw.as_mut().set_custom_request(method)?,
+            Method::Other(method) => raw.as_mut().set_custom_request(method.as_ref())?,
         }
         for (name, value) in options.default_headers.iter().filter(|(name, _)| {
             // FIXME: This is O(len(additional) * len(default))
@@ -117,7 +125,7 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
             headers.append(format!("{name}: {value}"));
         }
         raw.as_mut().set_accept_encoding("")?;
-        match req.body {
+        match req.body.take() {
             Some(Body::Bytes {
                 content,
                 content_type,
@@ -181,6 +189,18 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
         let header = e.as_easy_mut().as_easy_mut().as_easy_mut();
         header.set_headers(Some(headers))?;
         Ok(())
+    })?;
+
+    easy.as_mut().with_error_message(|mut e| {
+        let easy = e
+            .as_mut()
+            .as_easy_mut()
+            .as_easy_mut()
+            .as_easy_mut()
+            .as_easy_mut()
+            .as_easy_mut();
+        let pub_handle = CurlHandle::new(easy);
+        customizer(pub_handle, &req)
     })?;
     Ok(())
 }

@@ -1,5 +1,6 @@
 mod as_raw;
 mod callback;
+mod custom_data;
 mod error_buf;
 mod header_list;
 mod info;
@@ -10,6 +11,7 @@ mod share;
 
 pub use as_raw::AsRawEasyMut;
 pub use callback::{EasyCallback, EasyWithCallback};
+pub use custom_data::EasyWithCustomData;
 pub use error_buf::OwnedEasyWithErrorBuf;
 pub use header_list::EasyWithHeaderList;
 pub use mime::MimeHandle;

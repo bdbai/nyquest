@@ -47,6 +47,16 @@
 //! Refer to our [repository](https://github.com/bdbai/nyquest) for up-to-date
 //! information on the backends.
 //!
+//! ### Client-specific Backends
+//!
+//! Registering a backend affects the whole program, but a client can also be built on a backend
+//! value that the application keeps for itself, by passing it to
+//! [`ClientBuilder::custom_backend`]. Since the backend value is what the backend crate defines,
+//! it is also the natural place for backend-specific configuration: `nyquest-backend-curl` uses
+//! it to apply arbitrary `CURLOPT`s to every request of the client, and
+//! `nyquest-backend-reqwest` uses it to customize the `reqwest::ClientBuilder` the client is
+//! built from. Refer to the backend crates for the options they expose.
+//!
 //! ### Threading and `async` Support
 //!
 //! Nyquest requires backends to be thread-safe in general. The "blocking" clients enabled by the
@@ -65,7 +75,7 @@
 //! Assume a backend with `async` feature has been registered. For a simple GET request, you can
 //! use the shortcut `get` function:
 //!
-//! ```no_run
+//! ```rust
 //! # async fn run() -> Result<(), nyquest::Error> {
 //! let body = nyquest::r#async::get("https://example.com").await?.text().await?;
 //! println!("{body}");
@@ -78,7 +88,7 @@
 //!
 //! To send a POST request with urlencoded form data, use the `body_form!` macro to build the body:
 //!
-//! ```no_run
+//! ```rust,no_run
 //! use nyquest::{body_form, ClientBuilder};
 //! use nyquest::r#async::Request;
 //! # async fn run() -> Result<(), nyquest::Error> {

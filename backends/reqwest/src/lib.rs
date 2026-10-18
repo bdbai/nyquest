@@ -30,14 +30,24 @@ cfg_if::cfg_if! {
         mod response;
     }
 }
+mod backend;
 mod client;
+mod customizer;
 mod error;
 mod request;
 
-/// The backend implementation using reqwest.
-pub struct ReqwestBackend;
+pub use crate::backend::ReqwestBackend;
+#[doc(no_inline)]
+pub use ::reqwest;
 
 /// Registers the reqwest backend as global default.
 pub fn register() {
-    nyquest_interface::register_backend(ReqwestBackend);
+    nyquest_interface::register_backend(ReqwestBackend::default());
+}
+
+/// Registers the reqwest backend with a customizer as global default.
+pub fn register_custom(
+    f: impl Fn(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send + Sync + 'static,
+) {
+    nyquest_interface::register_backend(ReqwestBackend::customize(f));
 }
