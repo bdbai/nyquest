@@ -21,6 +21,7 @@ blocking = []
 multipart = []
 async-stream = ["async", "dep:futures-io"]
 blocking-stream = ["blocking"]
+ws = []
 
 [dependencies]
 thiserror.workspace = true

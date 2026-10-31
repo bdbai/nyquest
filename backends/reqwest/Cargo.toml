@@ -12,7 +12,7 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async", "blocking", "multipart"]
+features = ["async", "blocking", "multipart", "ws"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
@@ -21,6 +21,7 @@ async = ["nyquest-interface/async"]
 async-stream = ["async", "nyquest-interface/async-stream"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
+ws = ["nyquest-interface/ws", "dep:tokio-tungstenite"]
 multipart = ["nyquest-interface/multipart", "reqwest/multipart"]
 charset = ["dep:encoding_rs", "dep:mime"]
 default-tls = ["reqwest/default-tls"]
@@ -47,8 +48,12 @@ http-body = "1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio]
 default-features = false
-features = ["rt-multi-thread"]
+features = ["rt-multi-thread", "sync"]
 version = "1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio-tungstenite]
+version = "0.26"
+optional = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.iconv-native]
 default-features = false

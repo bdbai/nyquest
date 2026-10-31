@@ -6,9 +6,9 @@ use futures_util::future::{select, Either};
 use nyquest_interface::r#async::AsyncResponse;
 use nyquest_interface::Error as NyquestError;
 
-mod handler;
-mod r#loop;
-mod pause;
+pub(crate) mod handler;
+pub(crate) mod r#loop;
+pub(crate) mod pause;
 #[cfg(feature = "async-stream")]
 mod read_task;
 #[cfg(not(feature = "async-stream"))]
@@ -16,6 +16,8 @@ mod read_task;
 mod read_task;
 mod set;
 mod shared;
+#[cfg(feature = "ws")]
+pub(crate) mod websocket;
 
 use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
 use crate::r#async::handler::AsyncHandler;
@@ -179,6 +181,24 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         };
         res.max_response_buffer_size = self.inner.options.max_response_buffer_size;
         Ok(res)
+    }
+
+    #[cfg(feature = "ws")]
+    async fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocol: Option<std::borrow::Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::r#async::websocket::WebSocket,
+    > {
+        websocket::connect_async(
+            &self.inner.loop_manager,
+            &self.inner.share,
+            &self.inner.options,
+            uri,
+            protocol,
+        )
+        .await
     }
 }
 

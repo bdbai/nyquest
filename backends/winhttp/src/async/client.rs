@@ -14,12 +14,14 @@ use super::callback::setup_session_callback;
 use super::context::{RequestContext, RequestState};
 use super::response::WinHttpAsyncResponse;
 use crate::error::{WinHttpError, WinHttpResultExt};
+#[cfg(feature = "async-stream")]
 use crate::handle::RequestHandle;
 use crate::r#async::state_fut::wait_for_state;
 use crate::request::{
     create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
 use crate::session::WinHttpSession;
+#[cfg(feature = "async-stream")]
 use crate::stream::{DataOrStream, StreamWriter};
 use crate::url::{concat_url, ParsedUrl};
 use crate::WinHttpBackend;
@@ -154,6 +156,19 @@ impl AsyncClient for WinHttpAsyncClient {
                 request,
             ))
         }
+    }
+
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocol: Option<std::borrow::Cow<'static, str>>,
+    ) -> impl Future<
+        Output = nyquest_interface::websocket::WebSocketResult<
+            nyquest_interface::r#async::websocket::WebSocket,
+        >,
+    > + Send {
+        super::websocket::connect_async(self.session.clone(), uri, protocol)
     }
 }
 

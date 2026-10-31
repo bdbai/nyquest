@@ -15,14 +15,14 @@ use crate::r#async::shared::{RequestResult, SharedRequestStates};
 use crate::r#async::AsyncHandler;
 use crate::request::{AsCallbackMut as _, BoxEasyHandle};
 
-pub(super) struct RequestHandle {
+pub(crate) struct RequestHandle {
     id: usize,
     shared_state: Arc<SharedRequestStates>,
     manager: LoopManagerShared,
     is_recv_unpause_sent: bool,
 }
 
-enum LoopTask {
+pub(crate) enum LoopTask {
     ConstructHandle(super::Easy),
     QueryHandleResponse(RequestHandle),
     UnpauseRecvHandle(usize),
@@ -118,6 +118,14 @@ impl RequestHandle {
         self.shared_state.waker.register(cx.waker());
         Poll::Pending
     }
+
+    pub(crate) fn id(&self) -> usize {
+        self.id
+    }
+
+    pub(crate) fn manager(&self) -> &LoopManagerShared {
+        &self.manager
+    }
 }
 
 impl Drop for RequestHandle {
@@ -147,11 +155,11 @@ impl Drop for LoopManagerInner {
 }
 
 #[derive(Clone)]
-struct LoopManagerShared {
+pub(crate) struct LoopManagerShared {
     inner: Weak<Mutex<LoopManagerInner>>,
 }
 
-pub(super) struct LoopManager {
+pub(crate) struct LoopManager {
     inner: FuturesMutex<Option<LoopManagerShared>>,
 }
 
@@ -172,7 +180,7 @@ impl LoopManagerShared {
             .expect("failed to spawn curl multi loop");
         multi_waker_rx.await.expect("not receiving request manager")
     }
-    fn dispatch_task(&self, task: LoopTask) -> Result<(), LoopTask> {
+    pub(crate) fn dispatch_task(&self, task: LoopTask) -> Result<(), LoopTask> {
         let Some(inner) = self.inner.upgrade() else {
             return Err(task);
         };
@@ -231,7 +239,7 @@ impl LoopManager {
             inner: FuturesMutex::new(None),
         }
     }
-    pub(super) async fn start_request(
+    pub(crate) async fn start_request(
         &self,
         mut easy: BoxEasyHandle<AsyncHandler>,
     ) -> nyquest_interface::Result<RequestHandle> {
@@ -430,13 +438,20 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                         continue;
                     };
                     let ctx = handle.as_callback_mut().ctx.clone();
+                    #[cfg(feature = "ws")]
+                    let ws = handle.as_callback_mut().ws.clone();
                     if let Err(e) = handle.with_error_message(|mut e| {
                         // curl seems buggy with unsized upload multipart streams (i.e. chunked)
                         // Pausing and unpausing again seems to make it work
                         e.as_mut().as_raw_easy_mut().pause_send()?;
                         e.as_raw_easy_mut().unpause_send()
                     }) {
-                        let res = Err(e.into());
+                        let err: nyquest_interface::Error = e.into();
+                        #[cfg(feature = "ws")]
+                        if let Some(ws) = ws {
+                            ws.on_done(Err(&err));
+                        }
+                        let res = Err(err);
                         ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
                         ctx.waker.wake();
                     }
@@ -459,12 +474,17 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             Ok(res) => res,
             Err(err) => {
                 for (id, ctx) in multi.iter_mut() {
+                    let err_nyquest: nyquest_interface::Error = err.clone().into();
+                    #[cfg(feature = "ws")]
+                    if let Some(ws) = &ctx.as_callback_mut().ws {
+                        ws.on_done(Err(&err_nyquest));
+                    }
                     let ctx = &*ctx.as_callback_mut().ctx;
                     let state = ctx.state.lock();
                     if let Ok(mut state) = state {
                         if !matches!(state.result, RequestResult::Done { .. }) {
                             state.result = RequestResult::Done {
-                                res: Err(err.clone().into()),
+                                res: Err(err_nyquest),
                                 id,
                             };
                             ctx.waker.wake();
@@ -475,10 +495,14 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             }
         };
         multi.messages(|token, mut e, res| {
-            let res = e
+            let res: Result<Option<()>, nyquest_interface::Error> = e
                 .as_mut()
                 .with_error_message(|_| res.transpose())
                 .map_err(|e| e.into());
+            #[cfg(feature = "ws")]
+            if let Some(ws) = &e.as_callback_mut().ws {
+                ws.on_done(res.as_ref().map(|_| ()));
+            }
             let ctx = &*e.as_callback_mut().ctx;
             if let Some(res) = res.transpose() {
                 let mut state = ctx.state.lock().unwrap();

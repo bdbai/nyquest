@@ -6,6 +6,8 @@ use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
 
 pub(crate) mod waker;
+#[cfg(feature = "ws")]
+mod websocket;
 
 use crate::blocking::waker::BlockingWaker;
 use crate::client::NSUrlSessionClient;
@@ -133,6 +135,17 @@ impl BlockingClient for NSUrlSessionBlockingClient {
             }
             std::thread::park();
         }
+    }
+
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocol: Option<std::borrow::Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::blocking::websocket::WebSocket,
+    > {
+        websocket::connect_blocking(&self.inner, uri, protocol)
     }
 }
 

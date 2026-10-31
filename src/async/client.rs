@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -8,6 +9,8 @@ use nyquest_interface::{
 
 use super::response::Response;
 use crate::ClientBuilder;
+#[cfg(feature = "ws")]
+use nyquest_interface::websocket::WebSocketResult;
 
 /// A async HTTP client to make Requests with.
 ///
@@ -52,6 +55,18 @@ impl AsyncClient {
     pub async fn request(&self, req: super::Request) -> crate::Result<Response> {
         let res = self.client.request(req.inner).await?;
         Ok(res.into())
+    }
+
+    /// Connects to a WebSocket endpoint.
+    ///
+    /// Received messages are limited by [`crate::ClientBuilder::max_response_buffer_size`].
+    #[cfg(feature = "ws")]
+    pub async fn connect_websocket(
+        &self,
+        uri: impl Into<Cow<'static, str>>,
+        protocol: Option<Cow<'static, str>>,
+    ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
+        self.client.connect_websocket(uri.into(), protocol).await
     }
 }
 

@@ -5,6 +5,10 @@
 
 mod any;
 mod backend;
+#[cfg(feature = "ws")]
+pub mod websocket;
+#[cfg(feature = "ws")]
+pub use websocket::{WebSocket, WebSocketReceiver, WebSocketSender};
 
 pub use any::{AnyAsyncBackend, AnyAsyncClient, AnyAsyncResponse};
 pub use backend::{AsyncBackend, AsyncClient, AsyncResponse};

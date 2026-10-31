@@ -35,6 +35,12 @@ mod client;
 mod customizer;
 mod error;
 mod request;
+#[cfg(all(
+    feature = "ws",
+    any(feature = "async", feature = "blocking"),
+    not(target_arch = "wasm32")
+))]
+mod websocket;
 
 pub use crate::backend::ReqwestBackend;
 #[doc(no_inline)]

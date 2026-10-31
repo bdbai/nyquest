@@ -16,6 +16,7 @@
 //! - `blocking`: Enable blocking interface support
 //! - `blocking-stream`: Enable blocking interface and streaming upload/download support
 //! - `multipart`: Enable multipart form support
+//! - `ws`: Enable WebSocket support
 //!
 //! [`nyquest`]: https://docs.rs/nyquest
 
@@ -34,6 +35,9 @@ mod error;
 #[doc(hidden)] // For nyquest facade only
 pub mod register;
 mod request;
+#[cfg(feature = "ws")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ws")))]
+pub mod websocket;
 
 pub use body::Body;
 #[cfg(feature = "multipart")]
@@ -42,3 +46,6 @@ pub use body::{Part, PartBody};
 pub use error::{Error, Result};
 pub use register::register_backend;
 pub use request::{Method, Request};
+#[cfg(feature = "ws")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ws")))]
+pub use websocket::{WebSocketError, WebSocketMessage, WebSocketResult};

@@ -8,6 +8,7 @@
 //! to implement them directly.
 
 use std::any::Any;
+use std::borrow::Cow;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -17,6 +18,8 @@ use futures_core::future::BoxFuture;
 use super::backend::AsyncResponse;
 use super::Request;
 use crate::client::ClientOptions;
+#[cfg(feature = "ws")]
+use crate::websocket::{WebSocketMessage, WebSocketResult};
 use crate::Result;
 
 /// Trait for type-erased async backend implementations.
@@ -38,6 +41,29 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>>;
+    /// Opens a WebSocket connection.
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: Cow<'static, str>,
+        protocol: Option<Cow<'static, str>>,
+    ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>>;
+}
+
+#[cfg(feature = "ws")]
+/// Type-erased asynchronous WebSocket sender.
+pub trait AnyAsyncWebSocketSender: Send {
+    /// Sends a message.
+    fn send(&mut self, data: WebSocketMessage) -> BoxFuture<'_, WebSocketResult<()>>;
+    /// Closes the connection.
+    fn close(&mut self) -> BoxFuture<'_, WebSocketResult<()>>;
+}
+
+#[cfg(feature = "ws")]
+/// Type-erased asynchronous WebSocket receiver.
+pub trait AnyAsyncWebSocketReceiver: Send {
+    /// Receives the next message.
+    fn receive(&mut self) -> BoxFuture<'_, WebSocketResult<WebSocketMessage>>;
 }
 
 /// Trait for type-erased async HTTP responses.
@@ -121,5 +147,14 @@ where
                 .await
                 .map(|res| Box::pin(res) as Pin<Box<dyn AnyAsyncResponse>>)
         }) as _
+    }
+
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: Cow<'static, str>,
+        protocol: Option<Cow<'static, str>>,
+    ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>> {
+        Box::pin(super::AsyncClient::connect_websocket(self, uri, protocol))
     }
 }

@@ -48,7 +48,10 @@ pub struct ClientOptions {
     pub use_cookies: bool,
     /// Whether to automatically follow redirect responses.
     pub follow_redirects: bool,
-    /// Optional maximum buffer size for response bodies.
+    /// Optional maximum buffer size for response bodies and WebSocket messages.
+    ///
+    /// For WebSocket connections, this is the maximum allowed size of each
+    /// received message, including messages assembled from fragments.
     pub max_response_buffer_size: Option<u64>,
     /// Optional timeout duration for requests.
     pub request_timeout: Option<Duration>,

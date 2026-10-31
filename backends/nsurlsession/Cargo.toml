@@ -21,6 +21,7 @@ async = ["nyquest-interface/async", "dep:futures-util"]
 async-stream = ["async", "nyquest-interface/async-stream"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
+ws = ["nyquest-interface/ws"]
 multipart = ["nyquest-interface/multipart"]
 
 [dependencies]

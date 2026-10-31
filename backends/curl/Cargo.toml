@@ -26,6 +26,7 @@ async = [
 async-stream = ["async", "nyquest-interface/async-stream"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
+ws = ["nyquest-interface/ws"]
 multipart = ["nyquest-interface/multipart"]
 ssl = ["curl/ssl"]
 charset = ["dep:iconv-native"]

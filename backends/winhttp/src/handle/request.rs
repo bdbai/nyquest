@@ -171,6 +171,34 @@ impl RequestHandle {
         Ok(())
     }
 
+    #[cfg(all(feature = "ws", any(feature = "async", feature = "blocking")))]
+    pub(crate) fn enable_websocket_upgrade(&self) -> Result<()> {
+        let result = unsafe {
+            WinHttpSetOption(
+                self.as_raw(),
+                WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET,
+                std::ptr::null(),
+                0,
+            )
+        };
+        if result == 0 {
+            return Err(WinHttpError::from_last_error(
+                "WinHttpSetOption (websocket upgrade)",
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(all(feature = "ws", any(feature = "async", feature = "blocking")))]
+    pub(crate) fn complete_websocket_upgrade(
+        &self,
+        context: usize,
+    ) -> Result<NonNull<std::ffi::c_void>> {
+        let handle = unsafe { WinHttpWebSocketCompleteUpgrade(self.as_raw(), context) };
+        NonNull::new(handle)
+            .ok_or_else(|| WinHttpError::from_last_error("WinHttpWebSocketCompleteUpgrade"))
+    }
+
     /// Queries the status code from the response.
     pub(crate) fn query_status_code(&self) -> Result<u16> {
         let mut status_code: u32 = 0;

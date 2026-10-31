@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 #[cfg(feature = "blocking-stream")]
 use std::io::{self, Read};
 use std::sync::{Arc, OnceLock};
@@ -14,6 +15,8 @@ use crate::response::ReqwestResponse;
 
 #[cfg(feature = "blocking-stream")]
 mod stream;
+#[cfg(feature = "ws")]
+mod websocket;
 
 #[derive(Clone)]
 pub struct ReqwestBlockingClient {
@@ -38,6 +41,17 @@ impl BlockingClient for ReqwestBlockingClient {
         execute_with_runtime(&self.inner.managed_runtime, || async {
             execute_request(self, req).await
         })
+    }
+
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: Cow<'static, str>,
+        protocol: Option<Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::blocking::websocket::WebSocket,
+    > {
+        websocket::connect_blocking(&self.inner, uri, protocol)
     }
 }
 
@@ -106,7 +120,7 @@ fn create_managed_runtime() -> Runtime {
 }
 
 /// Execute an async task with proper runtime handling
-fn execute_with_runtime<F, Fut, T>(managed_runtime: &OnceLock<Runtime>, task: F) -> T
+pub(crate) fn execute_with_runtime<F, Fut, T>(managed_runtime: &OnceLock<Runtime>, task: F) -> T
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = T>,

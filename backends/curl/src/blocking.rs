@@ -11,6 +11,8 @@ mod multi_easy;
 #[cfg(feature = "blocking-stream")]
 mod part_reader;
 mod set;
+#[cfg(feature = "ws")]
+mod websocket;
 
 use crate::curl_ng::easy::Share;
 use crate::url::concat_url;
@@ -203,6 +205,17 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
             handle: handle_guard.into_owned(),
             max_response_buffer_size: self.options.max_response_buffer_size,
         })
+    }
+
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocol: Option<std::borrow::Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::blocking::websocket::WebSocket,
+    > {
+        websocket::connect_blocking(&self.share, uri, protocol, &self.options)
     }
 }
 

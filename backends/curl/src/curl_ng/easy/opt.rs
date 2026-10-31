@@ -248,4 +248,22 @@ impl RawEasy {
                 .with_easy_context("setopt CURLOPT_ACCEPT_ENCODING")
         }
     }
+
+    #[cfg(feature = "ws")]
+    pub fn set_ws_options(self: Pin<&mut Self>, flags: c_long) -> Result<(), CurlCodeContext> {
+        const CURLOPT_WS_OPTIONS: curl_sys::CURLoption = curl_sys::CURLOPTTYPE_LONG + 320;
+        unsafe {
+            self.setopt_long(CURLOPT_WS_OPTIONS, flags)
+                .with_easy_context("setopt CURLOPT_WS_OPTIONS")
+        }
+    }
+
+    #[cfg(all(feature = "ws", feature = "blocking"))]
+    pub fn set_connect_only_websocket(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
+        const CURL_CONNECT_ONLY_WEBSOCKET: c_long = 2;
+        unsafe {
+            self.setopt_long(curl_sys::CURLOPT_CONNECT_ONLY, CURL_CONNECT_ONLY_WEBSOCKET)
+                .with_easy_context("setopt CURLOPT_CONNECT_ONLY")
+        }
+    }
 }

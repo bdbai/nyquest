@@ -24,6 +24,8 @@ cfg_if::cfg_if! {
         mod response;
         mod retained_ext;
         mod stream;
+        #[cfg(feature = "ws")]
+        mod websocket;
     }
 }
 

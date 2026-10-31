@@ -5,3 +5,5 @@ mod client;
 mod context;
 mod response;
 mod state_fut;
+#[cfg(feature = "ws")]
+mod websocket;

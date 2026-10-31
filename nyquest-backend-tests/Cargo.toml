@@ -10,6 +10,15 @@ rust-version.workspace = true
 publish = false
 
 [features]
+ws = [
+    "nyquest/ws",
+    "dep:tokio-tungstenite",
+    "nyquest-backend-winrt?/ws",
+    "nyquest-backend-winhttp?/ws",
+    "nyquest-backend-curl?/ws",
+    "nyquest-backend-nsurlsession?/ws",
+    "nyquest-backend-reqwest?/ws",
+]
 async = [
     "nyquest/async",
     "nyquest-backend-winrt?/async",
@@ -78,3 +87,4 @@ nyquest-backend-winhttp = { path = "../backends/winhttp", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }
 nyquest-backend-nsurlsession = { path = "../backends/nsurlsession", optional = true }
 nyquest-backend-reqwest = { path = "../backends/reqwest", optional = true }
+tokio-tungstenite = { version = "0.26", optional = true }
