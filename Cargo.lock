@@ -1522,6 +1522,7 @@ dependencies = [
  "nyquest-backend-winrt",
  "serde",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
 ]
 
@@ -2022,6 +2023,7 @@ checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
