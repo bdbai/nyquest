@@ -33,14 +33,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install cargo-hack
-      shell: bash
-      run: |
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          curl -LsSf https://github.com/taiki-e/cargo-hack/releases/latest/download/${{ matrix.binary }} -o cargo-hack.zip
-          unzip cargo-hack.zip -d ~/.cargo/bin
-        else
-          curl -LsSf https://github.com/taiki-e/cargo-hack/releases/latest/download/${{ matrix.binary }} | ${{ matrix.extract }} - -C ~/.cargo/bin
-        fi
-        
+      uses: taiki-e/install-action@cargo-hack
+
     - name: Cargo hack check
       run: cargo hack check --all --exclude-features charset --feature-powerset --no-dev-deps --ignore-private
