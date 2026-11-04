@@ -24,6 +24,7 @@ async fn spawn_server() -> String {
         loop {
             let (stream, _) = listener.accept().await.unwrap();
             tokio::spawn(async move {
+                #[allow(clippy::result_large_err)]
                 let callback = |request: &Request, mut response: Response| {
                     if request
                         .headers()

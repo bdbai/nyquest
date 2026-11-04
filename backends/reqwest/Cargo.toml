@@ -52,7 +52,7 @@ features = ["rt-multi-thread", "sync"]
 version = "1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio-tungstenite]
-version = "0.26"
+version = "0.30"
 optional = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.iconv-native]

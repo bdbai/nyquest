@@ -87,4 +87,4 @@ nyquest-backend-winhttp = { path = "../backends/winhttp", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }
 nyquest-backend-nsurlsession = { path = "../backends/nsurlsession", optional = true }
 nyquest-backend-reqwest = { path = "../backends/reqwest", optional = true }
-tokio-tungstenite = { version = "0.26", optional = true }
+tokio-tungstenite = { version = "0.30", optional = true }
