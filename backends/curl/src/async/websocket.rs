@@ -275,8 +275,10 @@ pub(super) async fn connect_async(
         handshake_tx: Mutex::new(Some(handshake_tx)),
     });
 
-    let mut handler = super::handler::AsyncHandler::default();
-    handler.ws = Some(ws_shared.clone());
+    let handler = super::handler::AsyncHandler {
+        ws: Some(ws_shared.clone()),
+        ..Default::default()
+    };
 
     let mut easy = create_easy(handler, share).map_err(nyquest_to_ws_error)?;
     let raw = easy.as_mut().as_raw_easy_mut().raw();
