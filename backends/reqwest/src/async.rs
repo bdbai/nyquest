@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::future::{poll_fn, Future};
 use std::pin::{pin, Pin};
 use std::sync::OnceLock;
@@ -15,6 +16,8 @@ use crate::response::ReqwestResponse;
 
 #[cfg(feature = "async-stream")]
 mod stream;
+#[cfg(feature = "ws")]
+mod websocket;
 
 #[derive(Clone)]
 pub struct ReqwestAsyncClient {
@@ -79,6 +82,17 @@ impl AsyncClient for ReqwestAsyncClient {
         ReqwestAsyncResponse::new(response?, self.inner.max_response_buffer_size, handle)
             .await
             .map_err(Into::into)
+    }
+
+    #[cfg(feature = "ws")]
+    async fn connect_websocket(
+        &self,
+        uri: Cow<'static, str>,
+        protocols: Vec<Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::r#async::websocket::WebSocket,
+    > {
+        websocket::connect_async(&self.inner, uri, protocols).await
     }
 }
 

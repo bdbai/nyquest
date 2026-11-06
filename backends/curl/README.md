@@ -6,7 +6,8 @@
 
 libcurl backend for [`nyquest`].
 
-**Note**: Requires libcurl **7.68.0** or later.
+**Note**: HTTP support requires libcurl **7.68.0** or later. WebSocket support requires
+libcurl **8.16.0** or later because it uses `CURLOPT_READFUNCTION`.
 
 ## Features
 
@@ -16,6 +17,7 @@ libcurl backend for [`nyquest`].
 - `async`
 - `async-stream`
 - `multipart`
+- `ws`: Enable WebSocket support.
 - `charset-defaults`: Enable encoding conversion via [`iconv-native`] with its default features
   enabled.
 - `charset`: Enable encoding conversion via [`iconv-native`] without activating any of its default

@@ -38,7 +38,7 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async-stream", "blocking-stream", "multipart", "json"]
+features = ["async-stream", "blocking-stream", "multipart", "json", "ws"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
@@ -46,6 +46,7 @@ async = ["nyquest-interface/async"]
 async-stream = ["async", "nyquest-interface/async-stream"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
+ws = ["nyquest-interface/ws"]
 multipart = ["nyquest-interface/multipart"]
 json = ["dep:serde", "dep:serde_json"]
 

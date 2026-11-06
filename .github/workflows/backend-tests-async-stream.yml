@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test curl
-        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,curl,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,ws,curl,multipart
 
   test-async-stream-windows-winrt:
     runs-on: windows-latest
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test winrt
-        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,winrt,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,ws,winrt,multipart
 
   test-async-stream-windows-winhttp:
     runs-on: windows-latest
@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test winhttp
-        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,winhttp,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,ws,winhttp,multipart
 
   test-async-stream-macos:
     runs-on: macos-latest
@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test nsurlsession
-        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,nsurlsession,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,ws,nsurlsession,multipart
 
   test-async-stream-reqwest:
     runs-on: ubuntu-latest
@@ -48,4 +48,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test reqwest
-        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,reqwest,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features async-stream,ws,reqwest,multipart

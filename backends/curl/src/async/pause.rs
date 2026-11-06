@@ -5,10 +5,10 @@ use crate::curl_ng::{CurlCodeContext, WithCurlCodeContext};
 pub const _CURLPAUSE_ALL: i32 = CURLPAUSE_RECV | CURLPAUSE_SEND;
 
 #[derive(Clone, Copy)]
-pub(super) struct EasyPause(*mut curl_sys::CURL);
+pub(crate) struct EasyPause(*mut curl_sys::CURL);
 
 impl EasyPause {
-    pub(super) fn new(handle: *mut curl_sys::CURL) -> Self {
+    pub(crate) fn new(handle: *mut curl_sys::CURL) -> Self {
         Self(handle)
     }
 
@@ -19,6 +19,10 @@ impl EasyPause {
     pub(super) unsafe fn pause_recv(&self) -> Result<(), CurlCodeContext> {
         curl_sys::curl_easy_pause(self.0, CURLPAUSE_RECV)
             .with_easy_context("curl_easy_pause recv in callback")
+    }
+
+    pub(crate) fn raw(&self) -> *mut curl_sys::CURL {
+        self.0
     }
 }
 

@@ -111,8 +111,8 @@ impl<Backend> ClientBuilder<Backend> {
     ///
     /// # Note
     ///
-    /// The limit only applies to `response.bytes()` and `response.text()`.
-    /// Streaming is not affected.
+    /// The limit applies to `response.bytes()`, `response.text()`, and each received
+    /// WebSocket message. Streaming HTTP bodies are not affected.
     #[inline]
     pub fn max_response_buffer_size(mut self, size: u64) -> Self {
         self.options.max_response_buffer_size = Some(size);

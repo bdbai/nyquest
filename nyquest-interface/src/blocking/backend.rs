@@ -27,6 +27,15 @@ pub trait BlockingClient: Clone + Send + Sync + 'static {
 
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> crate::Result<Self::Response>;
+    /// Opens a WebSocket connection.
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        _uri: std::borrow::Cow<'static, str>,
+        _protocols: Vec<std::borrow::Cow<'static, str>>,
+    ) -> crate::WebSocketResult<super::websocket::WebSocket> {
+        panic!("WebSocket is not supported by this backend")
+    }
 }
 
 /// Trait for blocking HTTP backend implementations.

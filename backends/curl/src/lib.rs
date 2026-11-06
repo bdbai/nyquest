@@ -18,6 +18,8 @@ mod error;
 mod request;
 mod state;
 mod url;
+#[cfg(all(feature = "ws", any(feature = "async", feature = "blocking")))]
+mod websocket;
 
 pub use backend::CurlBackend;
 pub use curl_ng::CurlCodeContext;

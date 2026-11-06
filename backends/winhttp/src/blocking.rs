@@ -2,3 +2,5 @@
 
 mod client;
 mod response;
+#[cfg(feature = "ws")]
+mod websocket;

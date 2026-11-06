@@ -14,12 +14,14 @@ use super::callback::setup_session_callback;
 use super::context::{RequestContext, RequestState};
 use super::response::WinHttpAsyncResponse;
 use crate::error::{WinHttpError, WinHttpResultExt};
+#[cfg(feature = "async-stream")]
 use crate::handle::RequestHandle;
 use crate::r#async::state_fut::wait_for_state;
 use crate::request::{
     create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
 use crate::session::WinHttpSession;
+#[cfg(feature = "async-stream")]
 use crate::stream::{DataOrStream, StreamWriter};
 use crate::url::{concat_url, ParsedUrl};
 use crate::WinHttpBackend;
@@ -48,112 +50,121 @@ impl WinHttpAsyncClient {
 impl AsyncClient for WinHttpAsyncClient {
     type Response = WinHttpAsyncResponse;
 
-    fn request(&self, req: Request) -> impl Future<Output = NyquestResult<Self::Response>> + Send {
-        let session = self.session.clone();
-        async move {
-            // Prepare headers and body before spawning to threadpool
-            let mut prepared_body;
+    async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
+        // Prepare headers and body before spawning to threadpool
+        let mut prepared_body;
 
-            // Create the request context
-            let ctx = RequestContext::new();
+        // Create the request context
+        let ctx = RequestContext::new();
 
-            let body_len;
-            let (setup_tx, setup_rx) = oneshot::channel();
-            windows_threading::submit({
-                let url = concat_url(session.base_cwurl.as_deref(), &req.relative_uri)?;
-                let method = method_to_cwstr(&req.method);
-                prepared_body = prepare_body(req.body, get_stream_content_length);
-                let headers_str = prepare_additional_headers(
-                    &req.additional_headers,
-                    &session.options,
-                    &prepared_body,
-                );
+        let body_len;
+        let (setup_tx, setup_rx) = oneshot::channel();
+        windows_threading::submit({
+            let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
+            let method = method_to_cwstr(&req.method);
+            prepared_body = prepare_body(req.body, get_stream_content_length);
+            let headers_str = prepare_additional_headers(
+                &req.additional_headers,
+                &self.session.options,
+                &prepared_body,
+            );
 
-                body_len = prepared_body.body_len();
-                let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
-                // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
-                ctx.set_body(prepared_body.take_body().unwrap_or_default());
+            body_len = prepared_body.body_len();
+            let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
+            // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
+            ctx.set_body(prepared_body.take_body().unwrap_or_default());
 
-                let ctx = Arc::downgrade(&ctx);
-                let session = session.clone();
-                move || {
-                    let parsed_url = match ParsedUrl::parse(&url) {
-                        Some(p) => p,
-                        None => {
-                            let _ = setup_tx.send(Err(NyquestError::InvalidUrl));
-                            return;
-                        }
-                    };
-
-                    let (connection, request) = match create_request(&session, &parsed_url, &method)
-                    {
-                        Ok(handles) => handles,
-                        Err(e) => {
-                            let _ = setup_tx.send(Err(e.into()));
-                            return;
-                        }
-                    };
-                    drop(session);
-                    let Some(ctx) = ctx.upgrade() else {
+            let ctx = Arc::downgrade(&ctx);
+            let session = self.session.clone();
+            move || {
+                let parsed_url = match ParsedUrl::parse(&url) {
+                    Some(p) => p,
+                    None => {
+                        let _ = setup_tx.send(Err(NyquestError::InvalidUrl));
                         return;
-                    };
-                    let result = if headers_str.is_empty() {
-                        Ok(())
-                    } else {
-                        request.add_headers(&headers_str)
-                    };
-                    let result = result.and_then(|()| {
-                        let context = Arc::into_raw(ctx.clone()) as usize;
-                        let res = match (is_stream, body_len) {
-                            (true, Some(len)) => request.send_with_total_length(len, context),
-                            (true, None) => request.send_chunked(context),
-                            (false, _) => {
-                                let (body_ptr, body_len) = ctx.get_body_ptr();
-                                unsafe { request.send(body_ptr, body_len, context) }
-                            }
-                        };
-                        if res.is_err() {
-                            let _ = unsafe { Arc::from_raw(context as *const RequestContext) };
+                    }
+                };
+
+                let (connection, request) = match create_request(&session, &parsed_url, &method) {
+                    Ok(handles) => handles,
+                    Err(e) => {
+                        let _ = setup_tx.send(Err(e.into()));
+                        return;
+                    }
+                };
+                drop(session);
+                let Some(ctx) = ctx.upgrade() else {
+                    return;
+                };
+                let result = if headers_str.is_empty() {
+                    Ok(())
+                } else {
+                    request.add_headers(&headers_str)
+                };
+                let result = result.and_then(|()| {
+                    let context = Arc::into_raw(ctx.clone()) as usize;
+                    let res = match (is_stream, body_len) {
+                        (true, Some(len)) => request.send_with_total_length(len, context),
+                        (true, None) => request.send_chunked(context),
+                        (false, _) => {
+                            let (body_ptr, body_len) = ctx.get_body_ptr();
+                            unsafe { request.send(body_ptr, body_len, context) }
                         }
-                        res
-                    });
+                    };
+                    if res.is_err() {
+                        let _ = unsafe { Arc::from_raw(context as *const RequestContext) };
+                    }
+                    res
+                });
 
-                    let _ = setup_tx.send(result.map(|()| (connection, request)).into_nyquest());
-                }
-            });
-
-            // Wait for the setup to complete
-            let (connection, request) = setup_rx.await.map_err(|_| {
-                nyquest_interface::Error::Io(std::io::Error::other("setup channel closed"))
-            })??;
-
-            wait_for_state(&*ctx, RequestState::HeadersSent).await?;
-
-            // If streaming, poll the stream writer to send data
-            #[cfg(feature = "async-stream")]
-            if let PreparedBody::Stream { stream_parts, .. } = prepared_body {
-                poll_stream_upload(&ctx, &request, stream_parts, body_len.is_none()).await?;
+                let _ = setup_tx.send(result.map(|()| (connection, request)).into_nyquest());
             }
+        });
 
-            request.receive_response().into_nyquest()?;
+        // Wait for the setup to complete
+        let (connection, request) = setup_rx.await.map_err(|_| {
+            nyquest_interface::Error::Io(std::io::Error::other("setup channel closed"))
+        })??;
 
-            // Now wait for headers to be available
-            wait_for_state(&*ctx, RequestState::HeadersReceived).await?;
+        wait_for_state(&*ctx, RequestState::HeadersSent).await?;
 
-            // Build the response
-            let status = request.query_status_code()?;
-            let content_length = request.query_content_length();
-
-            Ok(WinHttpAsyncResponse::new(
-                ctx,
-                status,
-                content_length,
-                session.options.max_response_buffer_size,
-                session.clone(),
-                connection,
-                request,
-            ))
+        // If streaming, poll the stream writer to send data
+        #[cfg(feature = "async-stream")]
+        if let PreparedBody::Stream { stream_parts, .. } = prepared_body {
+            poll_stream_upload(&ctx, &request, stream_parts, body_len.is_none()).await?;
         }
+
+        request.receive_response().into_nyquest()?;
+
+        // Now wait for headers to be available
+        wait_for_state(&*ctx, RequestState::HeadersReceived).await?;
+
+        // Build the response
+        let status = request.query_status_code()?;
+        let content_length = request.query_content_length();
+
+        Ok(WinHttpAsyncResponse::new(
+            ctx,
+            status,
+            content_length,
+            self.session.options.max_response_buffer_size,
+            self.session.clone(),
+            connection,
+            request,
+        ))
+    }
+
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
+    ) -> impl Future<
+        Output = nyquest_interface::websocket::WebSocketResult<
+            nyquest_interface::r#async::websocket::WebSocket,
+        >,
+    > + Send {
+        super::websocket::connect_async(self.session.clone(), uri, protocols)
     }
 }
 

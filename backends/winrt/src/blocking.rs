@@ -10,6 +10,8 @@ use windows::Web::Http::HttpCompletionOption;
 #[cfg(feature = "blocking-stream")]
 mod stream_content;
 mod timer_ext;
+#[cfg(feature = "ws")]
+mod websocket;
 
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
@@ -62,6 +64,17 @@ impl BlockingClient for WinrtClient {
     type Response = WinrtBlockingResponse;
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
         self.send_request(req)
+    }
+
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::blocking::websocket::WebSocket,
+    > {
+        websocket::connect_blocking(self, uri, protocols)
     }
 }
 

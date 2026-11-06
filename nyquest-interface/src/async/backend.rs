@@ -31,6 +31,16 @@ pub trait AsyncClient: Clone + Send + Sync + 'static {
     fn request(&self, req: AsyncRequest) -> impl Future<Output = Result<Self::Response>> + Send;
     // TODO: fn request_with_progress
     // TODO: fn request_file
+
+    /// Opens a WebSocket connection.
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        _uri: std::borrow::Cow<'static, str>,
+        _protocols: Vec<std::borrow::Cow<'static, str>>,
+    ) -> impl Future<Output = crate::WebSocketResult<super::websocket::WebSocket>> + Send {
+        async { panic!("WebSocket is not supported by this backend") }
+    }
 }
 
 /// Trait for asynchronous HTTP backend implementations.

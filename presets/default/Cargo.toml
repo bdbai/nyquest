@@ -38,6 +38,12 @@ blocking-stream = [
     "nyquest-backend-winrt/blocking-stream",
     "nyquest-backend-nsurlsession/blocking-stream",
 ]
+ws = [
+    "nyquest/ws",
+    "nyquest-backend-curl/ws",
+    "nyquest-backend-winrt/ws",
+    "nyquest-backend-nsurlsession/ws",
+]
 multipart = [
     "nyquest/multipart",
     "nyquest-backend-curl/multipart",

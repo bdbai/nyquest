@@ -118,6 +118,7 @@
 //! - `multipart`: Enable multipart form support. The registered backend must implement the
 //!   multipart interface to compile.
 //! - `json`: Enable JSON request/response shorthand methods.
+//! - `ws`: Enable WebSocket support.
 //!
 //! [^1]: Subject to the backend's capability.
 //!
@@ -152,6 +153,11 @@ pub use body::{Part, PartBody};
 #[doc(inline)]
 pub use client::ClientBuilder;
 pub use error::{Error, Result};
+#[cfg(feature = "ws")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ws")))]
+pub use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use r#async::client::AsyncClient;

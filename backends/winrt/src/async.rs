@@ -11,6 +11,8 @@ mod read_task;
 #[cfg(feature = "async-stream")]
 mod stream_content;
 mod timer_ext;
+#[cfg(feature = "ws")]
+mod websocket;
 
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
@@ -143,6 +145,17 @@ impl AsyncClient for WinrtClient {
 
     async fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
         self.send_request_async(req).await
+    }
+
+    #[cfg(feature = "ws")]
+    async fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::r#async::websocket::WebSocket,
+    > {
+        websocket::connect_async(self, uri, protocols).await
     }
 }
 

@@ -39,6 +39,57 @@ pub fn create_easy<C: EasyCallback>(callback: C, share: &Share) -> NyquestResult
     Ok(easy)
 }
 
+pub fn populate_options(
+    url: &str,
+    options: &nyquest_interface::client::ClientOptions,
+    mut raw: Pin<&mut RawEasy>,
+) -> Result<(), CurlCodeContext> {
+    match &options.proxy_options {
+        ProxyOptions::Default => {}
+        ProxyOptions::None => raw.as_mut().set_noproxy("*")?,
+        ProxyOptions::Custom {
+            http,
+            https,
+            proxy_bypass,
+        } => {
+            let is_https = url
+                .get(0..5)
+                .is_some_and(|proto| proto.eq_ignore_ascii_case("https"))
+                || url
+                    .get(0..6)
+                    .is_some_and(|proto| proto.eq_ignore_ascii_case("wss://"));
+            match (is_https, http, https) {
+                (false, Some(http), _) => raw.as_mut().set_proxy(&**http)?,
+                (true, _, Some(https)) => {
+                    raw.as_mut().set_proxy(&**https)?;
+                    raw.as_mut().set_http_proxy_tunnel(true)?;
+                    raw.as_mut().set_suppress_connect_headers(true)?;
+                }
+                _ => {}
+            }
+            if let Some(proxy_bypass) = proxy_bypass {
+                raw.as_mut().set_noproxy(&**proxy_bypass)?;
+            }
+        }
+    }
+    if let Some(user_agent) = options.user_agent.as_deref() {
+        raw.as_mut().set_useragent(user_agent)?;
+    }
+    if options.use_cookies {
+        raw.as_mut().set_cookiefile("")?;
+    }
+    if let Some(timeout) = options.request_timeout {
+        raw.as_mut().set_timeout(timeout)?;
+    }
+    if options.ignore_certificate_errors {
+        raw.as_mut().set_ssl_verify_peer(false)?;
+    }
+    if options.follow_redirects {
+        raw.as_mut().set_follow_location(true)?;
+    }
+    Ok(())
+}
+
 pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
     url: &str,
     mut req: Request<S>,
@@ -54,47 +105,7 @@ pub fn populate_request<S, C: EasyCallback, R: MimePartReader + Send + 'static>(
 
     easy.as_mut().with_error_message(|mut e| {
         let mut raw = e.as_mut().as_raw_easy_mut();
-        match &options.proxy_options {
-            ProxyOptions::Default => {}
-            ProxyOptions::None => raw.as_mut().set_noproxy("*")?,
-            ProxyOptions::Custom {
-                http,
-                https,
-                proxy_bypass,
-            } => {
-                let is_https = url
-                    .get(0..5)
-                    .is_some_and(|proto| proto.eq_ignore_ascii_case("https"));
-                match (is_https, http, https) {
-                    (false, Some(http), _) => raw.as_mut().set_proxy(&**http)?,
-                    (true, _, Some(https)) => {
-                        raw.as_mut().set_proxy(&**https)?;
-                        raw.as_mut().set_http_proxy_tunnel(true)?;
-                        raw.as_mut().set_suppress_connect_headers(true)?;
-                    }
-                    _ => {}
-                }
-
-                if let Some(proxy_bypass) = proxy_bypass {
-                    raw.as_mut().set_noproxy(&**proxy_bypass)?;
-                }
-            }
-        }
-        if let Some(user_agent) = options.user_agent.as_deref() {
-            raw.as_mut().set_useragent(user_agent)?;
-        }
-        if options.use_cookies {
-            raw.as_mut().set_cookiefile("")?;
-        }
-        if let Some(timeout) = options.request_timeout {
-            raw.as_mut().set_timeout(timeout)?;
-        }
-        if options.ignore_certificate_errors {
-            raw.as_mut().set_ssl_verify_peer(false)?;
-        }
-        if options.follow_redirects {
-            raw.as_mut().set_follow_location(true)?;
-        }
+        populate_options(url, options, raw.as_mut())?;
         raw.as_mut().set_url(url)?;
         if let Method::Other(method) = &req.method {
             if method.eq_ignore_ascii_case("head") {

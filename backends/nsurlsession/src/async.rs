@@ -9,6 +9,8 @@ use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
 
 pub(crate) mod waker;
+#[cfg(feature = "ws")]
+mod websocket;
 
 use crate::client::NSUrlSessionClient;
 use crate::datatask::{DataTaskDelegate, GenericWaker};
@@ -118,6 +120,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         let inner_waker = coerce_waker(shared.waker_ref());
         // TODO: cancellation
         let response = poll_fn(|cx| {
+            inner_waker.register(cx);
             if let Some(response) = shared.try_take_response().into_nyquest_result().transpose() {
                 return Poll::Ready(response);
             }
@@ -130,7 +133,6 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             {
                 let _ = &mut writer;
             }
-            inner_waker.register(cx);
             Poll::Pending
         })
         .await?;
@@ -143,6 +145,17 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             },
             max_response_buffer_size: self.inner.max_response_buffer_size,
         })
+    }
+
+    #[cfg(feature = "ws")]
+    async fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::r#async::websocket::WebSocket,
+    > {
+        websocket::connect_async(self.inner.clone(), uri, protocols).await
     }
 }
 

@@ -8,12 +8,15 @@
 //! to implement them directly.
 
 use std::any::Any;
+use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
 
 use super::backend::BlockingResponse;
 use super::Request;
 use crate::client::ClientOptions;
+#[cfg(feature = "ws")]
+use crate::websocket::{WebSocketMessage, WebSocketResult};
 use crate::Result;
 
 /// Trait for type-erased blocking backend implementations.
@@ -32,6 +35,29 @@ pub trait AnyBlockingClient: Any + Send + Sync + 'static {
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> crate::Result<Box<dyn AnyBlockingResponse>>;
+    /// Opens a WebSocket connection.
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: Cow<'static, str>,
+        protocols: Vec<Cow<'static, str>>,
+    ) -> WebSocketResult<super::websocket::WebSocket>;
+}
+
+#[cfg(feature = "ws")]
+/// Type-erased blocking WebSocket sender.
+pub trait AnyBlockingWebSocketSender: Send {
+    /// Sends a message.
+    fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()>;
+    /// Closes the connection.
+    fn close(&mut self) -> WebSocketResult<()>;
+}
+
+#[cfg(feature = "ws")]
+/// Type-erased blocking WebSocket receiver.
+pub trait AnyBlockingWebSocketReceiver: Send {
+    /// Receives the next message.
+    fn receive(&mut self) -> WebSocketResult<WebSocketMessage>;
 }
 
 /// Trait for type-erased blocking HTTP responses.
@@ -103,5 +129,14 @@ where
     }
     fn request(&self, req: Request) -> crate::Result<Box<dyn AnyBlockingResponse>> {
         Ok(Box::new(self.request(req)?))
+    }
+
+    #[cfg(feature = "ws")]
+    fn connect_websocket(
+        &self,
+        uri: Cow<'static, str>,
+        protocols: Vec<Cow<'static, str>>,
+    ) -> WebSocketResult<super::websocket::WebSocket> {
+        super::BlockingClient::connect_websocket(self, uri, protocols)
     }
 }
