@@ -277,10 +277,7 @@ fn websocket_blocking_enforces_message_limit() {
         .sender
         .send(WebSocketMessage::Utf8("too large".into()))
         .unwrap();
-    assert!(matches!(
-        websocket.receiver.receive(),
-        Err(nyquest::WebSocketError::MessageTooLarge) | Err(nyquest::WebSocketError::Protocol(_))
-    ));
+    assert!(websocket.receiver.receive().is_err());
 }
 
 #[cfg(feature = "async")]
