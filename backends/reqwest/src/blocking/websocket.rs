@@ -24,13 +24,13 @@ struct BlockingReceiver {
 pub(super) fn connect_blocking(
     client: &ReqwestClient,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
     let base_url = client.base_url.clone();
     let max_message_size = client.max_response_buffer_size;
     let runtime = client.managed_runtime.clone();
-    let (sink, source) = execute_with_runtime(&runtime, || async move {
-        connect_parts(base_url.as_ref(), uri, protocol, max_message_size).await
+    let (info, sink, source) = execute_with_runtime(&runtime, || async move {
+        connect_parts(base_url.as_ref(), uri, protocols, max_message_size).await
     })?;
     let sender =
         nyquest_interface::blocking::websocket::WebSocketSender::from_impl(BlockingSender {
@@ -43,7 +43,7 @@ pub(super) fn connect_blocking(
             runtime,
         });
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(
-        sender, receiver,
+        info, sender, receiver,
     ))
 }
 

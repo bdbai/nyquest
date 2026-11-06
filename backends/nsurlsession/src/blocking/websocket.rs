@@ -3,12 +3,14 @@ use std::sync::{mpsc, Arc};
 
 use block2::RcBlock;
 use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
-use objc2::AllocAnyThread;
+use objc2::{AllocAnyThread, DefinedClass};
 use objc2_foundation::{
     NSData, NSString, NSURLSessionWebSocketCloseCode, NSURLSessionWebSocketMessage,
 };
 
-use crate::websocket::{check_message_size, connect, decode_received, Socket};
+use crate::blocking::waker::BlockingWaker;
+use crate::datatask::GenericWaker;
+use crate::websocket::{check_message_size, create_task, decode_received, into_ws_info, Socket};
 
 impl Socket {
     pub(crate) fn send_blocking(&self, data: WebSocketMessage) -> WebSocketResult<()> {
@@ -69,10 +71,27 @@ impl Socket {
 pub(super) fn connect_blocking(
     client: &crate::client::NSUrlSessionClient,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
-    let socket = connect(client, uri, protocol)?;
+    let waker = Arc::new(BlockingWaker::new_from_current_thread());
+    let (socket, delegate) = create_task(
+        client,
+        uri,
+        protocols,
+        GenericWaker::Blocking(waker.clone()),
+    )?;
+    let protocol = loop {
+        if let Some(res) = delegate.ivars().result.lock().unwrap().take() {
+            break res?;
+        }
+        waker.register_current_thread();
+        if let Some(res) = delegate.ivars().result.lock().unwrap().take() {
+            break res?;
+        }
+        std::thread::park();
+    };
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(
+        into_ws_info(protocol),
         nyquest_interface::blocking::websocket::WebSocketSender::from_impl(Sender(socket.clone())),
         nyquest_interface::blocking::websocket::WebSocketReceiver::from_impl(Receiver(socket)),
     ))

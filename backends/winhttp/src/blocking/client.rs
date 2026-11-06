@@ -101,11 +101,11 @@ impl BlockingClient for WinHttpBlockingClient {
     fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,
-        protocol: Option<std::borrow::Cow<'static, str>>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
     ) -> nyquest_interface::websocket::WebSocketResult<
         nyquest_interface::blocking::websocket::WebSocket,
     > {
-        super::websocket::connect_blocking(&self.session, uri, protocol)
+        super::websocket::connect_blocking(&self.session, uri, protocols)
     }
 }
 

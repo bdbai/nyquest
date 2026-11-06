@@ -162,13 +162,13 @@ impl AsyncClient for WinHttpAsyncClient {
     fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,
-        protocol: Option<std::borrow::Cow<'static, str>>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
     ) -> impl Future<
         Output = nyquest_interface::websocket::WebSocketResult<
             nyquest_interface::r#async::websocket::WebSocket,
         >,
     > + Send {
-        super::websocket::connect_async(self.session.clone(), uri, protocol)
+        super::websocket::connect_async(self.session.clone(), uri, protocols)
     }
 }
 

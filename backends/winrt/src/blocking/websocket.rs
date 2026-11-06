@@ -2,14 +2,16 @@ use std::borrow::Cow;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 
-use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 use windows::Networking::Sockets::MessageWebSocket;
 
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
 use crate::websocket::{
-    detach_writer, finalize_message, prepare_send_message, prepare_websocket, read_fragment,
-    ws_error, ws_error_context, Received,
+    detach_writer, extract_negotiated_protocol, finalize_message, prepare_send_message,
+    prepare_websocket, read_fragment, ws_error, ws_error_context, Received,
 };
 
 struct BlockingSocket {
@@ -25,7 +27,7 @@ impl Drop for BlockingSocket {
 pub(super) fn connect_blocking(
     client: &WinrtClient,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
     let (tx, rx) = mpsc::channel();
     let event_tx = tx.clone();
@@ -34,7 +36,7 @@ pub(super) fn connect_blocking(
     let (websocket, uri_parsed) = prepare_websocket(
         client,
         uri,
-        protocol,
+        protocols,
         move |item| {
             let _ = event_tx.send(item);
         },
@@ -51,12 +53,14 @@ pub(super) fn connect_blocking(
         .into_nyquest_result()
         .map_err(ws_error)?;
 
+    let protocol = extract_negotiated_protocol(&websocket)?;
     let socket = Arc::new(BlockingSocket { websocket });
     let max_size = client
         .max_response_buffer_size
         .and_then(|size| usize::try_from(size).ok());
 
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(
+        WebSocketInfo { protocol },
         nyquest_interface::blocking::websocket::WebSocketSender::from_impl(Sender(socket.clone())),
         nyquest_interface::blocking::websocket::WebSocketReceiver::from_impl(ReceiverImpl {
             _socket: socket,

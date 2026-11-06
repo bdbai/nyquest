@@ -48,4 +48,4 @@ pub use register::register_backend;
 pub use request::{Method, Request};
 #[cfg(feature = "ws")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ws")))]
-pub use websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+pub use websocket::{WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult};

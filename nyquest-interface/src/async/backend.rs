@@ -37,7 +37,7 @@ pub trait AsyncClient: Clone + Send + Sync + 'static {
     fn connect_websocket(
         &self,
         _uri: std::borrow::Cow<'static, str>,
-        _protocol: Option<std::borrow::Cow<'static, str>>,
+        _protocols: Vec<std::borrow::Cow<'static, str>>,
     ) -> impl Future<Output = crate::WebSocketResult<super::websocket::WebSocket>> + Send {
         async { panic!("WebSocket is not supported by this backend") }
     }

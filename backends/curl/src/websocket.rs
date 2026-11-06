@@ -97,11 +97,22 @@ pub(crate) fn decode_close_payload(payload: &[u8]) -> WebSocketMessage {
     WebSocketMessage::Close { code, reason }
 }
 
+pub(crate) fn extract_negotiated_protocol(headers: &[Vec<u8>]) -> Option<String> {
+    headers
+        .iter()
+        .filter_map(|line| std::str::from_utf8(line).ok())
+        .filter_map(|line| line.split_once(':'))
+        .find(|(k, _)| k.trim().eq_ignore_ascii_case("Sec-WebSocket-Protocol"))
+        .map(|(_, v)| v.trim())
+        .filter(|v| !v.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 pub(crate) fn configure_websocket_easy<C: EasyCallback>(
     mut easy: Pin<&mut EasyHandle<C>>,
     options: &ClientOptions,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<()> {
     let url = concat_url(options.base_url.as_deref(), &uri);
     let is_ws = url
@@ -115,8 +126,9 @@ pub(crate) fn configure_websocket_easy<C: EasyCallback>(
     }
 
     let mut header_list = CurlStringList::default();
-    if let Some(proto) = protocol {
-        header_list.append(format!("Sec-WebSocket-Protocol: {proto}"));
+    if !protocols.is_empty() {
+        let joined = protocols.join(", ");
+        header_list.append(format!("Sec-WebSocket-Protocol: {joined}"));
     }
     for (name, value) in &options.default_headers {
         header_list.append(format!("{name}: {value}"));

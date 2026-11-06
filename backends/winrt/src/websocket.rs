@@ -132,10 +132,24 @@ pub(crate) fn ws_error_context(
     WebSocketError::Protocol(format!("{context}: {error:?}"))
 }
 
+pub(crate) fn extract_negotiated_protocol(
+    websocket: &MessageWebSocket,
+) -> WebSocketResult<Option<String>> {
+    let protocol = websocket
+        .Information()
+        .into_nyquest_result()
+        .map_err(ws_error)?
+        .Protocol()
+        .into_nyquest_result()
+        .map_err(ws_error)?
+        .to_string_lossy();
+    Ok((!protocol.is_empty()).then_some(protocol))
+}
+
 pub(crate) fn prepare_websocket(
     client: &WinrtClient,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
     on_event: impl Fn(Received) + Send + 'static,
     on_close: impl Fn(Received) + Send + 'static,
 ) -> WebSocketResult<(MessageWebSocket, Uri)> {
@@ -159,14 +173,17 @@ pub(crate) fn prepare_websocket(
         .SetReceiveMode(MessageWebSocketReceiveMode::PartialMessage)
         .into_nyquest_result()
         .map_err(ws_error)?;
-    if let Some(protocol) = protocol {
-        control
+    if !protocols.is_empty() {
+        let supported = control
             .SupportedProtocols()
             .into_nyquest_result()
-            .map_err(ws_error)?
-            .Append(&HSTRING::from(protocol.into_owned()))
-            .into_nyquest_result()
             .map_err(ws_error)?;
+        for protocol in protocols {
+            supported
+                .Append(&HSTRING::from(protocol.as_ref()))
+                .into_nyquest_result()
+                .map_err(ws_error)?;
+        }
     }
 
     let msg_handler =

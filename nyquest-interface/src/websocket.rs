@@ -18,6 +18,13 @@ pub enum WebSocketMessage {
     },
 }
 
+/// Information about a WebSocket connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WebSocketInfo {
+    /// The sub-protocol negotiated for the connection, if any.
+    pub protocol: Option<String>,
+}
+
 /// Errors produced by WebSocket operations.
 #[derive(Debug, Error)]
 pub enum WebSocketError {

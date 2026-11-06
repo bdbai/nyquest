@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 use futures::StreamExt;
-use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 use tokio_tungstenite::{
     connect_async_with_config,
     tungstenite::{
@@ -56,9 +58,9 @@ pub(crate) fn from_tungstenite_message(message: Message) -> Option<WebSocketMess
 pub(crate) async fn connect_parts(
     base_url: Option<&Url>,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
     max_message_size: Option<u64>,
-) -> WebSocketResult<(Sink, Source)> {
+) -> WebSocketResult<(WebSocketInfo, Sink, Source)> {
     let url = build_url(base_url, &uri).map_err(|_| WebSocketError::InvalidUrl)?;
     if !matches!(url.scheme(), "ws" | "wss") {
         return Err(WebSocketError::InvalidUrl);
@@ -67,9 +69,9 @@ pub(crate) async fn connect_parts(
         .as_str()
         .into_client_request()
         .map_err(|_| WebSocketError::InvalidUrl)?;
-    if let Some(protocol) = protocol {
-        let value = http::HeaderValue::from_str(protocol.as_ref())
-            .map_err(|_| WebSocketError::InvalidUrl)?;
+    if !protocols.is_empty() {
+        let joined = protocols.join(", ");
+        let value = http::HeaderValue::from_str(&joined).map_err(|_| WebSocketError::InvalidUrl)?;
         request
             .headers_mut()
             .insert("Sec-WebSocket-Protocol", value);
@@ -79,8 +81,16 @@ pub(crate) async fn connect_parts(
     let max_size = max_message_size.and_then(|size| usize::try_from(size).ok());
     config.max_message_size = max_size;
     config.max_frame_size = max_size;
-    let (stream, _) = connect_async_with_config(request, Some(config), false)
+    let (stream, response) = connect_async_with_config(request, Some(config), false)
         .await
         .map_err(map_error)?;
-    Ok(stream.split())
+    let protocol = response
+        .headers()
+        .get("Sec-WebSocket-Protocol")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let (sink, source) = stream.split();
+    Ok((WebSocketInfo { protocol }, sink, source))
 }

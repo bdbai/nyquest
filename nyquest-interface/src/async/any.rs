@@ -46,7 +46,7 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
-        protocol: Option<Cow<'static, str>>,
+        protocols: Vec<Cow<'static, str>>,
     ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>>;
 }
 
@@ -153,8 +153,8 @@ where
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
-        protocol: Option<Cow<'static, str>>,
+        protocols: Vec<Cow<'static, str>>,
     ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>> {
-        Box::pin(super::AsyncClient::connect_websocket(self, uri, protocol))
+        Box::pin(super::AsyncClient::connect_websocket(self, uri, protocols))
     }
 }

@@ -6,11 +6,13 @@ use std::future::Future;
 use futures_core::future::BoxFuture;
 
 use crate::r#async::any::{AnyAsyncWebSocketReceiver, AnyAsyncWebSocketSender};
-use crate::websocket::{WebSocketMessage, WebSocketResult};
+use crate::websocket::{WebSocketInfo, WebSocketMessage, WebSocketResult};
 
 /// An asynchronous WebSocket connection.
 #[derive(Debug)]
 pub struct WebSocket {
+    /// Information about the connection.
+    pub info: WebSocketInfo,
     /// The sending half of the connection.
     pub sender: WebSocketSender,
     /// The receiving half of the connection.
@@ -19,8 +21,12 @@ pub struct WebSocket {
 
 impl WebSocket {
     /// Creates a connection from backend-provided halves.
-    pub fn new(sender: WebSocketSender, receiver: WebSocketReceiver) -> Self {
-        Self { sender, receiver }
+    pub fn new(info: WebSocketInfo, sender: WebSocketSender, receiver: WebSocketReceiver) -> Self {
+        Self {
+            info,
+            sender,
+            receiver,
+        }
     }
 }
 

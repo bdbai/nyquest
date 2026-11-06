@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::future::Future;
+use std::future::{poll_fn, Future};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -7,12 +7,14 @@ use std::task::{Context, Poll};
 use block2::RcBlock;
 use futures_util::task::AtomicWaker;
 use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
-use objc2::AllocAnyThread;
+use objc2::{AllocAnyThread, DefinedClass};
 use objc2_foundation::{
     NSData, NSString, NSURLSessionWebSocketCloseCode, NSURLSessionWebSocketMessage,
 };
 
-use crate::websocket::{check_message_size, connect, decode_received, Socket};
+use crate::datatask::GenericWaker;
+use crate::r#async::waker::AsyncWaker;
+use crate::websocket::{check_message_size, create_task, decode_received, into_ws_info, Socket};
 
 struct AsyncState<T> {
     result: Mutex<Option<WebSocketResult<T>>>,
@@ -111,10 +113,25 @@ impl Socket {
 pub(super) async fn connect_async(
     client: crate::client::NSUrlSessionClient,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
-    let socket = connect(&client, uri, protocol)?;
+    let waker = Arc::new(AsyncWaker::new());
+    let (socket, delegate) =
+        create_task(&client, uri, protocols, GenericWaker::Async(waker.clone()))?;
+    let protocol = poll_fn(|cx| {
+        if let Some(res) = delegate.ivars().result.lock().unwrap().take() {
+            return Poll::Ready(res);
+        }
+        waker.register(cx);
+        if let Some(res) = delegate.ivars().result.lock().unwrap().take() {
+            Poll::Ready(res)
+        } else {
+            Poll::Pending
+        }
+    })
+    .await?;
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
+        into_ws_info(protocol),
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender(
             socket.clone(),
         )),

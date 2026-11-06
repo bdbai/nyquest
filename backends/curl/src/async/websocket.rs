@@ -7,7 +7,9 @@ use std::task::Poll;
 
 use futures_channel::oneshot;
 use futures_util::task::AtomicWaker;
-use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 
 use super::r#loop::{LoopManager, LoopTask, RequestHandle};
 use crate::curl_ng::easy::{AsRawEasyMut, Share};
@@ -15,8 +17,8 @@ use crate::request::{create_easy, AsCallbackMut};
 use crate::state::RequestState;
 use crate::websocket::{
     configure_websocket_easy, curl_error, curl_ws_meta, curl_ws_start_frame, decode_close_payload,
-    encode_message, nyquest_to_ws_error, CURLWS_BINARY, CURLWS_CLOSE, CURLWS_CONT, CURLWS_PING,
-    CURLWS_PONG, CURLWS_TEXT,
+    encode_message, extract_negotiated_protocol, nyquest_to_ws_error, CURLWS_BINARY, CURLWS_CLOSE,
+    CURLWS_CONT, CURLWS_PING, CURLWS_PONG, CURLWS_TEXT,
 };
 
 pub(crate) struct OutgoingMessage {
@@ -258,7 +260,7 @@ pub(super) async fn connect_async(
     share: &Share,
     options: &nyquest_interface::client::ClientOptions,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
     let (handshake_tx, handshake_rx) = oneshot::channel();
     let max_message_size = options
@@ -284,7 +286,7 @@ pub(super) async fn connect_async(
     let raw = easy.as_mut().as_raw_easy_mut().raw();
     easy.as_callback_mut().pause = Some(super::pause::EasyPause::new(raw));
 
-    configure_websocket_easy(easy.as_mut(), options, uri, protocol)?;
+    configure_websocket_easy(easy.as_mut(), options, uri, protocols)?;
     easy.as_mut()
         .with_error_message(|e| e.as_raw_easy_mut().set_upload(true))
         .map_err(|e| nyquest_to_ws_error(e.into()))?;
@@ -300,6 +302,11 @@ pub(super) async fn connect_async(
         .await
         .map_err(|_| WebSocketError::Io(std::io::Error::other("WebSocket handshake canceled")))??;
 
+    let protocol = {
+        let state = ws_shared.state.lock().unwrap();
+        extract_negotiated_protocol(&state.header_state.response_headers_buffer)
+    };
+
     let req_handle = Arc::new(req_handle);
     let sender = AsyncSender {
         ws: ws_shared.clone(),
@@ -311,6 +318,7 @@ pub(super) async fn connect_async(
     };
 
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
+        WebSocketInfo { protocol },
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(sender),
         nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(receiver),
     ))

@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 
 use futures_channel::oneshot;
-use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 use windows_sys::Win32::Networking::WinHttp::*;
 
 use super::context::{RequestContext, RequestState};
@@ -16,8 +18,8 @@ use crate::request::{create_request, method_to_cwstr};
 use crate::session::WinHttpSession;
 use crate::url::ParsedUrl;
 use crate::websocket::{
-    build_websocket_headers, from_winhttp_error, prepare_websocket_url, winhttp_error,
-    WebSocketHandle,
+    build_websocket_headers, from_winhttp_error, prepare_websocket_url, query_negotiated_protocol,
+    winhttp_error, WebSocketHandle,
 };
 
 enum SendState {
@@ -144,11 +146,10 @@ struct AsyncSocket {
 pub(super) async fn connect_async(
     session: Arc<WinHttpSession>,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
     let url_wide = prepare_websocket_url(session.base_cwurl.as_deref(), &uri)?;
-    let headers_str =
-        build_websocket_headers(protocol.as_deref(), &session.options.default_headers);
+    let headers_str = build_websocket_headers(&protocols, &session.options.default_headers);
     let ctx = RequestContext::new();
     let (setup_tx, setup_rx) = oneshot::channel();
 
@@ -212,6 +213,8 @@ pub(super) async fn connect_async(
         )));
     }
 
+    let protocol = query_negotiated_protocol(&request)?;
+
     let ws_ctx = WsContext::new();
     let ws_ctx_raw = Arc::into_raw(ws_ctx.clone());
     let raw = match request.complete_websocket_upgrade(ws_ctx_raw as usize) {
@@ -248,6 +251,7 @@ pub(super) async fn connect_async(
     });
 
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
+        WebSocketInfo { protocol },
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender {
             socket: socket.clone(),
         }),

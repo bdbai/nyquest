@@ -88,11 +88,11 @@ impl AsyncClient for ReqwestAsyncClient {
     async fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
-        protocol: Option<Cow<'static, str>>,
+        protocols: Vec<Cow<'static, str>>,
     ) -> nyquest_interface::websocket::WebSocketResult<
         nyquest_interface::r#async::websocket::WebSocket,
     > {
-        websocket::connect_async(&self.inner, uri, protocol).await
+        websocket::connect_async(&self.inner, uri, protocols).await
     }
 }
 

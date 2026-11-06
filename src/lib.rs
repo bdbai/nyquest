@@ -155,7 +155,9 @@ pub use client::ClientBuilder;
 pub use error::{Error, Result};
 #[cfg(feature = "ws")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ws")))]
-pub use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+pub use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use r#async::client::AsyncClient;

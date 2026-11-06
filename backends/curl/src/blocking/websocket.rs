@@ -3,17 +3,19 @@ use std::ffi::{c_int, c_void};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 
 use super::handler::BlockingHandler;
 use crate::curl_ng::easy::{AsRawEasyMut, Share};
 use crate::curl_ng::multi::RawMulti;
 use crate::curl_ng::WithCurlCodeContext;
-use crate::request::{create_easy, BoxEasyHandle};
+use crate::request::{create_easy, AsCallbackMut, BoxEasyHandle};
 use crate::websocket::{
     configure_websocket_easy, curl_error, curl_ws_recv, curl_ws_send, decode_close_payload,
-    encode_message, nyquest_to_ws_error, CurlWsFrame, CURLWS_BINARY, CURLWS_CLOSE, CURLWS_CONT,
-    CURLWS_PING, CURLWS_PONG, CURLWS_TEXT,
+    encode_message, extract_negotiated_protocol, nyquest_to_ws_error, CurlWsFrame, CURLWS_BINARY,
+    CURLWS_CLOSE, CURLWS_CONT, CURLWS_PING, CURLWS_PONG, CURLWS_TEXT,
 };
 
 struct Connection {
@@ -32,12 +34,12 @@ impl Connection {
     fn connect(
         share: &Share,
         uri: Cow<'static, str>,
-        protocol: Option<Cow<'static, str>>,
+        protocols: Vec<Cow<'static, str>>,
         options: &nyquest_interface::client::ClientOptions,
-    ) -> WebSocketResult<Self> {
+    ) -> WebSocketResult<(Self, Option<String>)> {
         let mut easy =
             create_easy(BlockingHandler::default(), share).map_err(nyquest_to_ws_error)?;
-        configure_websocket_easy(easy.as_mut(), options, uri, protocol)?;
+        configure_websocket_easy(easy.as_mut(), options, uri, protocols)?;
         easy.as_mut()
             .with_error_message(|mut e| {
                 e.as_mut().as_raw_easy_mut().set_connect_only_websocket()?;
@@ -58,15 +60,21 @@ impl Connection {
             )));
         }
 
+        let protocol =
+            extract_negotiated_protocol(&easy.as_callback_mut().state.response_headers_buffer);
+
         let max_message_size = options
             .max_response_buffer_size
             .and_then(|size| usize::try_from(size).ok());
 
-        Ok(Self {
-            easy,
-            wait_multi: RawMulti::new(),
-            max_message_size,
-        })
+        Ok((
+            Self {
+                easy,
+                wait_multi: RawMulti::new(),
+                max_message_size,
+            },
+            protocol,
+        ))
     }
 
     fn wait_socket(&mut self, for_recv: bool) {
@@ -210,13 +218,13 @@ impl Connection {
 pub(super) fn connect_blocking(
     share: &Share,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
     options: &nyquest_interface::client::ClientOptions,
 ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
-    let connection = Arc::new(Mutex::new(Connection::connect(
-        share, uri, protocol, options,
-    )?));
+    let (connection, protocol) = Connection::connect(share, uri, protocols, options)?;
+    let connection = Arc::new(Mutex::new(connection));
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(
+        WebSocketInfo { protocol },
         nyquest_interface::blocking::websocket::WebSocketSender::from_impl(BlockingSender {
             connection: connection.clone(),
         }),

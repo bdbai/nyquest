@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 use windows_sys::Win32::Networking::WinHttp::*;
 
 use crate::handle::ConnectionHandle;
@@ -9,8 +11,8 @@ use crate::request::{create_request, method_to_cwstr};
 use crate::session::WinHttpSession;
 use crate::url::ParsedUrl;
 use crate::websocket::{
-    build_websocket_headers, from_winhttp_error, prepare_websocket_url, winhttp_error,
-    WebSocketHandle,
+    build_websocket_headers, from_winhttp_error, prepare_websocket_url, query_negotiated_protocol,
+    winhttp_error, WebSocketHandle,
 };
 
 struct BlockingSocket {
@@ -132,7 +134,7 @@ impl BlockingSocket {
 pub(super) fn connect_blocking(
     session: &Arc<WinHttpSession>,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
     let url_wide = prepare_websocket_url(session.base_cwurl.as_deref(), &uri)?;
     let parsed_url = ParsedUrl::parse(&url_wide).ok_or(WebSocketError::InvalidUrl)?;
@@ -140,7 +142,7 @@ pub(super) fn connect_blocking(
     let (connection, request) =
         create_request(session, &parsed_url, &method).map_err(from_winhttp_error)?;
 
-    let headers = build_websocket_headers(protocol.as_deref(), &session.options.default_headers);
+    let headers = build_websocket_headers(&protocols, &session.options.default_headers);
     if !headers.is_empty() {
         request.add_headers(&headers).map_err(from_winhttp_error)?;
     }
@@ -158,6 +160,8 @@ pub(super) fn connect_blocking(
         )));
     }
 
+    let protocol = query_negotiated_protocol(&request)?;
+
     let raw = request
         .complete_websocket_upgrade(0)
         .map_err(from_winhttp_error)?;
@@ -170,6 +174,7 @@ pub(super) fn connect_blocking(
     });
 
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(
+        WebSocketInfo { protocol },
         nyquest_interface::blocking::websocket::WebSocketSender::from_impl(Sender {
             socket: socket.clone(),
         }),

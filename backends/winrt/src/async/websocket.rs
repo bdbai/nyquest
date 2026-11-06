@@ -5,14 +5,16 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use futures_util::task::AtomicWaker;
-use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
 use windows::Networking::Sockets::MessageWebSocket;
 
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
 use crate::websocket::{
-    detach_writer, finalize_message, prepare_send_message, prepare_websocket, read_fragment,
-    ws_error, ws_error_context, Received,
+    detach_writer, extract_negotiated_protocol, finalize_message, prepare_send_message,
+    prepare_websocket, read_fragment, ws_error, ws_error_context, Received,
 };
 
 struct AsyncSocket {
@@ -28,13 +30,13 @@ impl Drop for AsyncSocket {
 pub(super) async fn connect_async(
     client: WinrtClient,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
     let max_size = client
         .max_response_buffer_size
-        .and_then(|size| usize::try_from(size).ok());
+        .map(|size| usize::try_from(size).unwrap_or(usize::MAX));
 
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel(4);
     let waker = Arc::new(AtomicWaker::new());
 
     let event_tx = tx.clone();
@@ -45,7 +47,7 @@ pub(super) async fn connect_async(
     let (websocket, uri_parsed) = prepare_websocket(
         &client,
         uri,
-        protocol,
+        protocols,
         move |item| {
             let _ = event_tx.send(item);
             event_waker.wake();
@@ -64,9 +66,11 @@ pub(super) async fn connect_async(
         .into_nyquest_result()
         .map_err(ws_error)?;
 
+    let protocol = extract_negotiated_protocol(&websocket)?;
     let socket = Arc::new(AsyncSocket { websocket });
 
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
+        WebSocketInfo { protocol },
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender(
             socket.clone(),
         )),

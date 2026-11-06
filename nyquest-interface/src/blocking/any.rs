@@ -40,7 +40,7 @@ pub trait AnyBlockingClient: Any + Send + Sync + 'static {
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
-        protocol: Option<Cow<'static, str>>,
+        protocols: Vec<Cow<'static, str>>,
     ) -> WebSocketResult<super::websocket::WebSocket>;
 }
 
@@ -135,8 +135,8 @@ where
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
-        protocol: Option<Cow<'static, str>>,
+        protocols: Vec<Cow<'static, str>>,
     ) -> WebSocketResult<super::websocket::WebSocket> {
-        super::BlockingClient::connect_websocket(self, uri, protocol)
+        super::BlockingClient::connect_websocket(self, uri, protocols)
     }
 }

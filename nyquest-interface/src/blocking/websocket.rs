@@ -4,12 +4,14 @@ use std::fmt;
 
 use crate::{
     blocking::any::{AnyBlockingWebSocketReceiver, AnyBlockingWebSocketSender},
-    websocket::{WebSocketMessage, WebSocketResult},
+    websocket::{WebSocketInfo, WebSocketMessage, WebSocketResult},
 };
 
 /// A blocking WebSocket connection.
 #[derive(Debug)]
 pub struct WebSocket {
+    /// Information about the connection.
+    pub info: WebSocketInfo,
     /// The sending half of the connection.
     pub sender: WebSocketSender,
     /// The receiving half of the connection.
@@ -18,8 +20,12 @@ pub struct WebSocket {
 
 impl WebSocket {
     /// Creates a connection from backend-provided halves.
-    pub fn new(sender: WebSocketSender, receiver: WebSocketReceiver) -> Self {
-        Self { sender, receiver }
+    pub fn new(info: WebSocketInfo, sender: WebSocketSender, receiver: WebSocketReceiver) -> Self {
+        Self {
+            info,
+            sender,
+            receiver,
+        }
     }
 }
 

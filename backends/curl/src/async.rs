@@ -187,7 +187,7 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
     async fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,
-        protocol: Option<std::borrow::Cow<'static, str>>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
     ) -> nyquest_interface::websocket::WebSocketResult<
         nyquest_interface::r#async::websocket::WebSocket,
     > {
@@ -196,7 +196,7 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
             &self.inner.share,
             &self.inner.options,
             uri,
-            protocol,
+            protocols,
         )
         .await
     }

@@ -25,16 +25,17 @@ struct AsyncReceiver {
 pub(super) async fn connect_async(
     client: &ReqwestClient,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
+    protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
     let base_url = client.base_url.clone();
     let max_message_size = client.max_response_buffer_size;
     let (res, handle) = execute_with_runtime_async(&client.managed_runtime, move || async move {
-        connect_parts(base_url.as_ref(), uri, protocol, max_message_size).await
+        connect_parts(base_url.as_ref(), uri, protocols, max_message_size).await
     })
     .await;
-    let (sink, source) = res?;
+    let (info, sink, source) = res?;
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
+        info,
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender {
             sink,
             handle: handle.clone(),

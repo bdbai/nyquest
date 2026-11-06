@@ -130,13 +130,18 @@ fn eq_ignore_ascii_case_u16(a: &[u16], b: &[u16]) -> bool {
 }
 
 pub(crate) fn build_websocket_headers(
-    protocol: Option<&str>,
+    protocols: &[std::borrow::Cow<'static, str>],
     default_headers: &[(String, String)],
 ) -> String {
     let mut headers = String::new();
-    if let Some(protocol) = protocol {
+    if !protocols.is_empty() {
         headers.push_str("Sec-WebSocket-Protocol: ");
-        headers.push_str(protocol);
+        for (i, protocol) in protocols.iter().enumerate() {
+            if i > 0 {
+                headers.push_str(", ");
+            }
+            headers.push_str(protocol);
+        }
         headers.push_str("\r\n");
     }
     for (name, value) in default_headers {
@@ -146,4 +151,16 @@ pub(crate) fn build_websocket_headers(
         headers.push_str("\r\n");
     }
     headers
+}
+
+pub(crate) fn query_negotiated_protocol(
+    request: &crate::handle::RequestHandle,
+) -> WebSocketResult<Option<String>> {
+    Ok(request
+        .query_header("Sec-WebSocket-Protocol")
+        .map_err(from_winhttp_error)?
+        .into_iter()
+        .next()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty()))
 }

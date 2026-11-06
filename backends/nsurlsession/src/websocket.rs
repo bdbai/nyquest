@@ -1,13 +1,26 @@
-use std::borrow::Cow;
-use std::sync::Arc;
+#![allow(non_snake_case)]
 
-use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
-use objc2::rc::Retained;
-use objc2_foundation::{NSString, NSURLSessionWebSocketMessage, NSURLSessionWebSocketTask, NSURL};
+use std::borrow::Cow;
+use std::sync::{Arc, Mutex};
+
+use nyquest_interface::websocket::{
+    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
+};
+use objc2::rc::{autoreleasepool, Retained};
+use objc2::runtime::ProtocolObject;
+use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
+use objc2_foundation::{
+    NSError, NSObject, NSObjectProtocol, NSString, NSURLSession, NSURLSessionDelegate,
+    NSURLSessionTask, NSURLSessionTaskDelegate, NSURLSessionWebSocketDelegate,
+    NSURLSessionWebSocketMessage, NSURLSessionWebSocketTask, NSURL,
+};
+
+use crate::datatask::GenericWaker;
 
 pub(crate) struct Socket {
     pub(crate) task: Retained<NSURLSessionWebSocketTask>,
     pub(crate) max_message_size: usize,
+    _delegate: Retained<WebSocketTaskDelegate>,
 }
 
 unsafe impl Send for Socket {}
@@ -16,6 +29,80 @@ unsafe impl Sync for Socket {}
 impl Drop for Socket {
     fn drop(&mut self) {
         self.task.cancel();
+    }
+}
+
+pub(crate) struct WebSocketTaskIvars {
+    pub(crate) result: Mutex<Option<WebSocketResult<Option<String>>>>,
+    pub(crate) waker: GenericWaker,
+}
+
+define_class!(
+    #[unsafe(super = NSObject)]
+    #[name = "Nyquest_WebSocketTaskDelegate"]
+    #[ivars = WebSocketTaskIvars]
+    pub(crate) struct WebSocketTaskDelegate;
+
+    unsafe impl NSObjectProtocol for WebSocketTaskDelegate {}
+
+    unsafe impl NSURLSessionDelegate for WebSocketTaskDelegate {}
+
+    unsafe impl NSURLSessionTaskDelegate for WebSocketTaskDelegate {
+        #[unsafe(method(URLSession:task:didCompleteWithError:))]
+        fn URLSession_task_didCompleteWithError(
+            &self,
+            _session: &NSURLSession,
+            _task: &NSURLSessionTask,
+            error: Option<&NSError>,
+        ) {
+            let ivars = self.ivars();
+            let mut slot = ivars.result.lock().unwrap();
+            if slot.is_none() {
+                let err = if let Some(error) = error {
+                    let msg = autoreleasepool(|pool| unsafe {
+                        error.localizedDescription().to_str(pool).to_owned()
+                    });
+                    WebSocketError::Io(std::io::Error::other(format!(
+                        "NSURLSession error {}: {msg}",
+                        error.code()
+                    )))
+                } else {
+                    WebSocketError::Protocol("WebSocket closed before handshake completed".into())
+                };
+                *slot = Some(Err(err));
+                drop(slot);
+                ivars.waker.wake();
+            }
+        }
+    }
+
+    unsafe impl NSURLSessionWebSocketDelegate for WebSocketTaskDelegate {
+        #[unsafe(method(URLSession:webSocketTask:didOpenWithProtocol:))]
+        fn URLSession_webSocketTask_didOpenWithProtocol(
+            &self,
+            _session: &NSURLSession,
+            _web_socket_task: &NSURLSessionWebSocketTask,
+            protocol: Option<&NSString>,
+        ) {
+            let ivars = self.ivars();
+            let mut slot = ivars.result.lock().unwrap();
+            if slot.is_none() {
+                let protocol = protocol.map(|p| p.to_string()).filter(|p| !p.is_empty());
+                *slot = Some(Ok(protocol));
+                drop(slot);
+                ivars.waker.wake();
+            }
+        }
+    }
+);
+
+impl WebSocketTaskDelegate {
+    pub(crate) fn new(waker: GenericWaker) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(WebSocketTaskIvars {
+            result: Mutex::new(None),
+            waker,
+        });
+        unsafe { msg_send![super(this), init] }
     }
 }
 
@@ -78,11 +165,12 @@ pub(crate) fn check_message_size(
     }
 }
 
-pub(crate) fn connect(
+pub(crate) fn create_task(
     client: &crate::client::NSUrlSessionClient,
     uri: Cow<'static, str>,
-    protocol: Option<Cow<'static, str>>,
-) -> WebSocketResult<Arc<Socket>> {
+    protocols: Vec<Cow<'static, str>>,
+    waker: GenericWaker,
+) -> WebSocketResult<(Arc<Socket>, Retained<WebSocketTaskDelegate>)> {
     let url =
         NSURL::URLWithString_relativeToURL(&NSString::from_str(&uri), client.base_url.as_deref())
             .ok_or(WebSocketError::InvalidUrl)?;
@@ -90,19 +178,27 @@ pub(crate) fn connect(
     if !scheme.eq_ignore_ascii_case("ws") && !scheme.eq_ignore_ascii_case("wss") {
         return Err(WebSocketError::InvalidUrl);
     }
-    let task = if let Some(protocol) = protocol {
-        let protocols =
-            objc2_foundation::NSArray::from_retained_slice(&[NSString::from_str(&protocol)]);
+    let task = if !protocols.is_empty() {
+        let ns_protocols: Vec<_> = protocols.iter().map(|p| NSString::from_str(p)).collect();
+        let protocols_array = objc2_foundation::NSArray::from_retained_slice(&ns_protocols);
         client
             .session
-            .webSocketTaskWithURL_protocols(&url, &protocols)
+            .webSocketTaskWithURL_protocols(&url, &protocols_array)
     } else {
         client.session.webSocketTaskWithURL(&url)
     };
     task.setMaximumMessageSize(client.max_response_buffer_size as isize);
+    let delegate = WebSocketTaskDelegate::new(waker);
+    task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
     task.resume();
-    Ok(Arc::new(Socket {
+    let socket = Arc::new(Socket {
         task,
         max_message_size: usize::try_from(client.max_response_buffer_size).unwrap_or(usize::MAX),
-    }))
+        _delegate: delegate.clone(),
+    });
+    Ok((socket, delegate))
+}
+
+pub(crate) fn into_ws_info(protocol: Option<String>) -> WebSocketInfo {
+    WebSocketInfo { protocol }
 }

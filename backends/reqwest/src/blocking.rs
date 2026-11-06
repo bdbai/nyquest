@@ -47,11 +47,11 @@ impl BlockingClient for ReqwestBlockingClient {
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
-        protocol: Option<Cow<'static, str>>,
+        protocols: Vec<Cow<'static, str>>,
     ) -> nyquest_interface::websocket::WebSocketResult<
         nyquest_interface::blocking::websocket::WebSocket,
     > {
-        websocket::connect_blocking(&self.inner, uri, protocol)
+        websocket::connect_blocking(&self.inner, uri, protocols)
     }
 }
 

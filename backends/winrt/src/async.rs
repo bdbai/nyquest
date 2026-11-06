@@ -151,11 +151,11 @@ impl AsyncClient for WinrtClient {
     async fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,
-        protocol: Option<std::borrow::Cow<'static, str>>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
     ) -> nyquest_interface::websocket::WebSocketResult<
         nyquest_interface::r#async::websocket::WebSocket,
     > {
-        websocket::connect_async(self.clone(), uri, protocol).await
+        websocket::connect_async(self.clone(), uri, protocols).await
     }
 }
 

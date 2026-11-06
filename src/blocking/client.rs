@@ -71,9 +71,10 @@ impl BlockingClient {
     pub fn connect_websocket(
         &self,
         uri: impl Into<Cow<'static, str>>,
-        protocol: Option<Cow<'static, str>>,
+        protocols: impl IntoIterator<Item = Cow<'static, str>>,
     ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
-        self.client.connect_websocket(uri.into(), protocol)
+        self.client
+            .connect_websocket(uri.into(), protocols.into_iter().collect())
     }
 
     // TODO: request file

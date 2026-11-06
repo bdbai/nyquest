@@ -211,11 +211,11 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
     fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,
-        protocol: Option<std::borrow::Cow<'static, str>>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
     ) -> nyquest_interface::websocket::WebSocketResult<
         nyquest_interface::blocking::websocket::WebSocket,
     > {
-        websocket::connect_blocking(&self.share, uri, protocol, &self.options)
+        websocket::connect_blocking(&self.share, uri, protocols, &self.options)
     }
 }
 
