@@ -86,12 +86,14 @@ pub(super) fn connect_blocking(
     )?;
     let protocol = loop {
         waker.register_current_thread();
-        let context = delegate.ivars().context.lock().unwrap();
-        let is_connecting = matches!(context.state, WebSocketTaskState::Connecting);
-        if is_connecting {
-            std::thread::park();
-        } else {
-            break context.protocol.clone();
+        let mut context = delegate.ivars().context.lock().unwrap();
+        match context.take_state() {
+            WebSocketTaskState::Connecting => {
+                drop(context);
+                std::thread::park();
+            }
+            WebSocketTaskState::Open => break context.protocol.take(),
+            WebSocketTaskState::Closed(error) => return Err(error),
         }
     };
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(

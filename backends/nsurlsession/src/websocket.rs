@@ -22,6 +22,7 @@ use crate::datatask::GenericWaker;
 pub(crate) struct Socket {
     pub(crate) task: Retained<NSURLSessionWebSocketTask>,
     pub(crate) max_message_size: usize,
+    _delegate: Retained<WebSocketTaskDelegate>, // Keep the delegate alive for the lifetime of the task
 }
 
 impl Drop for Socket {
@@ -38,7 +39,7 @@ pub(crate) struct WebSocketTaskContext {
 pub(crate) enum WebSocketTaskState {
     Connecting,
     Open,
-    Closed,
+    Closed(WebSocketError),
 }
 
 pub(crate) struct WebSocketTaskIvars {
@@ -64,10 +65,13 @@ define_class!(
             _task: &NSURLSessionTask,
             error: Option<&NSError>,
         ) {
-            // TODO: handle this error
             let ivars = self.ivars();
             let mut ctx = ivars.context.lock().unwrap();
-            ctx.state = WebSocketTaskState::Closed;
+            ctx.state = WebSocketTaskState::Closed(if let Some(error) = error {
+                ns_error_to_websocket(error)
+            } else {
+                WebSocketError::Protocol("WebSocket closed without a close frame".into())
+            });
             ivars.waker.wake();
         }
     }
@@ -99,6 +103,19 @@ impl WebSocketTaskDelegate {
             waker,
         });
         unsafe { msg_send![super(this), init] }
+    }
+}
+
+impl WebSocketTaskContext {
+    pub(crate) fn take_state(&mut self) -> WebSocketTaskState {
+        match std::mem::replace(&mut self.state, WebSocketTaskState::Connecting) {
+            WebSocketTaskState::Connecting => WebSocketTaskState::Connecting,
+            WebSocketTaskState::Open => {
+                self.state = WebSocketTaskState::Open;
+                WebSocketTaskState::Open
+            }
+            WebSocketTaskState::Closed(err) => WebSocketTaskState::Closed(err),
+        }
     }
 }
 
@@ -190,6 +207,7 @@ pub(crate) fn create_task(
     let socket = Arc::new(Socket {
         task,
         max_message_size: usize::try_from(client.max_response_buffer_size).unwrap_or(usize::MAX),
+        _delegate: delegate.clone(),
     });
     Ok((socket, delegate))
 }
@@ -199,6 +217,9 @@ pub(crate) fn into_ws_info(protocol: Option<String>) -> WebSocketInfo {
 }
 
 pub(crate) fn ns_error_to_websocket(error: &NSError) -> WebSocketError {
+    if error.code() == objc2_foundation::NSURLErrorDataLengthExceedsMaximum {
+        return WebSocketError::MessageTooLarge;
+    }
     let msg =
         autoreleasepool(|pool| unsafe { (error).localizedDescription().to_str(pool).to_owned() });
     WebSocketError::Io(io::Error::other(format!(

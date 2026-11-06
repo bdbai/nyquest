@@ -93,14 +93,13 @@ pub(super) async fn connect_async(
     let protocol = poll_fn(|cx| {
         waker.register(cx);
         let mut context = delegate.ivars().context.lock().unwrap();
-        let is_connecting = matches!(context.state, WebSocketTaskState::Connecting);
-        if is_connecting {
-            Poll::Pending
-        } else {
-            Poll::Ready(context.protocol.take())
+        match context.take_state() {
+            WebSocketTaskState::Connecting => Poll::Pending,
+            WebSocketTaskState::Open => Poll::Ready(Ok(context.protocol.take())),
+            WebSocketTaskState::Closed(error) => Poll::Ready(Err(error)),
         }
     })
-    .await;
+    .await?;
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
         into_ws_info(protocol),
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender(
