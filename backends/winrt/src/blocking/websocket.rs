@@ -11,7 +11,7 @@ use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
 use crate::websocket::{
     detach_writer, extract_negotiated_protocol, finalize_message, prepare_send_message,
-    prepare_websocket, read_fragment, ws_error, ws_error_context, Received,
+    read_fragment, ws_error, ws_error_context, Received,
 };
 
 struct BlockingSocket {
@@ -29,24 +29,19 @@ pub(super) fn connect_blocking(
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
-    let (tx, rx) = mpsc::channel();
-    let event_tx = tx.clone();
-    let close_tx = tx;
+    let uri = client.validate_ws_uri(&uri)?;
+    let websocket = MessageWebSocket::new()
+        .into_nyquest_result()
+        .map_err(ws_error)?;
 
-    let (websocket, uri_parsed) = prepare_websocket(
-        client,
-        uri,
-        protocols,
-        move |item| {
-            let _ = event_tx.send(item);
-        },
-        move |item| {
-            let _ = close_tx.send(item);
-        },
-    )?;
+    let (tx, rx) = mpsc::channel();
+    let on_event = move |item| {
+        let _ = tx.send(item);
+    };
+    client.prepare_ws(&websocket, protocols, on_event.clone(), on_event)?;
 
     websocket
-        .ConnectAsync(&uri_parsed)
+        .ConnectAsync(&uri)
         .into_nyquest_result()
         .map_err(ws_error)?
         .join()

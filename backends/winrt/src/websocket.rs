@@ -146,87 +146,84 @@ pub(crate) fn extract_negotiated_protocol(
     Ok((!protocol.is_empty()).then_some(protocol))
 }
 
-pub(crate) fn prepare_websocket(
-    client: &WinrtClient,
-    uri: Cow<'static, str>,
-    protocols: Vec<Cow<'static, str>>,
-    on_event: impl Fn(Received) + Send + 'static,
-    on_close: impl Fn(Received) + Send + 'static,
-) -> WebSocketResult<(MessageWebSocket, Uri)> {
-    let uri_parsed = build_uri(&client.base_url, &uri).map_err(|_| WebSocketError::InvalidUrl)?;
-    let scheme = uri_parsed
-        .SchemeName()
-        .map_err(|_| WebSocketError::InvalidUrl)?
-        .to_string_lossy();
-    if !scheme.eq_ignore_ascii_case("ws") && !scheme.eq_ignore_ascii_case("wss") {
-        return Err(WebSocketError::InvalidUrl);
+impl WinrtClient {
+    pub(crate) fn validate_ws_uri(&self, uri: &str) -> WebSocketResult<Uri> {
+        let uri_parsed = build_uri(&self.base_url, uri).map_err(|_| WebSocketError::InvalidUrl)?;
+        let scheme = uri_parsed
+            .SchemeName()
+            .map_err(|_| WebSocketError::InvalidUrl)?
+            .to_string_lossy();
+        if !scheme.eq_ignore_ascii_case("ws") && !scheme.eq_ignore_ascii_case("wss") {
+            return Err(WebSocketError::InvalidUrl);
+        }
+        Ok(uri_parsed)
     }
 
-    let websocket = MessageWebSocket::new()
-        .into_nyquest_result()
-        .map_err(ws_error)?;
-    let control = websocket
-        .Control()
-        .into_nyquest_result()
-        .map_err(ws_error)?;
-    control
-        .SetReceiveMode(MessageWebSocketReceiveMode::PartialMessage)
-        .into_nyquest_result()
-        .map_err(ws_error)?;
-    if !protocols.is_empty() {
-        let supported = control
-            .SupportedProtocols()
+    pub(crate) fn prepare_ws(
+        &self,
+        ws: &MessageWebSocket,
+        protocols: Vec<Cow<'static, str>>,
+        on_event: impl Fn(Received) + Send + 'static,
+        on_close: impl Fn(Received) + Send + 'static,
+    ) -> WebSocketResult<()> {
+        let control = ws.Control().into_nyquest_result().map_err(ws_error)?;
+        control
+            .SetReceiveMode(MessageWebSocketReceiveMode::PartialMessage)
             .into_nyquest_result()
             .map_err(ws_error)?;
-        for protocol in protocols {
-            supported
-                .Append(&HSTRING::from(protocol.as_ref()))
+        if !protocols.is_empty() {
+            let supported = control
+                .SupportedProtocols()
                 .into_nyquest_result()
                 .map_err(ws_error)?;
+            for protocol in protocols {
+                supported
+                    .Append(&HSTRING::from(protocol.as_ref()))
+                    .into_nyquest_result()
+                    .map_err(ws_error)?;
+            }
         }
-    }
 
-    let msg_handler =
-        TypedEventHandler::<MessageWebSocket, MessageWebSocketMessageReceivedEventArgs>::new(
-            move |_socket, args| {
-                let Some(args) = args.as_ref() else {
-                    return Ok(());
-                };
-                let item = match extract_received_message(args) {
-                    Ok(msg) => msg,
-                    Err(err) => Received::Error(ws_error(err)),
-                };
-                on_event(item);
-                Ok(())
-            },
-        );
-
-    let close_handler =
-        TypedEventHandler::<IWebSocket, WebSocketClosedEventArgs>::new(move |_socket, args| {
+        let msg_handler = TypedEventHandler::<
+            MessageWebSocket,
+            MessageWebSocketMessageReceivedEventArgs,
+        >::new(move |_socket, args| {
             let Some(args) = args.as_ref() else {
                 return Ok(());
             };
-            let item = match (args.Code(), args.Reason()) {
-                (Ok(code), Ok(reason)) => Received::Closed {
-                    code,
-                    reason: reason.to_string(),
-                },
-                (Err(err), _) | (_, Err(err)) => Received::Error(ws_error(err)),
+            let item = match extract_received_message(args) {
+                Ok(msg) => msg,
+                Err(err) => Received::Error(ws_error(err)),
             };
-            on_close(item);
+            on_event(item);
             Ok(())
         });
 
-    websocket
-        .Closed(&close_handler)
-        .into_nyquest_result()
-        .map_err(ws_error)?;
-    websocket
-        .MessageReceived(&msg_handler)
-        .into_nyquest_result()
-        .map_err(ws_error)?;
+        let close_handler =
+            TypedEventHandler::<IWebSocket, WebSocketClosedEventArgs>::new(move |_socket, args| {
+                let Some(args) = args.as_ref() else {
+                    return Ok(());
+                };
+                let item = match (args.Code(), args.Reason()) {
+                    (Ok(code), Ok(reason)) => Received::Closed {
+                        code,
+                        reason: reason.to_string(),
+                    },
+                    (Err(err), _) | (_, Err(err)) => Received::Error(ws_error(err)),
+                };
+                on_close(item);
+                Ok(())
+            });
 
-    Ok((websocket, uri_parsed))
+        ws.Closed(&close_handler)
+            .into_nyquest_result()
+            .map_err(ws_error)?;
+        ws.MessageReceived(&msg_handler)
+            .into_nyquest_result()
+            .map_err(ws_error)?;
+
+        Ok(())
+    }
 }
 
 fn extract_received_message(

@@ -14,11 +14,12 @@ use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
 use crate::websocket::{
     detach_writer, extract_negotiated_protocol, finalize_message, prepare_send_message,
-    prepare_websocket, read_fragment, ws_error, ws_error_context, Received,
+    read_fragment, ws_error, ws_error_context, Received,
 };
 
 struct AsyncSocket {
     websocket: MessageWebSocket,
+    waker: AtomicWaker,
 }
 
 impl Drop for AsyncSocket {
@@ -28,56 +29,53 @@ impl Drop for AsyncSocket {
 }
 
 pub(super) async fn connect_async(
-    client: WinrtClient,
+    client: &WinrtClient,
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
+    let uri = client.validate_ws_uri(&uri)?;
+    let ws = MessageWebSocket::new()
+        .into_nyquest_result()
+        .map_err(ws_error)?;
+
     let max_size = client
         .max_response_buffer_size
         .map(|size| usize::try_from(size).unwrap_or(usize::MAX));
 
     let (tx, rx) = mpsc::sync_channel(4);
-    let waker = Arc::new(AtomicWaker::new());
-
-    let event_tx = tx.clone();
-    let event_waker = waker.clone();
-    let close_tx = tx;
-    let close_waker = waker.clone();
-
-    let (websocket, uri_parsed) = prepare_websocket(
-        &client,
-        uri,
-        protocols,
+    let ws = Arc::new(AsyncSocket {
+        websocket: ws,
+        waker: AtomicWaker::new(),
+    });
+    let on_event = {
+        let socket = Arc::downgrade(&ws);
         move |item| {
-            let _ = event_tx.send(item);
-            event_waker.wake();
-        },
-        move |item| {
-            let _ = close_tx.send(item);
-            close_waker.wake();
-        },
-    )?;
+            let Some(ws) = socket.upgrade() else {
+                return;
+            };
+            let _ = tx.send(item);
+            ws.waker.wake();
+        }
+    };
 
-    websocket
-        .ConnectAsync(&uri_parsed)
+    client.prepare_ws(&ws.websocket, protocols, on_event.clone(), on_event)?;
+
+    ws.websocket
+        .ConnectAsync(&uri)
         .into_nyquest_result()
         .map_err(ws_error)?
         .await
         .into_nyquest_result()
         .map_err(ws_error)?;
 
-    let protocol = extract_negotiated_protocol(&websocket)?;
-    let socket = Arc::new(AsyncSocket { websocket });
+    let protocol = extract_negotiated_protocol(&ws.websocket)?;
 
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
         WebSocketInfo { protocol },
-        nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender(
-            socket.clone(),
-        )),
+        nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender(ws.clone())),
         nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(AsyncReceiver {
-            _socket: socket,
+            ws,
             rx,
-            waker,
             max_size,
         }),
     ))
@@ -107,22 +105,21 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender
 }
 
 struct AsyncReceiver {
-    _socket: Arc<AsyncSocket>,
+    ws: Arc<AsyncSocket>,
     rx: Receiver<Received>,
-    waker: Arc<AtomicWaker>,
     max_size: Option<usize>,
 }
 
 impl AsyncReceiver {
     async fn next_received(&mut self) -> WebSocketResult<Received> {
         let rx = &mut self.rx;
-        let waker = &self.waker;
+        let ws = &self.ws;
         poll_fn(move |cx| {
             let rx: &mut Receiver<Received> = rx;
             if let Ok(item) = rx.try_recv() {
                 return Poll::Ready(Ok(item));
             }
-            waker.register(cx.waker());
+            ws.waker.register(cx.waker());
             match rx.try_recv() {
                 Ok(item) => Poll::Ready(Ok(item)),
                 Err(TryRecvError::Empty) => Poll::Pending,

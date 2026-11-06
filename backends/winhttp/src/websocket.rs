@@ -6,6 +6,8 @@ use windows_sys::Win32::Networking::WinHttp::*;
 use crate::error::WinHttpError;
 use crate::url::concat_url;
 
+pub(crate) const WEBSOCKET_RECV_BUFFER_SIZE: usize = 4 * 1024;
+
 pub(crate) struct WebSocketHandle {
     raw: NonNull<std::ffi::c_void>,
 }
@@ -22,7 +24,7 @@ impl Drop for WebSocketHandle {
 }
 
 impl WebSocketHandle {
-    pub(crate) fn from_raw(raw: NonNull<std::ffi::c_void>) -> Self {
+    pub(crate) unsafe fn from_raw(raw: NonNull<std::ffi::c_void>) -> Self {
         Self { raw }
     }
 
@@ -65,68 +67,21 @@ pub(crate) fn prepare_websocket_url(
     base_cwurl: Option<&[u16]>,
     uri: &str,
 ) -> WebSocketResult<Vec<u16>> {
-    let combined = concat_url(base_cwurl, uri).map_err(|_| WebSocketError::InvalidUrl)?;
-    // Check for ws:// or wss:// prefix and convert to http:// or https:// for WinHttpCrackUrl
-    let ws_prefix: [u16; 5] = [
-        b'w' as u16,
-        b's' as u16,
-        b':' as u16,
-        b'/' as u16,
-        b'/' as u16,
-    ];
-    let wss_prefix: [u16; 6] = [
-        b'w' as u16,
-        b's' as u16,
-        b's' as u16,
-        b':' as u16,
-        b'/' as u16,
-        b'/' as u16,
-    ];
-    let http_prefix: [u16; 7] = [
-        b'h' as u16,
-        b't' as u16,
-        b't' as u16,
-        b'p' as u16,
-        b':' as u16,
-        b'/' as u16,
-        b'/' as u16,
-    ];
-    let https_prefix: [u16; 8] = [
-        b'h' as u16,
-        b't' as u16,
-        b't' as u16,
-        b'p' as u16,
-        b's' as u16,
-        b':' as u16,
-        b'/' as u16,
-        b'/' as u16,
-    ];
-
-    let mut out = if combined.len() >= 5 && eq_ignore_ascii_case_u16(&combined[..5], &ws_prefix) {
-        let mut v = Vec::with_capacity(combined.len() + 3);
-        v.extend_from_slice(&http_prefix);
-        v.extend_from_slice(&combined[5..]);
-        v
-    } else if combined.len() >= 6 && eq_ignore_ascii_case_u16(&combined[..6], &wss_prefix) {
-        let mut v = Vec::with_capacity(combined.len() + 3);
-        v.extend_from_slice(&https_prefix);
-        v.extend_from_slice(&combined[6..]);
-        v
+    if let Some((_, ws_url)) = uri
+        .split_at_checked(5)
+        .filter(|(p, _)| p.eq_ignore_ascii_case("ws://"))
+    {
+        let url = format!("http://{ws_url}");
+        Ok(url.encode_utf16().collect())
+    } else if let Some((_, wss_url)) = uri
+        .split_at_checked(6)
+        .filter(|(p, _)| p.eq_ignore_ascii_case("wss://"))
+    {
+        let url = format!("https://{wss_url}");
+        Ok(url.encode_utf16().collect())
     } else {
-        return Err(WebSocketError::InvalidUrl);
-    };
-    out.push(0);
-    Ok(out)
-}
-
-fn eq_ignore_ascii_case_u16(a: &[u16], b: &[u16]) -> bool {
-    a.len() == b.len()
-        && a.iter().zip(b.iter()).all(|(&x, &y)| {
-            u8::try_from(x)
-                .ok()
-                .zip(u8::try_from(y).ok())
-                .is_some_and(|(cx, cy)| cx.eq_ignore_ascii_case(&cy))
-        })
+        concat_url(base_cwurl, uri).map_err(|_| WebSocketError::InvalidUrl)
+    }
 }
 
 pub(crate) fn build_websocket_headers(
@@ -135,14 +90,8 @@ pub(crate) fn build_websocket_headers(
 ) -> String {
     let mut headers = String::new();
     if !protocols.is_empty() {
-        headers.push_str("Sec-WebSocket-Protocol: ");
-        for (i, protocol) in protocols.iter().enumerate() {
-            if i > 0 {
-                headers.push_str(", ");
-            }
-            headers.push_str(protocol);
-        }
-        headers.push_str("\r\n");
+        let header_value = protocols.join(", ");
+        headers = format!("Sec-WebSocket-Protocol: {header_value}\r\n");
     }
     for (name, value) in default_headers {
         headers.push_str(name);
@@ -163,4 +112,53 @@ pub(crate) fn query_negotiated_protocol(
         .next()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prepare_websocket_url() {
+        let inputs = [
+            (None, "ws://example.com/aa", "http://example.com/aa"),
+            (None, "wss://example.com/aa", "https://example.com/aa"),
+            (
+                Some("http://base.com/bb/"),
+                "ws://example.com/aa",
+                "http://example.com/aa",
+            ),
+            (
+                Some("http://base.com/bb/"),
+                "wss://example.com/aa",
+                "https://example.com/aa",
+            ),
+            (
+                Some("http://base.com/bb/"),
+                "cc/dd",
+                "http://base.com/bb/cc/dd",
+            ),
+        ];
+        for (base, uri, expected) in inputs {
+            let base_cwurl = base.map(|s| {
+                s.encode_utf16()
+                    .chain(std::iter::once(0))
+                    .collect::<Vec<u16>>()
+            });
+            let result = prepare_websocket_url(base_cwurl.as_deref(), uri).unwrap();
+            let result = String::from_utf16_lossy(&result);
+            assert_eq!(result, expected, "Failed for base: {base:?}, uri: {uri}");
+        }
+    }
+
+    #[test]
+    fn test_build_websocket_headers() {
+        let protocols = vec!["protocol1".into(), "protocol2".into()];
+        let default_headers = vec![
+            ("Header1".to_string(), "Value1".to_string()),
+            ("Header2".to_string(), "Value2".to_string()),
+        ];
+        let headers = build_websocket_headers(&protocols, &default_headers);
+        assert_eq!(headers, "Sec-WebSocket-Protocol: protocol1, protocol2\r\nHeader1: Value1\r\nHeader2: Value2\r\n");
+    }
 }

@@ -10,7 +10,10 @@ use objc2_foundation::{
 
 use crate::blocking::waker::BlockingWaker;
 use crate::datatask::GenericWaker;
-use crate::websocket::{check_message_size, create_task, decode_received, into_ws_info, Socket};
+use crate::websocket::{
+    check_message_size, create_task, decode_received, into_ws_info, ns_error_to_websocket, Socket,
+    WebSocketTaskState,
+};
 
 impl Socket {
     pub(crate) fn send_blocking(&self, data: WebSocketMessage) -> WebSocketResult<()> {
@@ -34,10 +37,10 @@ impl Socket {
         };
         let (sender, receiver) = mpsc::channel();
         let callback = RcBlock::new(move |error: *mut objc2_foundation::NSError| {
-            let result = if error.is_null() {
-                Ok(())
-            } else {
-                Err(WebSocketError::Protocol("WebSocket send failed".into()))
+            let result = unsafe {
+                error
+                    .as_ref()
+                    .map_or(Ok(()), |e| Err(ns_error_to_websocket(e)))
             };
             let _ = sender.send(result);
         });
@@ -55,6 +58,7 @@ impl Socket {
         let callback = RcBlock::new(
             move |message: *mut NSURLSessionWebSocketMessage,
                   error: *mut objc2_foundation::NSError| {
+                let error = unsafe { error.as_ref() };
                 let _ = sender.send(decode_received(&task, message, error));
             },
         );
@@ -81,14 +85,14 @@ pub(super) fn connect_blocking(
         GenericWaker::Blocking(waker.clone()),
     )?;
     let protocol = loop {
-        if let Some(res) = delegate.ivars().result.lock().unwrap().take() {
-            break res?;
-        }
         waker.register_current_thread();
-        if let Some(res) = delegate.ivars().result.lock().unwrap().take() {
-            break res?;
+        let context = delegate.ivars().context.lock().unwrap();
+        let is_connecting = matches!(context.state, WebSocketTaskState::Connecting);
+        if is_connecting {
+            std::thread::park();
+        } else {
+            break context.protocol.clone();
         }
-        std::thread::park();
     };
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(
         into_ws_info(protocol),

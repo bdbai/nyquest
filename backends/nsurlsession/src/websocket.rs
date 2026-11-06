@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 use std::borrow::Cow;
+use std::io;
 use std::sync::{Arc, Mutex};
 
 use nyquest_interface::websocket::{
@@ -12,7 +13,8 @@ use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
 use objc2_foundation::{
     NSError, NSObject, NSObjectProtocol, NSString, NSURLSession, NSURLSessionDelegate,
     NSURLSessionTask, NSURLSessionTaskDelegate, NSURLSessionWebSocketDelegate,
-    NSURLSessionWebSocketMessage, NSURLSessionWebSocketTask, NSURL,
+    NSURLSessionWebSocketMessage, NSURLSessionWebSocketMessageType, NSURLSessionWebSocketTask,
+    NSURL,
 };
 
 use crate::datatask::GenericWaker;
@@ -20,11 +22,7 @@ use crate::datatask::GenericWaker;
 pub(crate) struct Socket {
     pub(crate) task: Retained<NSURLSessionWebSocketTask>,
     pub(crate) max_message_size: usize,
-    _delegate: Retained<WebSocketTaskDelegate>,
 }
-
-unsafe impl Send for Socket {}
-unsafe impl Sync for Socket {}
 
 impl Drop for Socket {
     fn drop(&mut self) {
@@ -32,8 +30,19 @@ impl Drop for Socket {
     }
 }
 
+pub(crate) struct WebSocketTaskContext {
+    pub(crate) protocol: Option<String>,
+    pub(crate) state: WebSocketTaskState,
+}
+
+pub(crate) enum WebSocketTaskState {
+    Connecting,
+    Open,
+    Closed,
+}
+
 pub(crate) struct WebSocketTaskIvars {
-    pub(crate) result: Mutex<Option<WebSocketResult<Option<String>>>>,
+    pub(crate) context: Mutex<WebSocketTaskContext>,
     pub(crate) waker: GenericWaker,
 }
 
@@ -55,24 +64,11 @@ define_class!(
             _task: &NSURLSessionTask,
             error: Option<&NSError>,
         ) {
+            // TODO: handle this error
             let ivars = self.ivars();
-            let mut slot = ivars.result.lock().unwrap();
-            if slot.is_none() {
-                let err = if let Some(error) = error {
-                    let msg = autoreleasepool(|pool| unsafe {
-                        error.localizedDescription().to_str(pool).to_owned()
-                    });
-                    WebSocketError::Io(std::io::Error::other(format!(
-                        "NSURLSession error {}: {msg}",
-                        error.code()
-                    )))
-                } else {
-                    WebSocketError::Protocol("WebSocket closed before handshake completed".into())
-                };
-                *slot = Some(Err(err));
-                drop(slot);
-                ivars.waker.wake();
-            }
+            let mut ctx = ivars.context.lock().unwrap();
+            ctx.state = WebSocketTaskState::Closed;
+            ivars.waker.wake();
         }
     }
 
@@ -85,13 +81,10 @@ define_class!(
             protocol: Option<&NSString>,
         ) {
             let ivars = self.ivars();
-            let mut slot = ivars.result.lock().unwrap();
-            if slot.is_none() {
-                let protocol = protocol.map(|p| p.to_string()).filter(|p| !p.is_empty());
-                *slot = Some(Ok(protocol));
-                drop(slot);
-                ivars.waker.wake();
-            }
+            let mut ctx = ivars.context.lock().unwrap();
+            ctx.protocol = protocol.map(|p| p.to_string()).filter(|p| !p.is_empty());
+            ctx.state = WebSocketTaskState::Open;
+            ivars.waker.wake();
         }
     }
 );
@@ -99,7 +92,10 @@ define_class!(
 impl WebSocketTaskDelegate {
     pub(crate) fn new(waker: GenericWaker) -> Retained<Self> {
         let this = Self::alloc().set_ivars(WebSocketTaskIvars {
-            result: Mutex::new(None),
+            context: Mutex::new(WebSocketTaskContext {
+                state: WebSocketTaskState::Connecting,
+                protocol: None,
+            }),
             waker,
         });
         unsafe { msg_send![super(this), init] }
@@ -110,24 +106,9 @@ impl WebSocketTaskDelegate {
 pub(crate) fn decode_received(
     task: &NSURLSessionWebSocketTask,
     message: *mut NSURLSessionWebSocketMessage,
-    error: *mut objc2_foundation::NSError,
+    error: Option<&objc2_foundation::NSError>,
 ) -> WebSocketResult<WebSocketMessage> {
-    if !message.is_null() {
-        let message = unsafe { &*message };
-        match message.r#type() {
-            objc2_foundation::NSURLSessionWebSocketMessageType::String => message
-                .string()
-                .map(|value| WebSocketMessage::Utf8(value.to_string()))
-                .ok_or_else(|| WebSocketError::Protocol("WebSocket text message missing".into())),
-            objc2_foundation::NSURLSessionWebSocketMessageType::Data => message
-                .data()
-                .map(|value| WebSocketMessage::Bytes(value.to_vec()))
-                .ok_or_else(|| WebSocketError::Protocol("WebSocket binary message missing".into())),
-            _ => Err(WebSocketError::Protocol(
-                "Unknown WebSocket message type".into(),
-            )),
-        }
-    } else {
+    if message.is_null() {
         let code = task.closeCode().0;
         if code != 0 {
             let reason = task
@@ -138,12 +119,27 @@ pub(crate) fn decode_received(
                 code: code as u16,
                 reason,
             })
-        } else if error.is_null() {
+        } else if let Some(error) = error {
+            Err(ns_error_to_websocket(error))
+        } else {
             Err(WebSocketError::Protocol(
                 "WebSocket closed without a close frame".into(),
             ))
-        } else {
-            Err(WebSocketError::Protocol("WebSocket receive failed".into()))
+        }
+    } else {
+        let message = unsafe { &*message };
+        match message.r#type() {
+            NSURLSessionWebSocketMessageType::String => message
+                .string()
+                .map(|value| WebSocketMessage::Utf8(value.to_string()))
+                .ok_or_else(|| WebSocketError::Protocol("WebSocket text message missing".into())),
+            NSURLSessionWebSocketMessageType::Data => message
+                .data()
+                .map(|value| WebSocketMessage::Bytes(value.to_vec()))
+                .ok_or_else(|| WebSocketError::Protocol("WebSocket binary message missing".into())),
+            _ => Err(WebSocketError::Protocol(
+                "Unknown WebSocket message type".into(),
+            )),
         }
     }
 }
@@ -194,11 +190,20 @@ pub(crate) fn create_task(
     let socket = Arc::new(Socket {
         task,
         max_message_size: usize::try_from(client.max_response_buffer_size).unwrap_or(usize::MAX),
-        _delegate: delegate.clone(),
     });
     Ok((socket, delegate))
 }
 
 pub(crate) fn into_ws_info(protocol: Option<String>) -> WebSocketInfo {
     WebSocketInfo { protocol }
+}
+
+pub(crate) fn ns_error_to_websocket(error: &NSError) -> WebSocketError {
+    let msg =
+        autoreleasepool(|pool| unsafe { (error).localizedDescription().to_str(pool).to_owned() });
+    WebSocketError::Io(io::Error::other(format!(
+        "NSURLSession error {}: {}",
+        error.code(),
+        msg
+    )))
 }

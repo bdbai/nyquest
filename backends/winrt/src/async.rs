@@ -155,7 +155,7 @@ impl AsyncClient for WinrtClient {
     ) -> nyquest_interface::websocket::WebSocketResult<
         nyquest_interface::r#async::websocket::WebSocket,
     > {
-        websocket::connect_async(self.clone(), uri, protocols).await
+        websocket::connect_async(self, uri, protocols).await
     }
 }
 

@@ -12,7 +12,7 @@ use crate::session::WinHttpSession;
 use crate::url::ParsedUrl;
 use crate::websocket::{
     build_websocket_headers, from_winhttp_error, prepare_websocket_url, query_negotiated_protocol,
-    winhttp_error, WebSocketHandle,
+    winhttp_error, WebSocketHandle, WEBSOCKET_RECV_BUFFER_SIZE,
 };
 
 struct BlockingSocket {
@@ -84,16 +84,17 @@ impl BlockingSocket {
     }
 
     fn receive(&self, max_size: Option<u64>) -> WebSocketResult<WebSocketMessage> {
-        let mut message = Vec::new();
-        let mut buffer = vec![0u8; 16 * 1024];
+        let mut message = vec![];
+        let mut buffer = Vec::<u8>::with_capacity(WEBSOCKET_RECV_BUFFER_SIZE);
         loop {
             let mut read = 0;
             let mut buffer_type = 0;
+            let buffer_capacity = buffer.spare_capacity_mut();
             let result = unsafe {
                 WinHttpWebSocketReceive(
                     self.handle.as_raw(),
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len() as u32,
+                    buffer_capacity.as_mut_ptr().cast(),
+                    buffer_capacity.len() as u32,
                     &mut read,
                     &mut buffer_type,
                 )
@@ -106,7 +107,8 @@ impl BlockingSocket {
             {
                 return Err(WebSocketError::MessageTooLarge);
             }
-            message.extend_from_slice(&buffer[..read_len]);
+            let buffer_filled = unsafe { buffer_capacity[..read_len].assume_init_ref() };
+            message.extend_from_slice(buffer_filled);
             match buffer_type {
                 WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE => {
                     return String::from_utf8(message)
@@ -165,12 +167,13 @@ pub(super) fn connect_blocking(
     let raw = request
         .complete_websocket_upgrade(0)
         .map_err(from_winhttp_error)?;
+    let handle = unsafe { WebSocketHandle::from_raw(raw) };
     drop(request);
 
     let socket = Arc::new(BlockingSocket {
         _session: session.clone(),
         _connection: connection,
-        handle: WebSocketHandle::from_raw(raw),
+        handle,
     });
 
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(

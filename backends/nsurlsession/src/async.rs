@@ -120,6 +120,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         let inner_waker = coerce_waker(shared.waker_ref());
         // TODO: cancellation
         let response = poll_fn(|cx| {
+            inner_waker.register(cx);
             if let Some(response) = shared.try_take_response().into_nyquest_result().transpose() {
                 return Poll::Ready(response);
             }
@@ -132,7 +133,6 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             {
                 let _ = &mut writer;
             }
-            inner_waker.register(cx);
             Poll::Pending
         })
         .await?;

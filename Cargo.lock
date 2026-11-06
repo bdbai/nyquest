@@ -1470,6 +1470,7 @@ dependencies = [
  "arc-swap",
  "block2",
  "cfg-if",
+ "futures-channel",
  "futures-util",
  "nyquest-interface",
  "objc2",

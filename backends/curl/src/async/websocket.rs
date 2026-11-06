@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::ffi::c_int;
-use std::future::{poll_fn, Future};
+use std::future::poll_fn;
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 
@@ -330,50 +330,47 @@ struct AsyncSender {
 }
 
 impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender {
-    fn send(&mut self, data: WebSocketMessage) -> impl Future<Output = WebSocketResult<()>> + Send {
-        let ws = self.ws.clone();
-        let handle = self.handle.clone();
-        async move {
-            let (tx, rx) = oneshot::channel();
-            let (flags, encoded) = encode_message(data);
-            {
-                let mut state = ws.state.lock().unwrap();
-                if state.done {
-                    let msg = state
-                        .terminal_error
-                        .clone()
-                        .unwrap_or_else(|| "WebSocket connection closed".into());
-                    return Err(WebSocketError::Io(std::io::Error::new(
-                        std::io::ErrorKind::ConnectionAborted,
-                        msg,
-                    )));
-                }
-                state.outgoing_queue.push_back(OutgoingMessage {
-                    flags,
-                    encoded,
-                    offset: 0,
-                    frame_started: false,
-                    response: Some(tx),
-                });
+    async fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()> {
+        let (tx, rx) = oneshot::channel();
+        let (flags, encoded) = encode_message(data);
+        {
+            let mut state = self.ws.state.lock().unwrap();
+            if state.done {
+                let msg = state
+                    .terminal_error
+                    .clone()
+                    .unwrap_or_else(|| "WebSocket connection closed".into());
+                return Err(WebSocketError::Io(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted,
+                    msg,
+                )));
             }
-
-            handle
-                .manager()
-                .dispatch_task(LoopTask::UnpauseSendHandle(handle.id()))
-                .map_err(|_| {
-                    WebSocketError::Io(std::io::Error::other("Loop manager task dispatch failed"))
-                })?;
-
-            rx.await
-                .map_err(|_| WebSocketError::Io(std::io::Error::other("WebSocket send canceled")))?
+            state.outgoing_queue.push_back(OutgoingMessage {
+                flags,
+                encoded,
+                offset: 0,
+                frame_started: false,
+                response: Some(tx),
+            });
         }
+
+        self.handle
+            .manager()
+            .dispatch_task(LoopTask::UnpauseSendHandle(self.handle.id()))
+            .map_err(|_| {
+                WebSocketError::Io(std::io::Error::other("Loop manager task dispatch failed"))
+            })?;
+
+        rx.await
+            .map_err(|_| WebSocketError::Io(std::io::Error::other("WebSocket send canceled")))?
     }
 
-    fn close(&mut self) -> impl Future<Output = WebSocketResult<()>> + Send {
+    async fn close(&mut self) -> WebSocketResult<()> {
         self.send(WebSocketMessage::Close {
             code: 1000,
             reason: String::new(),
         })
+        .await
     }
 }
 
@@ -383,10 +380,9 @@ struct AsyncReceiver {
 }
 
 impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
-    fn receive(&mut self) -> impl Future<Output = WebSocketResult<WebSocketMessage>> + Send {
-        let ws = self.ws.clone();
+    async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
         poll_fn(move |cx| {
-            let mut state = ws.state.lock().unwrap();
+            let mut state = self.ws.state.lock().unwrap();
             if let Some(msg) = state.incoming_messages.pop_front() {
                 return Poll::Ready(msg);
             }
@@ -398,8 +394,9 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncRece
                     "WebSocket stream closed".into(),
                 )));
             }
-            ws.waker.register(cx.waker());
+            self.ws.waker.register(cx.waker());
             Poll::Pending
         })
+        .await
     }
 }
