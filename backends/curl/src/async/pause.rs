@@ -21,6 +21,7 @@ impl EasyPause {
             .with_easy_context("curl_easy_pause recv in callback")
     }
 
+    #[cfg(feature = "ws")]
     pub(crate) fn raw(&self) -> *mut curl_sys::CURL {
         self.0
     }

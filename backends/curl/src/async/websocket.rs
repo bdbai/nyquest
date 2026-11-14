@@ -2,21 +2,20 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::ffi::c_int;
 use std::future::poll_fn;
-use std::sync::{Arc, Mutex};
-use std::task::Poll;
+use std::ops::ControlFlow;
+use std::sync::Arc;
+use std::task::{Poll, Waker};
 
-use futures_channel::oneshot;
-use futures_util::task::AtomicWaker;
 use nyquest_interface::websocket::{
     WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
 };
 
-use super::r#loop::{LoopManager, LoopTask, RequestHandle};
+use super::r#loop::{LoopManager, RequestHandle};
 use crate::curl_ng::easy::{AsRawEasyMut, Share};
+use crate::r#async::shared::{RequestResult, SharedRequestStates};
 use crate::request::{create_easy, AsCallbackMut};
-use crate::state::RequestState;
 use crate::websocket::{
-    configure_websocket_easy, curl_error, curl_ws_meta, curl_ws_start_frame, decode_close_payload,
+    configure_websocket_easy, curl_ws_meta, curl_ws_start_frame, decode_close_payload,
     encode_message, extract_negotiated_protocol, nyquest_to_ws_error, CURLWS_BINARY, CURLWS_CLOSE,
     CURLWS_CONT, CURLWS_PING, CURLWS_PONG, CURLWS_TEXT,
 };
@@ -26,60 +25,31 @@ pub(crate) struct OutgoingMessage {
     encoded: Vec<u8>,
     offset: usize,
     frame_started: bool,
-    response: Option<oneshot::Sender<WebSocketResult<()>>>,
 }
 
-#[derive(Default)]
-struct WsState {
-    header_state: RequestState,
-    outgoing_queue: VecDeque<OutgoingMessage>,
-    current_outgoing: Option<OutgoingMessage>,
+pub(super) struct WsState {
+    max_message_size: Option<usize>,
+    outgoing_queue: Option<OutgoingMessage>,
+    outgoing_waker: Waker,
     incoming_messages: VecDeque<WebSocketResult<WebSocketMessage>>,
     current_incoming_payload: Vec<u8>,
     current_incoming_is_text: bool,
     discarding_oversized: bool,
     close_payload: Vec<u8>,
     done: bool,
-    terminal_error: Option<String>,
 }
 
-pub(crate) struct WsShared {
-    max_message_size: Option<usize>,
-    state: Mutex<WsState>,
-    waker: AtomicWaker,
-    handshake_tx: Mutex<Option<oneshot::Sender<WebSocketResult<()>>>>,
-}
-
-impl WsShared {
-    pub(crate) fn on_header(&self, data: &[u8]) -> bool {
-        let mut state = self.state.lock().unwrap();
-        if state.header_state.push_header_data(data) {
-            let status = state.header_state.temp_status_code;
-            drop(state);
-            if let Some(tx) = self.handshake_tx.lock().unwrap().take() {
-                if status == 101 {
-                    let _ = tx.send(Ok(()));
-                } else {
-                    let _ = tx.send(Err(WebSocketError::Protocol(format!(
-                        "WebSocket upgrade failed: HTTP status {status}"
-                    ))));
-                    return false;
-                }
-            }
-        }
-        true
+impl WsState {
+    pub(super) fn wake_outgoing(&self) {
+        self.outgoing_waker.wake_by_ref();
     }
 
     pub(crate) fn on_read(
-        &self,
+        &mut self,
         buf: &mut [u8],
         raw: *mut curl_sys::CURL,
     ) -> Result<usize, curl::easy::ReadError> {
-        let mut state = self.state.lock().unwrap();
-        if state.current_outgoing.is_none() {
-            state.current_outgoing = state.outgoing_queue.pop_front();
-        }
-        let Some(outgoing) = &mut state.current_outgoing else {
+        let Some(outgoing) = &mut self.outgoing_queue else {
             return Err(curl::easy::ReadError::Pause);
         };
 
@@ -95,20 +65,16 @@ impl WsShared {
                 return Ok(0);
             }
             if res != curl_sys::CURLE_OK {
-                if let Some(resp) = outgoing.response.take() {
-                    let _ = resp.send(Err(curl_error(res)));
-                }
-                state.current_outgoing = None;
+                self.outgoing_queue = None;
+                self.outgoing_waker.wake_by_ref();
                 return Err(curl::easy::ReadError::Abort);
             }
             outgoing.frame_started = true;
         }
 
         if outgoing.encoded.is_empty() {
-            if let Some(resp) = outgoing.response.take() {
-                let _ = resp.send(Ok(()));
-            }
-            state.current_outgoing = None;
+            self.outgoing_queue = None;
+            self.outgoing_waker.wake_by_ref();
             return Ok(0);
         }
 
@@ -118,17 +84,15 @@ impl WsShared {
         outgoing.offset += to_copy;
 
         if outgoing.offset == outgoing.encoded.len() {
-            if let Some(resp) = outgoing.response.take() {
-                let _ = resp.send(Ok(()));
-            }
-            state.current_outgoing = None;
+            self.outgoing_queue = None;
+            self.outgoing_waker.wake_by_ref();
         }
 
         Ok(to_copy)
     }
 
     pub(crate) fn on_write(
-        &self,
+        &mut self,
         data: &[u8],
         raw: *mut curl_sys::CURL,
     ) -> Result<usize, curl::easy::WriteError> {
@@ -142,116 +106,67 @@ impl WsShared {
             return Ok(data.len());
         }
 
-        let mut state = self.state.lock().unwrap();
-
         if flags & CURLWS_CLOSE != 0 {
-            state.close_payload.extend_from_slice(data);
+            self.close_payload.extend_from_slice(data);
             if bytesleft == 0 {
-                state.done = true;
-                let msg = decode_close_payload(&state.close_payload);
-                state.close_payload.clear();
-                state.incoming_messages.push_back(Ok(msg));
-                drop(state);
-                self.waker.wake();
+                self.done = true;
+                let msg = decode_close_payload(&self.close_payload);
+                self.close_payload.clear();
+                self.incoming_messages.push_back(Ok(msg));
             }
             return Ok(data.len());
         }
 
         let is_final_chunk = bytesleft == 0 && (flags & CURLWS_CONT == 0);
 
-        if state.discarding_oversized {
+        if self.discarding_oversized {
             if is_final_chunk {
-                state.discarding_oversized = false;
-                state.current_incoming_payload.clear();
+                self.discarding_oversized = false;
+                self.current_incoming_payload.clear();
             }
             return Ok(data.len());
         }
 
-        if state.current_incoming_payload.is_empty() {
+        if self.current_incoming_payload.is_empty() {
             if flags & CURLWS_TEXT != 0 {
-                state.current_incoming_is_text = true;
+                self.current_incoming_is_text = true;
             } else if flags & CURLWS_BINARY != 0 {
-                state.current_incoming_is_text = false;
+                self.current_incoming_is_text = false;
             }
         }
 
         if let Some(max_size) = self.max_message_size {
-            if state
+            if self
                 .current_incoming_payload
                 .len()
                 .saturating_add(data.len())
                 > max_size
             {
-                state.current_incoming_payload.clear();
+                self.current_incoming_payload.clear();
                 if !is_final_chunk {
-                    state.discarding_oversized = true;
+                    self.discarding_oversized = true;
                 }
-                state
-                    .incoming_messages
+                self.incoming_messages
                     .push_back(Err(WebSocketError::MessageTooLarge));
-                drop(state);
-                self.waker.wake();
                 return Ok(data.len());
             }
         }
 
-        state.current_incoming_payload.extend_from_slice(data);
+        self.current_incoming_payload.extend_from_slice(data);
 
         if is_final_chunk {
-            let payload = std::mem::take(&mut state.current_incoming_payload);
-            let msg = if state.current_incoming_is_text {
+            let payload = std::mem::take(&mut self.current_incoming_payload);
+            let msg = if self.current_incoming_is_text {
                 String::from_utf8(payload)
                     .map(WebSocketMessage::Utf8)
                     .map_err(|_| WebSocketError::Protocol("invalid UTF-8".into()))
             } else {
                 Ok(WebSocketMessage::Bytes(payload))
             };
-            state.incoming_messages.push_back(msg);
-            drop(state);
-            self.waker.wake();
+            self.incoming_messages.push_back(msg);
         }
 
         Ok(data.len())
-    }
-
-    pub(crate) fn on_done(&self, res: Result<(), &nyquest_interface::Error>) {
-        if let Some(tx) = self.handshake_tx.lock().unwrap().take() {
-            let err = match res {
-                Err(e) => WebSocketError::Io(std::io::Error::other(e.to_string())),
-                Ok(()) => {
-                    WebSocketError::Protocol("connection closed before handshake completed".into())
-                }
-            };
-            let _ = tx.send(Err(err));
-        }
-
-        let mut state = self.state.lock().unwrap();
-        state.done = true;
-        if let Err(e) = res {
-            state.terminal_error = Some(e.to_string());
-        }
-        let err_msg = state
-            .terminal_error
-            .clone()
-            .unwrap_or_else(|| "WebSocket connection closed".into());
-        if let Some(mut current) = state.current_outgoing.take() {
-            if let Some(resp) = current.response.take() {
-                let _ = resp.send(Err(WebSocketError::Io(std::io::Error::new(
-                    std::io::ErrorKind::ConnectionAborted,
-                    err_msg.clone(),
-                ))));
-            }
-        }
-        for mut outgoing in state.outgoing_queue.drain(..) {
-            if let Some(resp) = outgoing.response.take() {
-                let _ = resp.send(Err(WebSocketError::Io(std::io::Error::new(
-                    std::io::ErrorKind::ConnectionAborted,
-                    err_msg.clone(),
-                ))));
-            }
-        }
-        drop(state);
-        self.waker.wake();
     }
 }
 
@@ -262,23 +177,27 @@ pub(super) async fn connect_async(
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
-    let (handshake_tx, handshake_rx) = oneshot::channel();
     let max_message_size = options
         .max_response_buffer_size
         .and_then(|size| usize::try_from(size).ok());
 
-    let ws_shared = Arc::new(WsShared {
-        max_message_size,
-        state: Mutex::new(WsState {
-            current_incoming_is_text: true,
-            ..Default::default()
-        }),
-        waker: AtomicWaker::new(),
-        handshake_tx: Mutex::new(Some(handshake_tx)),
-    });
-
+    let shared = {
+        let mut shared = SharedRequestStates::default();
+        shared.state.get_mut().unwrap().ws = Some(WsState {
+            outgoing_waker: futures_util::task::noop_waker(),
+            max_message_size,
+            current_incoming_payload: Vec::new(),
+            current_incoming_is_text: false,
+            incoming_messages: VecDeque::new(),
+            discarding_oversized: false,
+            close_payload: Vec::new(),
+            done: false,
+            outgoing_queue: None,
+        });
+        Arc::new(shared)
+    };
     let handler = super::handler::AsyncHandler {
-        ws: Some(ws_shared.clone()),
+        ctx: shared.clone(),
         ..Default::default()
     };
 
@@ -296,26 +215,26 @@ pub(super) async fn connect_async(
         .await
         .map_err(nyquest_to_ws_error)?;
 
-    // Wait for the HTTP 101 WebSocket handshake to complete.
-    // Holding `req_handle` ensures the easy handle is removed if the handshake fails or is cancelled.
-    handshake_rx
+    let res = req_handle
+        .wait_for_response()
         .await
-        .map_err(|_| WebSocketError::Io(std::io::Error::other("WebSocket handshake canceled")))??;
+        .map_err(nyquest_to_ws_error)?;
 
-    let protocol = {
-        let state = ws_shared.state.lock().unwrap();
-        extract_negotiated_protocol(&state.header_state.response_headers_buffer)
-    };
+    if res.status != 101 {
+        return Err(WebSocketError::Protocol(format!(
+            "WebSocket upgrade failed: HTTP status {}",
+            res.status
+        )));
+    }
 
-    let req_handle = Arc::new(req_handle);
+    let protocol = extract_negotiated_protocol(&res.headers);
+
+    let req_handle = Arc::new(res.handle);
     let sender = AsyncSender {
-        ws: ws_shared.clone(),
+        shared,
         handle: req_handle.clone(),
     };
-    let receiver = AsyncReceiver {
-        ws: ws_shared,
-        _handle: req_handle,
-    };
+    let receiver = AsyncReceiver { handle: req_handle };
 
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
         WebSocketInfo { protocol },
@@ -325,44 +244,61 @@ pub(super) async fn connect_async(
 }
 
 struct AsyncSender {
-    ws: Arc<WsShared>,
     handle: Arc<RequestHandle>,
+    shared: Arc<SharedRequestStates>,
+}
+
+impl AsyncSender {
+    async fn wait_for_outgoing_ready(&self, cb: impl FnOnce(&mut WsState)) {
+        let mut cb = Some(cb);
+        poll_fn(|cx| {
+            let mut state = self.shared.state.lock().unwrap();
+            let RequestResult::InProgress { .. } = state.result else {
+                // Any connection error should be collected by the receiver, so we can just return here.
+                return Poll::Ready(());
+            };
+            let ws = state
+                .ws
+                .as_mut()
+                .expect("WebSocket state should be present");
+            if ws.outgoing_queue.is_some() {
+                ws.outgoing_waker.clone_from(cx.waker());
+                return Poll::Pending;
+            }
+            if let Some(cb) = cb.take() {
+                cb(ws);
+            }
+            Poll::Ready(())
+        })
+        .await
+    }
 }
 
 impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender {
     async fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()> {
-        let (tx, rx) = oneshot::channel();
         let (flags, encoded) = encode_message(data);
-        {
-            let mut state = self.ws.state.lock().unwrap();
-            if state.done {
-                let msg = state
-                    .terminal_error
-                    .clone()
-                    .unwrap_or_else(|| "WebSocket connection closed".into());
-                return Err(WebSocketError::Io(std::io::Error::new(
-                    std::io::ErrorKind::ConnectionAborted,
-                    msg,
-                )));
-            }
-            state.outgoing_queue.push_back(OutgoingMessage {
-                flags,
-                encoded,
-                offset: 0,
-                frame_started: false,
-                response: Some(tx),
-            });
-        }
+        let mut msg = Some(OutgoingMessage {
+            flags,
+            encoded,
+            offset: 0,
+            frame_started: false,
+        });
+        self.wait_for_outgoing_ready(|ws| {
+            ws.outgoing_queue = msg.take();
+        })
+        .await;
 
-        self.handle
+        let _ = self
+            .handle
             .manager()
-            .dispatch_task(LoopTask::UnpauseSendHandle(self.handle.id()))
-            .map_err(|_| {
-                WebSocketError::Io(std::io::Error::other("Loop manager task dispatch failed"))
-            })?;
+            .batch_unpause_send(&self.shared, |_cx, unpauser| {
+                unpauser.unpause_send();
+                ControlFlow::Continue::<(), _>(())
+            })
+            .await;
 
-        rx.await
-            .map_err(|_| WebSocketError::Io(std::io::Error::other("WebSocket send canceled")))?
+        self.wait_for_outgoing_ready(|_| {}).await;
+        Ok(())
     }
 
     async fn close(&mut self) -> WebSocketResult<()> {
@@ -375,28 +311,33 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender
 }
 
 struct AsyncReceiver {
-    ws: Arc<WsShared>,
-    _handle: Arc<RequestHandle>,
+    handle: Arc<RequestHandle>,
 }
 
 impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
     async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
-        poll_fn(move |cx| {
-            let mut state = self.ws.state.lock().unwrap();
-            if let Some(msg) = state.incoming_messages.pop_front() {
-                return Poll::Ready(msg);
-            }
-            if state.done {
-                if let Some(err) = state.terminal_error.take() {
-                    return Poll::Ready(Err(WebSocketError::Io(std::io::Error::other(err))));
+        let res = poll_fn(|cx| {
+            self.handle.poll_recv(cx, |state| {
+                let ws = state
+                    .ws
+                    .as_mut()
+                    .expect("WebSocket state should be present");
+                if let Some(msg) = ws.incoming_messages.pop_front() {
+                    return Some(msg);
                 }
-                return Poll::Ready(Err(WebSocketError::Protocol(
-                    "WebSocket stream closed".into(),
-                )));
-            }
-            self.ws.waker.register(cx.waker());
-            Poll::Pending
+                if ws.done {
+                    return Some(Err(WebSocketError::Protocol(
+                        "WebSocket stream closed".into(),
+                    )));
+                }
+                None
+            })
         })
         .await
+        .map_err(nyquest_to_ws_error)?;
+        match res {
+            Some(msg) => msg,
+            None => Err(WebSocketError::Protocol("WebSocket stream closed".into())),
+        }
     }
 }

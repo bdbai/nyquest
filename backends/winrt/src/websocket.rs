@@ -28,10 +28,32 @@ pub(crate) enum Received {
     Error(WebSocketError),
 }
 
+pub(crate) struct DetachableWriter(Option<DataWriter>);
+
+impl DetachableWriter {
+    pub(crate) fn detach(mut self) -> WebSocketResult<()> {
+        if let Some(writer) = self.0.take() {
+            writer
+                .DetachStream()
+                .into_nyquest_result()
+                .map_err(|error| ws_error_context("detach stream", error))?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for DetachableWriter {
+    fn drop(&mut self) {
+        if let Some(writer) = self.0.take() {
+            let _ = writer.DetachStream();
+        }
+    }
+}
+
 pub(crate) fn prepare_send_message(
     websocket: &MessageWebSocket,
     data: WebSocketMessage,
-) -> WebSocketResult<Option<(DataWriter, DataWriterStoreOperation)>> {
+) -> WebSocketResult<Option<(DetachableWriter, DataWriterStoreOperation)>> {
     let (kind, text, bytes) = match data {
         WebSocketMessage::Utf8(value) => (SocketMessageType::Utf8, Some(value), None),
         WebSocketMessage::Bytes(value) => (SocketMessageType::Binary, None, Some(value)),
@@ -58,30 +80,28 @@ pub(crate) fn prepare_send_message(
     let writer = DataWriter::CreateDataWriter(&output)
         .into_nyquest_result()
         .map_err(|error| ws_error_context("writer", error))?;
+    let detachable = DetachableWriter(Some(writer));
+    let writer_ref = detachable.0.as_ref().unwrap();
     if let Some(text) = text {
-        writer
+        writer_ref
             .WriteString(&HSTRING::from(text))
             .into_nyquest_result()
             .map_err(|error| ws_error_context("write", error))?;
     } else if let Some(bytes) = bytes {
-        writer
+        writer_ref
             .WriteBytes(&bytes)
             .into_nyquest_result()
             .map_err(|error| ws_error_context("write", error))?;
     }
-    let store_op = writer
+    let store_op = writer_ref
         .StoreAsync()
         .into_nyquest_result()
         .map_err(|error| ws_error_context("store", error))?;
-    Ok(Some((writer, store_op)))
+    Ok(Some((detachable, store_op)))
 }
 
-pub(crate) fn detach_writer(writer: DataWriter) -> WebSocketResult<()> {
-    writer
-        .DetachStream()
-        .into_nyquest_result()
-        .map_err(|error| ws_error_context("detach stream", error))?;
-    Ok(())
+pub(crate) fn detach_writer(writer: DetachableWriter) -> WebSocketResult<()> {
+    writer.detach()
 }
 
 /// Reads data from a DataReader fragment and appends to the buffer.
@@ -171,6 +191,32 @@ impl WinrtClient {
             .SetReceiveMode(MessageWebSocketReceiveMode::PartialMessage)
             .into_nyquest_result()
             .map_err(ws_error)?;
+        if self.ignore_certificate_errors {
+            let ignorables = control
+                .IgnorableServerCertificateErrors()
+                .into_nyquest_result()
+                .map_err(ws_error)?;
+            let _ = ignorables.Clear();
+            for i in 1..=13 {
+                let _ = ignorables.Append(
+                    windows::Security::Cryptography::Certificates::ChainValidationResult(i),
+                );
+            }
+        }
+        if let Ok(default_headers) = self.client.DefaultRequestHeaders() {
+            for pair in default_headers {
+                if let (Ok(key), Ok(val)) = (pair.Key(), pair.Value()) {
+                    ws.SetRequestHeader(&key, &val)
+                        .into_nyquest_result()
+                        .map_err(ws_error)?;
+                }
+            }
+        }
+        for (key, val) in &self.default_content_headers {
+            ws.SetRequestHeader(key, val)
+                .into_nyquest_result()
+                .map_err(ws_error)?;
+        }
         if !protocols.is_empty() {
             let supported = control
                 .SupportedProtocols()

@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 use std::future::{poll_fn, Future};
 use std::pin::pin;
+use std::sync::{Arc, OnceLock};
 
 use futures::{SinkExt, StreamExt};
 use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
-use tokio::runtime::Handle;
+use tokio::runtime::{Handle, Runtime};
 
 use super::execute_with_runtime_async;
 use crate::client::ReqwestClient;
@@ -15,11 +16,13 @@ use crate::websocket::{
 struct AsyncSender {
     sink: Sink,
     handle: Handle,
+    _runtime: Arc<OnceLock<Runtime>>,
 }
 
 struct AsyncReceiver {
     source: Source,
     handle: Handle,
+    _runtime: Arc<OnceLock<Runtime>>,
 }
 
 pub(super) async fn connect_async(
@@ -27,10 +30,19 @@ pub(super) async fn connect_async(
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
+    let http_client = client.client.clone();
     let base_url = client.base_url.clone();
     let max_message_size = client.max_response_buffer_size;
-    let (res, handle) = execute_with_runtime_async(&client.managed_runtime, move || async move {
-        connect_parts(base_url.as_ref(), uri, protocols, max_message_size).await
+    let runtime = client.managed_runtime.clone();
+    let (res, handle) = execute_with_runtime_async(&runtime, move || async move {
+        connect_parts(
+            http_client,
+            base_url.as_ref(),
+            uri,
+            protocols,
+            max_message_size,
+        )
+        .await
     })
     .await;
     let (info, sink, source) = res?;
@@ -39,10 +51,12 @@ pub(super) async fn connect_async(
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender {
             sink,
             handle: handle.clone(),
+            _runtime: runtime.clone(),
         }),
         nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(AsyncReceiver {
             source,
             handle,
+            _runtime: runtime,
         }),
     ))
 }

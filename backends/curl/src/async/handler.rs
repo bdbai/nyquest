@@ -11,8 +11,6 @@ pub(crate) struct AsyncHandler {
     pub(super) ctx: Arc<SharedRequestStates>,
     // To be filled after Easy2 is constructed
     pub(crate) pause: Option<EasyPause>,
-    #[cfg(feature = "ws")]
-    pub(crate) ws: Option<Arc<super::websocket::WsShared>>,
 }
 
 struct AsyncHandlerRef<'a> {
@@ -30,23 +28,17 @@ impl AsyncHandler {
 
 impl EasyCallback for AsyncHandler {
     fn write(&mut self, data: &[u8]) -> Result<usize, WriteError> {
-        #[cfg(feature = "ws")]
-        if let Some(ws) = &self.ws {
-            let raw = self
-                .pause
-                .as_ref()
-                .map(|p| p.raw())
-                .unwrap_or(std::ptr::null_mut());
-            return ws.on_write(data, raw);
-        }
-
         let Some(inner) = self.get_ref() else {
             // ... signals an error condition to the library and returns CURLE_WRITE_ERROR.
             return Ok(0);
         };
         let mut state = inner.ctx.state.lock().unwrap();
-        let state = &mut state.state;
         inner.ctx.waker.wake();
+        #[cfg(feature = "ws")]
+        if let Some(ws) = &mut state.ws {
+            return ws.on_write(data, inner.pause.raw());
+        }
+        let state = &mut state.state;
         if state.data_available() {
             Err(WriteError::Pause)
         } else {
@@ -56,11 +48,6 @@ impl EasyCallback for AsyncHandler {
     }
 
     fn header(&mut self, data: &[u8]) -> bool {
-        #[cfg(feature = "ws")]
-        if let Some(ws) = &self.ws {
-            return ws.on_header(data);
-        }
-
         let Some(inner) = self.get_ref() else {
             // ... signals an error condition to the library and returns CURLE_WRITE_ERROR.
             return false;
@@ -80,38 +67,30 @@ impl EasyCallback for AsyncHandler {
         true
     }
 
-    #[cfg(feature = "async-stream")]
+    #[cfg(any(feature = "async-stream", feature = "ws"))]
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
+        let Some(inner) = self.get_ref() else {
+            return Err(curl::easy::ReadError::Abort);
+        };
+        let mut state = inner.ctx.state.lock().unwrap();
         #[cfg(feature = "ws")]
-        if let Some(ws) = &self.ws {
-            let raw = self
-                .pause
-                .as_ref()
-                .map(|p| p.raw())
-                .unwrap_or(std::ptr::null_mut());
-            return ws.on_read(buf, raw);
+        if let Some(ws) = &mut state.ws {
+            return ws.on_read(buf, inner.pause.raw());
         }
-
-        let mut state = self.ctx.state.lock().unwrap();
-        let stream = state
-            .req_streams
-            .get_mut(0)
-            .ok_or(curl::easy::ReadError::Abort)?;
-        stream.read(buf, &self.ctx)
+        #[cfg(feature = "async-stream")]
+        {
+            let stream = state
+                .req_streams
+                .get_mut(0)
+                .ok_or(curl::easy::ReadError::Abort)?;
+            return stream.read(buf, inner.ctx);
+        }
+        #[cfg(not(feature = "async-stream"))]
+        Err(curl::easy::ReadError::Abort)
     }
 
-    #[cfg(not(feature = "async-stream"))]
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
-        #[cfg(feature = "ws")]
-        if let Some(ws) = &self.ws {
-            let raw = self
-                .pause
-                .as_ref()
-                .map(|p| p.raw())
-                .unwrap_or(std::ptr::null_mut());
-            return ws.on_read(buf, raw);
-        }
-
+    #[cfg(not(any(feature = "async-stream", feature = "ws")))]
+    fn read(&mut self, _buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
         Err(curl::easy::ReadError::Abort)
     }
 

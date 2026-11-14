@@ -5,12 +5,12 @@ use std::time::Instant;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use windows::System::Threading::{ThreadPoolTimer, TimerElapsedHandler};
 use windows_core::RuntimeType;
-use windows_future::IAsyncOperationWithProgress;
+use windows_future::{IAsyncAction, IAsyncOperationWithProgress};
 
 use crate::timer::{Cancel, Timer};
 
 use crate::error::IntoNyquestResult;
-trait BlockingGet {
+pub(crate) trait BlockingGet {
     type Output;
     fn get(self) -> Self::Output;
 }
@@ -23,6 +23,13 @@ impl<T: RuntimeType, P: RuntimeType> BlockingGet for IAsyncOperationWithProgress
     type Output = windows_core::Result<T>;
     fn get(self) -> Self::Output {
         IAsyncOperationWithProgress::join(&self)
+    }
+}
+
+impl BlockingGet for IAsyncAction {
+    type Output = windows_core::Result<()>;
+    fn get(self) -> Self::Output {
+        IAsyncAction::join(&self)
     }
 }
 

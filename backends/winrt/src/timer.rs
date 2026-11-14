@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use windows_core::RuntimeType;
-use windows_future::IAsyncOperationWithProgress;
+use windows_future::{IAsyncAction, IAsyncOperationWithProgress};
 
 pub(crate) struct Timer {
     pub(crate) remaining: Option<Duration>,
@@ -18,6 +18,12 @@ pub(crate) trait Cancel {
 }
 
 impl<T: RuntimeType, P: RuntimeType> Cancel for IAsyncOperationWithProgress<T, P> {
+    fn cancel(&self) -> windows_core::Result<()> {
+        self.Cancel()
+    }
+}
+
+impl Cancel for IAsyncAction {
     fn cancel(&self) -> windows_core::Result<()> {
         self.Cancel()
     }

@@ -38,9 +38,8 @@ impl BlockingClient for ReqwestBlockingClient {
     }
 
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
-        execute_with_runtime(&self.inner.managed_runtime, || async {
-            execute_request(self, req).await
-        })
+        let handle = select_runtime_handle(&self.inner.managed_runtime);
+        block_on_with_handle(&handle, || execute_request(self, req, handle.clone()))
     }
 
     #[cfg(feature = "ws")]
@@ -58,6 +57,7 @@ impl BlockingClient for ReqwestBlockingClient {
 async fn execute_request(
     this: &ReqwestBlockingClient,
     req: Request,
+    handle: Handle,
 ) -> NyquestResult<ReqwestBlockingResponse> {
     let request_builder = this.inner.request(req, |stream| {
         #[cfg(feature = "blocking-stream")]
@@ -87,51 +87,75 @@ async fn execute_request(
     Ok(ReqwestBlockingResponse::new(
         response,
         this.inner.max_response_buffer_size,
+        handle,
         this.inner.managed_runtime.clone(),
     )?)
 }
 
 pub struct ReqwestBlockingResponse {
     response: ReqwestResponse,
-    managed_runtime: Arc<OnceLock<Runtime>>,
+    handle: Handle,
+    _managed_runtime: Arc<OnceLock<Runtime>>,
 }
 
 impl ReqwestBlockingResponse {
     fn new(
         response: reqwest::Response,
         max_response_buffer_size: Option<u64>,
+        handle: Handle,
         managed_runtime: Arc<OnceLock<Runtime>>,
     ) -> crate::error::Result<Self> {
         let response = ReqwestResponse::new(response, max_response_buffer_size);
 
         Ok(Self {
             response,
-            managed_runtime,
+            handle,
+            _managed_runtime: managed_runtime,
         })
     }
 }
 
 /// Create a new tokio runtime for blocking operations
 fn create_managed_runtime() -> Runtime {
-    tokio::runtime::Builder::new_current_thread()
+    tokio::runtime::Builder::new_multi_thread()
+        .thread_name("nyquest-reqwest-blocking")
+        .worker_threads(1)
         .enable_all()
         .build()
         .expect("Failed to create managed tokio runtime")
 }
 
-/// Execute an async task with proper runtime handling
-pub(crate) fn execute_with_runtime<F, Fut, T>(managed_runtime: &OnceLock<Runtime>, task: F) -> T
+pub(crate) fn select_runtime_handle(managed_runtime: &OnceLock<Runtime>) -> Handle {
+    if let Ok(handle) = Handle::try_current() {
+        if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
+            return handle;
+        }
+    }
+    managed_runtime
+        .get_or_init(create_managed_runtime)
+        .handle()
+        .clone()
+}
+
+pub(crate) fn block_on_with_handle<F, Fut, T>(handle: &Handle, task: F) -> T
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = T>,
 {
-    if Handle::try_current().is_ok() {
-        // Inside tokio runtime - use block_in_place + Handle::block_on
-        tokio::task::block_in_place(|| Handle::current().block_on(task()))
+    let run = || {
+        let _enter = handle.enter();
+        let mut fut = std::pin::pin!(task());
+        futures::executor::block_on(std::future::poll_fn(|cx| {
+            let _enter = handle.enter();
+            fut.as_mut().poll(cx)
+        }))
+    };
+    if Handle::try_current()
+        .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread)
+    {
+        tokio::task::block_in_place(run)
     } else {
-        // Outside tokio runtime - use managed runtime
-        let runtime = managed_runtime.get_or_init(create_managed_runtime);
-        runtime.block_on(task())
+        run()
     }
 }
 
@@ -171,7 +195,7 @@ impl BlockingResponse for ReqwestBlockingResponse {
     }
 
     fn bytes(&mut self) -> NyquestResult<Vec<u8>> {
-        execute_with_runtime(&self.managed_runtime, || self.response.collect_all_bytes())
+        block_on_with_handle(&self.handle, || self.response.collect_all_bytes())
     }
 }
 
@@ -183,9 +207,8 @@ impl Read for ReqwestBlockingResponse {
             if written > 0 {
                 break Ok(written);
             }
-            let received = execute_with_runtime(&self.managed_runtime, || {
-                self.response.receive_data_frame_buffered()
-            })?;
+            let received =
+                block_on_with_handle(&self.handle, || self.response.receive_data_frame_buffered())?;
             if received == 0 {
                 break Ok(0);
             }

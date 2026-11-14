@@ -12,6 +12,8 @@ use windows::Networking::Sockets::MessageWebSocket;
 
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
+use crate::r#async::timer_ext::AsyncTimeoutExt;
+use crate::timer::Timer;
 use crate::websocket::{
     detach_writer, extract_negotiated_protocol, finalize_message, prepare_send_message,
     read_fragment, ws_error, ws_error_context, Received,
@@ -60,12 +62,13 @@ pub(super) async fn connect_async(
 
     client.prepare_ws(&ws.websocket, protocols, on_event.clone(), on_event)?;
 
+    let mut timer = Timer::new(client.request_timeout);
     ws.websocket
         .ConnectAsync(&uri)
         .into_nyquest_result()
         .map_err(ws_error)?
+        .timeout_by(&mut timer)
         .await
-        .into_nyquest_result()
         .map_err(ws_error)?;
 
     let protocol = extract_negotiated_protocol(&ws.websocket)?;
@@ -77,6 +80,7 @@ pub(super) async fn connect_async(
             ws,
             rx,
             max_size,
+            bytes: Vec::new(),
         }),
     ))
 }
@@ -108,6 +112,7 @@ struct AsyncReceiver {
     ws: Arc<AsyncSocket>,
     rx: Receiver<Received>,
     max_size: Option<usize>,
+    bytes: Vec<u8>,
 }
 
 impl AsyncReceiver {
@@ -138,13 +143,14 @@ impl AsyncReceiver {
 impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
     async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
         let max_size = self.max_size;
-        let mut bytes = Vec::new();
         loop {
             match self.next_received().await? {
                 Received::Closed { code, reason } => {
+                    self.bytes.clear();
                     return Ok(WebSocketMessage::Close { code, reason });
                 }
                 Received::Error(err) => {
+                    self.bytes.clear();
                     return Err(err);
                 }
                 Received::Message {
@@ -152,8 +158,12 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncRece
                     reader,
                     complete,
                 } => {
-                    read_fragment(&reader, &mut bytes, max_size)?;
+                    if let Err(err) = read_fragment(&reader, &mut self.bytes, max_size) {
+                        self.bytes.clear();
+                        return Err(err);
+                    }
                     if complete {
+                        let bytes = std::mem::take(&mut self.bytes);
                         return finalize_message(message_type, bytes);
                     }
                 }

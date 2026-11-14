@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::future::{poll_fn, Future};
 use std::pin::{pin, Pin};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use futures::future::{select, Either};
 use nyquest_interface::client::ClientOptions;
@@ -79,9 +79,14 @@ impl AsyncClient for ReqwestAsyncClient {
         } else {
             unreachable!()
         };
-        ReqwestAsyncResponse::new(response?, self.inner.max_response_buffer_size, handle)
-            .await
-            .map_err(Into::into)
+        ReqwestAsyncResponse::new(
+            response?,
+            self.inner.max_response_buffer_size,
+            handle,
+            self.inner.managed_runtime.clone(),
+        )
+        .await
+        .map_err(Into::into)
     }
 
     #[cfg(feature = "ws")]
@@ -135,6 +140,7 @@ where
 pub struct ReqwestAsyncResponse {
     response: ReqwestResponse,
     current_handle: Handle,
+    _runtime: Arc<OnceLock<Runtime>>,
 }
 
 impl ReqwestAsyncResponse {
@@ -142,10 +148,12 @@ impl ReqwestAsyncResponse {
         response: reqwest::Response,
         max_response_buffer_size: Option<u64>,
         current_handle: Handle,
+        runtime: Arc<OnceLock<Runtime>>,
     ) -> Result<Self> {
         Ok(Self {
             response: ReqwestResponse::new(response, max_response_buffer_size),
             current_handle,
+            _runtime: runtime,
         })
     }
 }
@@ -187,6 +195,7 @@ impl AsyncResponse for ReqwestAsyncResponse {
         let Self {
             current_handle,
             response,
+            ..
         } = &mut *self;
         let mut task = pin!(response.collect_all_bytes());
         poll_fn(|cx| {

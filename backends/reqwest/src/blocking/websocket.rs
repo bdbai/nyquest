@@ -3,9 +3,9 @@ use std::sync::{Arc, OnceLock};
 
 use futures::{SinkExt, StreamExt};
 use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 
-use super::execute_with_runtime;
+use super::{block_on_with_handle, select_runtime_handle};
 use crate::client::ReqwestClient;
 use crate::websocket::{
     connect_parts, from_tungstenite_message, into_tungstenite_message, map_error, Sink, Source,
@@ -13,12 +13,14 @@ use crate::websocket::{
 
 struct BlockingSender {
     sink: Sink,
-    runtime: Arc<OnceLock<Runtime>>,
+    handle: Handle,
+    _runtime: Arc<OnceLock<Runtime>>,
 }
 
 struct BlockingReceiver {
     source: Source,
-    runtime: Arc<OnceLock<Runtime>>,
+    handle: Handle,
+    _runtime: Arc<OnceLock<Runtime>>,
 }
 
 pub(super) fn connect_blocking(
@@ -26,21 +28,32 @@ pub(super) fn connect_blocking(
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
+    let http_client = client.client.clone();
     let base_url = client.base_url.clone();
     let max_message_size = client.max_response_buffer_size;
     let runtime = client.managed_runtime.clone();
-    let (info, sink, source) = execute_with_runtime(&runtime, || async move {
-        connect_parts(base_url.as_ref(), uri, protocols, max_message_size).await
+    let handle = select_runtime_handle(&runtime);
+    let (info, sink, source) = block_on_with_handle(&handle, || async move {
+        connect_parts(
+            http_client,
+            base_url.as_ref(),
+            uri,
+            protocols,
+            max_message_size,
+        )
+        .await
     })?;
     let sender =
         nyquest_interface::blocking::websocket::WebSocketSender::from_impl(BlockingSender {
             sink,
-            runtime: runtime.clone(),
+            handle: handle.clone(),
+            _runtime: runtime.clone(),
         });
     let receiver =
         nyquest_interface::blocking::websocket::WebSocketReceiver::from_impl(BlockingReceiver {
             source,
-            runtime,
+            handle,
+            _runtime: runtime,
         });
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(
         info, sender, receiver,
@@ -51,14 +64,14 @@ impl nyquest_interface::blocking::websocket::BlockingWebSocketSender for Blockin
     fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()> {
         let sink = &mut self.sink;
         let message = into_tungstenite_message(data);
-        execute_with_runtime(&self.runtime, || async move {
+        block_on_with_handle(&self.handle, || async move {
             sink.send(message).await.map_err(map_error)
         })
     }
 
     fn close(&mut self) -> WebSocketResult<()> {
         let sink = &mut self.sink;
-        execute_with_runtime(&self.runtime, || async move {
+        block_on_with_handle(&self.handle, || async move {
             sink.close().await.map_err(map_error)
         })
     }
@@ -67,7 +80,7 @@ impl nyquest_interface::blocking::websocket::BlockingWebSocketSender for Blockin
 impl nyquest_interface::blocking::websocket::BlockingWebSocketReceiver for BlockingReceiver {
     fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
         let source = &mut self.source;
-        execute_with_runtime(&self.runtime, || async move {
+        block_on_with_handle(&self.handle, || async move {
             loop {
                 let message = source
                     .next()

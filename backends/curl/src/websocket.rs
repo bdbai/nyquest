@@ -1,5 +1,7 @@
 use std::borrow::Cow;
-use std::ffi::{c_int, c_void};
+use std::ffi::c_int;
+#[cfg(feature = "blocking")]
+use std::ffi::c_void;
 use std::pin::Pin;
 
 use nyquest_interface::client::ClientOptions;
@@ -18,6 +20,7 @@ pub(crate) const CURLWS_PING: c_int = 1 << 4;
 pub(crate) const CURLWS_PONG: c_int = 1 << 6;
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub(crate) struct CurlWsFrame {
     pub age: c_int,
     pub flags: c_int,
@@ -54,6 +57,7 @@ unsafe extern "C" {
     ) -> curl_sys::CURLcode;
 }
 
+#[cfg(feature = "blocking")]
 pub(crate) fn curl_error(code: curl_sys::CURLcode) -> WebSocketError {
     WebSocketError::Io(std::io::Error::other(format!(
         "libcurl error {code}: {}",
@@ -97,11 +101,9 @@ pub(crate) fn decode_close_payload(payload: &[u8]) -> WebSocketMessage {
     WebSocketMessage::Close { code, reason }
 }
 
-pub(crate) fn extract_negotiated_protocol(headers: &[Vec<u8>]) -> Option<String> {
+pub(crate) fn extract_negotiated_protocol(headers: &[(String, String)]) -> Option<String> {
     headers
         .iter()
-        .filter_map(|line| std::str::from_utf8(line).ok())
-        .filter_map(|line| line.split_once(':'))
         .find(|(k, _)| k.trim().eq_ignore_ascii_case("Sec-WebSocket-Protocol"))
         .map(|(_, v)| v.trim())
         .filter(|v| !v.is_empty())

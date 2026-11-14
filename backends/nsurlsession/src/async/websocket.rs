@@ -105,7 +105,10 @@ pub(super) async fn connect_async(
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender(
             socket.clone(),
         )),
-        nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(AsyncReceiver(socket)),
+        nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(AsyncReceiver {
+            socket,
+            pending_recv: None,
+        }),
     ))
 }
 
@@ -128,13 +131,18 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender
     }
 }
 
-struct AsyncReceiver(Arc<Socket>);
+struct AsyncReceiver {
+    socket: Arc<Socket>,
+    pending_recv: Option<oneshot::Receiver<WebSocketResult<WebSocketMessage>>>,
+}
 
 impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
     async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
-        self.0
-            .receive_async()
-            .await
-            .map_err(|_| WebSocketError::Protocol("WebSocket receive callback stopped".into()))?
+        let rx = self
+            .pending_recv
+            .get_or_insert_with(|| self.socket.receive_async());
+        let res = rx.await;
+        self.pending_recv = None;
+        res.map_err(|_| WebSocketError::Protocol("WebSocket receive callback stopped".into()))?
     }
 }

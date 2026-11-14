@@ -7,8 +7,10 @@ use nyquest_interface::websocket::{
 };
 use windows::Networking::Sockets::MessageWebSocket;
 
+use crate::blocking::timer_ext::BlockingTimeoutExt;
 use crate::client::WinrtClient;
 use crate::error::IntoNyquestResult;
+use crate::timer::Timer;
 use crate::websocket::{
     detach_writer, extract_negotiated_protocol, finalize_message, prepare_send_message,
     read_fragment, ws_error, ws_error_context, Received,
@@ -40,12 +42,12 @@ pub(super) fn connect_blocking(
     };
     client.prepare_ws(&websocket, protocols, on_event.clone(), on_event)?;
 
+    let mut timer = Timer::new(client.request_timeout);
     websocket
         .ConnectAsync(&uri)
         .into_nyquest_result()
         .map_err(ws_error)?
-        .join()
-        .into_nyquest_result()
+        .timeout_by(&mut timer)
         .map_err(ws_error)?;
 
     let protocol = extract_negotiated_protocol(&websocket)?;

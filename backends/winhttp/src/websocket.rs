@@ -80,7 +80,31 @@ pub(crate) fn prepare_websocket_url(
         let url = format!("https://{wss_url}");
         Ok(url.encode_utf16().collect())
     } else {
-        concat_url(base_cwurl, uri).map_err(|_| WebSocketError::InvalidUrl)
+        let combined = concat_url(base_cwurl, uri).map_err(|_| WebSocketError::InvalidUrl)?;
+        let prefix: String = combined
+            .iter()
+            .take(6)
+            .map(|&c| char::from_u32(c as u32).unwrap_or('\0'))
+            .collect();
+        if prefix
+            .get(..5)
+            .is_some_and(|p| p.eq_ignore_ascii_case("ws://"))
+        {
+            Ok("http://"
+                .encode_utf16()
+                .chain(combined.into_iter().skip(5))
+                .collect())
+        } else if prefix
+            .get(..6)
+            .is_some_and(|p| p.eq_ignore_ascii_case("wss://"))
+        {
+            Ok("https://"
+                .encode_utf16()
+                .chain(combined.into_iter().skip(6))
+                .collect())
+        } else {
+            Ok(combined)
+        }
     }
 }
 

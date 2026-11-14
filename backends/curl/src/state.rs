@@ -43,6 +43,15 @@ impl RequestState {
         self.response_buffer.extend_from_slice(data);
     }
 
+    pub(crate) fn get_headers(&self) -> Vec<(String, String)> {
+        self.response_headers_buffer
+            .iter()
+            .filter_map(|line| std::str::from_utf8(line).ok())
+            .filter_map(|line| line.split_once(':'))
+            .map(|(k, v)| (k.into(), v.trim_start().into()))
+            .collect()
+    }
+
     #[cfg(feature = "async")]
     pub(crate) fn data_available(&self) -> bool {
         !self.response_buffer.is_empty()

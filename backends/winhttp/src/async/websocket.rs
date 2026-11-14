@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::ffi::c_void;
 use std::future::poll_fn;
+use std::mem::MaybeUninit;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Poll, Waker};
 
@@ -19,7 +20,7 @@ use crate::session::WinHttpSession;
 use crate::url::ParsedUrl;
 use crate::websocket::{
     build_websocket_headers, from_winhttp_error, prepare_websocket_url, query_negotiated_protocol,
-    winhttp_error, WebSocketHandle,
+    winhttp_error, WebSocketHandle, WEBSOCKET_RECV_BUFFER_SIZE,
 };
 
 enum SendState {
@@ -43,7 +44,19 @@ enum RecvState {
 struct RecvInner {
     state: RecvState,
     waker: Waker,
-    buffer: Vec<u8>,
+    buffer: *mut MaybeUninit<[u8; WEBSOCKET_RECV_BUFFER_SIZE]>,
+}
+
+unsafe impl Send for RecvInner {}
+
+impl Drop for RecvInner {
+    fn drop(&mut self) {
+        if !self.buffer.is_null() {
+            unsafe {
+                drop(Box::from_raw(self.buffer));
+            }
+        }
+    }
 }
 
 struct WsContext {
@@ -62,14 +75,13 @@ impl WsContext {
             recv: Mutex::new(RecvInner {
                 state: RecvState::Idle,
                 waker: futures_task::noop_waker(),
-                buffer: vec![0u8; 16 * 1024],
+                buffer: std::ptr::null_mut(),
             }),
         })
     }
 
     fn complete_send(&self, res: Result<(), WinHttpError>) {
         let mut send = self.send.lock().unwrap();
-        send.buffer.clear();
         send.state = SendState::Done(res);
         send.waker.wake_by_ref();
     }
@@ -86,6 +98,7 @@ impl WsContext {
             match std::mem::replace(&mut send.state, SendState::Idle) {
                 SendState::Idle => Poll::Ready(Ok(send)),
                 SendState::InFlight => {
+                    send.state = SendState::InFlight;
                     send.waker.clone_from(cx.waker());
                     Poll::Pending
                 }
@@ -121,6 +134,7 @@ impl AsyncSender {
                     )
                 };
                 if res != 0 {
+                    self.socket.ctx.send.lock().unwrap().state = SendState::Idle;
                     return Err(winhttp_error(res, "WinHttpWebSocketSend"));
                 }
             }
@@ -142,6 +156,7 @@ impl AsyncSender {
                     )
                 };
                 if res != 0 {
+                    self.socket.ctx.send.lock().unwrap().state = SendState::Idle;
                     return Err(winhttp_error(res, "WinHttpWebSocketSend"));
                 }
             }
@@ -157,6 +172,7 @@ impl AsyncSender {
                     WinHttpWebSocketShutdown(self.socket.handle.as_raw(), code, ptr, len)
                 };
                 if res != 0 {
+                    self.socket.ctx.send.lock().unwrap().state = SendState::Idle;
                     return Err(winhttp_error(res, "WinHttpWebSocketShutdown"));
                 }
             }
@@ -184,9 +200,7 @@ unsafe extern "system" fn ws_callback(
 
     let ctx = unsafe { &*(dw_context as *const WsContext) };
     match dw_internet_status {
-        WINHTTP_CALLBACK_STATUS_WRITE_COMPLETE
-        | WINHTTP_CALLBACK_STATUS_SHUTDOWN_COMPLETE
-        | WINHTTP_CALLBACK_STATUS_CLOSE_COMPLETE => {
+        WINHTTP_CALLBACK_STATUS_WRITE_COMPLETE | WINHTTP_CALLBACK_STATUS_SHUTDOWN_COMPLETE => {
             ctx.complete_send(Ok(()));
         }
         WINHTTP_CALLBACK_STATUS_READ_COMPLETE => {
@@ -221,9 +235,9 @@ unsafe extern "system" fn ws_callback(
 }
 
 struct AsyncSocket {
-    _session: Arc<WinHttpSession>,
-    _connection: ConnectionHandle,
     handle: WebSocketHandle,
+    _connection: ConnectionHandle,
+    _session: Arc<WinHttpSession>,
     ctx: Arc<WsContext>,
 }
 
@@ -300,16 +314,9 @@ pub(super) async fn connect_async(
     let protocol = query_negotiated_protocol(&request)?;
 
     let ws_ctx = WsContext::new();
-    let ws_ctx_raw = Arc::into_raw(ws_ctx.clone());
-    let raw = match request.complete_websocket_upgrade(ws_ctx_raw as usize) {
-        Ok(raw) => raw,
-        Err(e) => {
-            unsafe {
-                drop(Arc::from_raw(ws_ctx_raw));
-            }
-            return Err(from_winhttp_error(e));
-        }
-    };
+    let raw = request
+        .complete_websocket_upgrade(0)
+        .map_err(from_winhttp_error)?;
     let handle = unsafe { WebSocketHandle::from_raw(raw) };
     unsafe {
         let prev = WinHttpSetStatusCallback(
@@ -323,14 +330,27 @@ pub(super) async fn connect_async(
                 "WinHttpSetStatusCallback (websocket)",
             )));
         }
+        let ws_ctx_raw = Arc::into_raw(ws_ctx.clone()) as usize;
+        let opt_res = WinHttpSetOption(
+            handle.as_raw(),
+            WINHTTP_OPTION_CONTEXT_VALUE,
+            &ws_ctx_raw as *const usize as *const c_void,
+            std::mem::size_of::<usize>() as u32,
+        );
+        if opt_res == 0 {
+            drop(Arc::from_raw(ws_ctx_raw as *const WsContext));
+            return Err(from_winhttp_error(WinHttpError::from_last_error(
+                "WinHttpSetOption (websocket context)",
+            )));
+        }
     }
     drop(request);
 
     let max_size = session.options.max_response_buffer_size;
     let socket = Arc::new(AsyncSocket {
-        _session: session,
-        _connection: connection,
         handle,
+        _connection: connection,
+        _session: session,
         ctx: ws_ctx,
     });
 
@@ -342,6 +362,7 @@ pub(super) async fn connect_async(
         nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(AsyncReceiver {
             socket,
             max_size,
+            message: Vec::new(),
         }),
     ))
 }
@@ -380,40 +401,59 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender
 struct AsyncReceiver {
     socket: Arc<AsyncSocket>,
     max_size: Option<u64>,
+    message: Vec<u8>,
 }
 
 impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
     async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
-        let mut message = Vec::new();
         loop {
-            {
+            let start_new_read = {
                 let mut recv = self.socket.ctx.recv.lock().unwrap();
-                if recv.buffer.len() < 16 * 1024 {
-                    recv.buffer.resize(16 * 1024, 0);
+                if matches!(recv.state, RecvState::Idle) {
+                    recv.state = RecvState::InFlight;
+                    if recv.buffer.is_null() {
+                        recv.buffer = Box::into_raw(Box::new_uninit());
+                    }
+                    Some(recv.buffer.cast::<c_void>())
+                } else {
+                    None
                 }
-                recv.state = RecvState::InFlight;
-                let ptr = recv.buffer.as_mut_ptr();
-                let len = recv.buffer.len() as u32;
-                drop(recv);
+            };
 
+            if let Some(ptr) = start_new_read {
                 let res = unsafe {
                     WinHttpWebSocketReceive(
                         self.socket.handle.as_raw(),
-                        ptr.cast(),
-                        len,
+                        ptr,
+                        WEBSOCKET_RECV_BUFFER_SIZE as u32,
                         std::ptr::null_mut(),
                         std::ptr::null_mut(),
                     )
                 };
                 if res != 0 {
+                    self.socket.ctx.recv.lock().unwrap().state = RecvState::Idle;
                     return Err(winhttp_error(res, "WinHttpWebSocketReceive"));
                 }
             }
 
-            let (read_len, buffer_type) = poll_fn(|cx| {
+            let buffer_type = poll_fn(|cx| {
                 let mut recv = self.socket.ctx.recv.lock().unwrap();
                 match std::mem::replace(&mut recv.state, RecvState::Idle) {
-                    RecvState::Done(res) => Poll::Ready(res.map_err(from_winhttp_error)),
+                    RecvState::Done(res) => Poll::Ready(res.map_err(from_winhttp_error).and_then(
+                        |(read_len, buffer_type)| {
+                            if self.max_size.is_some_and(|limit| {
+                                self.message.len().saturating_add(read_len) > limit as usize
+                            }) {
+                                self.message.clear();
+                                return Err(WebSocketError::MessageTooLarge);
+                            }
+                            let read_buf = unsafe {
+                                std::slice::from_raw_parts(recv.buffer.cast::<u8>(), read_len)
+                            };
+                            self.message.extend_from_slice(read_buf);
+                            Ok(buffer_type)
+                        },
+                    )),
                     state => {
                         recv.state = state;
                         recv.waker.clone_from(cx.waker());
@@ -423,36 +463,27 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncRece
             })
             .await?;
 
-            if self
-                .max_size
-                .is_some_and(|limit| message.len().saturating_add(read_len) > limit as usize)
-            {
-                return Err(WebSocketError::MessageTooLarge);
-            }
-
-            {
-                let recv = self.socket.ctx.recv.lock().unwrap();
-                message.extend_from_slice(&recv.buffer[..read_len]);
-            }
-
             match buffer_type {
                 WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE => {
+                    let message = std::mem::take(&mut self.message);
                     return String::from_utf8(message)
                         .map(WebSocketMessage::Utf8)
                         .map_err(|_| WebSocketError::Protocol("invalid UTF-8 message".into()));
                 }
                 WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE => {
-                    return Ok(WebSocketMessage::Bytes(message));
+                    return Ok(WebSocketMessage::Bytes(std::mem::take(&mut self.message)));
                 }
                 WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE => {
+                    self.message.clear();
                     return self.socket.handle.query_close_status();
                 }
                 WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE
                 | WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE => {}
                 _ => {
+                    self.message.clear();
                     return Err(WebSocketError::Protocol(
                         "unknown WebSocket buffer type".into(),
-                    ))
+                    ));
                 }
             }
         }

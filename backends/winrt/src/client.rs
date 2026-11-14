@@ -16,6 +16,7 @@ pub struct WinrtClient {
     pub(crate) base_url: Option<HSTRING>,
     pub(crate) max_response_buffer_size: Option<u64>,
     pub(crate) request_timeout: Option<Duration>,
+    pub(crate) ignore_certificate_errors: bool,
     pub(crate) client: HttpClient,
     pub(crate) default_content_headers: Vec<(HSTRING, HSTRING)>,
 }
@@ -72,6 +73,7 @@ impl WinrtClient {
             base_url,
             max_response_buffer_size: options.max_response_buffer_size,
             request_timeout: options.request_timeout,
+            ignore_certificate_errors: options.ignore_certificate_errors,
             client,
             default_content_headers,
         })

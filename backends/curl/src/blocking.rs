@@ -191,13 +191,7 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
         let handle: &mut MultiEasy = handle_guard.handle_mut();
         handle.populate_request(&url, req, &self.options, &*self.customizer)?;
         handle.poll_until_response_headers()?;
-        let mut headers_buf = handle.take_response_headers_buffer();
-        let headers = headers_buf
-            .iter_mut()
-            .filter_map(|line| std::str::from_utf8_mut(&mut *line).ok())
-            .filter_map(|line| line.split_once(':'))
-            .map(|(k, v)| (k.into(), v.trim_start().into()))
-            .collect();
+        let headers = handle.get_response_headers_buffer();
         Ok(CurlBlockingResponse {
             status: handle.status()?,
             content_length: handle.content_length()?,

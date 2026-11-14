@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 use nyquest_interface::websocket::{
@@ -16,9 +17,9 @@ use crate::websocket::{
 };
 
 struct BlockingSocket {
-    _session: Arc<WinHttpSession>,
-    _connection: ConnectionHandle,
     handle: WebSocketHandle,
+    _connection: ConnectionHandle,
+    _session: Arc<WinHttpSession>,
 }
 
 impl BlockingSocket {
@@ -85,16 +86,16 @@ impl BlockingSocket {
 
     fn receive(&self, max_size: Option<u64>) -> WebSocketResult<WebSocketMessage> {
         let mut message = vec![];
-        let mut buffer = Vec::<u8>::with_capacity(WEBSOCKET_RECV_BUFFER_SIZE);
+        let mut buffer = Box::<[u8; WEBSOCKET_RECV_BUFFER_SIZE]>::new_uninit();
+        let buffer: &mut [MaybeUninit<u8>; _] = (*buffer).as_mut();
         loop {
             let mut read = 0;
             let mut buffer_type = 0;
-            let buffer_capacity = buffer.spare_capacity_mut();
             let result = unsafe {
                 WinHttpWebSocketReceive(
                     self.handle.as_raw(),
-                    buffer_capacity.as_mut_ptr().cast(),
-                    buffer_capacity.len() as u32,
+                    buffer.as_mut_ptr().cast(),
+                    buffer.len() as u32,
                     &mut read,
                     &mut buffer_type,
                 )
@@ -107,7 +108,7 @@ impl BlockingSocket {
             {
                 return Err(WebSocketError::MessageTooLarge);
             }
-            let buffer_filled = unsafe { buffer_capacity[..read_len].assume_init_ref() };
+            let buffer_filled = unsafe { buffer[..read_len].assume_init_ref() };
             message.extend_from_slice(buffer_filled);
             match buffer_type {
                 WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE => {

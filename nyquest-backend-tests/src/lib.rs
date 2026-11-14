@@ -70,6 +70,7 @@ fn init_builder_blocking() -> io::Result<ClientBuilder> {
     })
 }
 
+#[cfg(any(feature = "curl", feature = "reqwest"))]
 async fn init_builder_from_backend<Backend>(
     backend: &Backend,
 ) -> io::Result<ClientBuilder<&Backend>> {
@@ -80,6 +81,7 @@ async fn init_builder_from_backend<Backend>(
         .custom_backend(backend))
 }
 
+#[cfg(any(feature = "curl", feature = "reqwest"))]
 fn init_builder_from_backend_blocking<Backend>(
     backend: &Backend,
 ) -> io::Result<ClientBuilder<&Backend>> {
