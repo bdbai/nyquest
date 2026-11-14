@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 #[cfg(feature = "blocking-stream")]
 use std::io::{self, Read};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use nyquest_interface::blocking::{BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::Result as NyquestResult;
-use tokio::runtime::{Handle, Runtime};
+use tokio::runtime::Handle;
 
 use crate::client::ReqwestClient;
 use crate::customizer::Customizer;
 use crate::error::ReqwestBackendError;
 use crate::response::ReqwestResponse;
+use crate::runtime::ManagedRuntime;
 
 #[cfg(feature = "blocking-stream")]
 mod stream;
@@ -38,8 +39,8 @@ impl BlockingClient for ReqwestBlockingClient {
     }
 
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
-        let handle = select_runtime_handle(&self.inner.managed_runtime);
-        block_on_with_handle(&handle, || execute_request(self, req, handle.clone()))
+        let handle = self.inner.managed_runtime.get_handle_for_blocking();
+        block_on_with_handle(&handle, || execute_request(self, req))
     }
 
     #[cfg(feature = "ws")]
@@ -57,7 +58,6 @@ impl BlockingClient for ReqwestBlockingClient {
 async fn execute_request(
     this: &ReqwestBlockingClient,
     req: Request,
-    handle: Handle,
 ) -> NyquestResult<ReqwestBlockingResponse> {
     let request_builder = this.inner.request(req, |stream| {
         #[cfg(feature = "blocking-stream")]
@@ -87,54 +87,28 @@ async fn execute_request(
     Ok(ReqwestBlockingResponse::new(
         response,
         this.inner.max_response_buffer_size,
-        handle,
         this.inner.managed_runtime.clone(),
     )?)
 }
 
 pub struct ReqwestBlockingResponse {
     response: ReqwestResponse,
-    handle: Handle,
-    _managed_runtime: Arc<OnceLock<Runtime>>,
+    managed_runtime: Arc<ManagedRuntime>,
 }
 
 impl ReqwestBlockingResponse {
     fn new(
         response: reqwest::Response,
         max_response_buffer_size: Option<u64>,
-        handle: Handle,
-        managed_runtime: Arc<OnceLock<Runtime>>,
+        managed_runtime: Arc<ManagedRuntime>,
     ) -> crate::error::Result<Self> {
         let response = ReqwestResponse::new(response, max_response_buffer_size);
 
         Ok(Self {
             response,
-            handle,
-            _managed_runtime: managed_runtime,
+            managed_runtime,
         })
     }
-}
-
-/// Create a new tokio runtime for blocking operations
-fn create_managed_runtime() -> Runtime {
-    tokio::runtime::Builder::new_multi_thread()
-        .thread_name("nyquest-reqwest-blocking")
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .expect("Failed to create managed tokio runtime")
-}
-
-pub(crate) fn select_runtime_handle(managed_runtime: &OnceLock<Runtime>) -> Handle {
-    if let Ok(handle) = Handle::try_current() {
-        if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
-            return handle;
-        }
-    }
-    managed_runtime
-        .get_or_init(create_managed_runtime)
-        .handle()
-        .clone()
 }
 
 pub(crate) fn block_on_with_handle<F, Fut, T>(handle: &Handle, task: F) -> T
@@ -195,20 +169,22 @@ impl BlockingResponse for ReqwestBlockingResponse {
     }
 
     fn bytes(&mut self) -> NyquestResult<Vec<u8>> {
-        block_on_with_handle(&self.handle, || self.response.collect_all_bytes())
+        let handle = self.managed_runtime.get_handle_for_blocking();
+        block_on_with_handle(&handle, || self.response.collect_all_bytes())
     }
 }
 
 #[cfg(feature = "blocking-stream")]
 impl Read for ReqwestBlockingResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let handle = self.managed_runtime.get_handle_for_blocking();
         loop {
             let written = self.response.write_to(buf)?;
             if written > 0 {
                 break Ok(written);
             }
             let received =
-                block_on_with_handle(&self.handle, || self.response.receive_data_frame_buffered())?;
+                block_on_with_handle(&handle, || self.response.receive_data_frame_buffered())?;
             if received == 0 {
                 break Ok(0);
             }

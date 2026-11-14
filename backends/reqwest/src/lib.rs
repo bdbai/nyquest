@@ -35,6 +35,7 @@ mod client;
 mod customizer;
 mod error;
 mod request;
+mod runtime;
 #[cfg(all(
     feature = "ws",
     any(feature = "async", feature = "blocking"),

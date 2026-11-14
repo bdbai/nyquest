@@ -1,18 +1,18 @@
 use std::borrow::Cow;
 use std::future::{poll_fn, Future};
 use std::pin::{pin, Pin};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use futures::future::{select, Either};
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncClient, AsyncResponse, Request};
 use nyquest_interface::Result as NyquestResult;
-use tokio::runtime::{Handle, Runtime};
 
 use crate::client::ReqwestClient;
 use crate::customizer::Customizer;
 use crate::error::{ReqwestBackendError, Result};
 use crate::response::ReqwestResponse;
+use crate::runtime::ManagedRuntime;
 
 #[cfg(feature = "async-stream")]
 mod stream;
@@ -73,8 +73,7 @@ impl AsyncClient for ReqwestAsyncClient {
         let stream_task = std::future::pending::<()>();
         #[cfg(feature = "async-stream")]
         let stream_task = pin!(stream_task_collection.execute());
-        let (response, handle) = if let Either::Left((res, _)) = select(req_task, stream_task).await
-        {
+        let response = if let Either::Left((res, _)) = select(req_task, stream_task).await {
             res
         } else {
             unreachable!()
@@ -82,7 +81,6 @@ impl AsyncClient for ReqwestAsyncClient {
         ReqwestAsyncResponse::new(
             response?,
             self.inner.max_response_buffer_size,
-            handle,
             self.inner.managed_runtime.clone(),
         )
         .await
@@ -101,59 +99,36 @@ impl AsyncClient for ReqwestAsyncClient {
     }
 }
 
-/// Create a new tokio runtime for async operations
-fn create_managed_runtime() -> Runtime {
-    tokio::runtime::Builder::new_multi_thread()
-        .thread_name("nyquest-reqwest-async")
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .expect("Failed to create managed tokio runtime")
-}
-
 /// Execute an async task with proper runtime handling for async context
 async fn execute_with_runtime_async<F, Fut, T: Send + 'static>(
-    managed_runtime: &OnceLock<Runtime>,
+    managed_runtime: &ManagedRuntime,
     task: F,
-) -> (T, Handle)
+) -> T
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = T> + Send,
 {
-    if let Ok(handle) = Handle::try_current() {
-        // Inside tokio runtime - proceed normally
-        (task().await, handle)
-    } else {
-        // Outside tokio runtime - use managed runtime with block_on
-        let runtime = managed_runtime.get_or_init(create_managed_runtime);
-        runtime
-            .spawn(async {
-                let handle = Handle::current();
-                let result = task().await;
-                (result, handle)
-            })
-            .await
-            .expect("spawned task panicked from managed runtime")
-    }
+    let runtime = managed_runtime.get_handle_for_async();
+    runtime
+        .spawn(async move { task().await })
+        .await
+        .expect("spawned task panicked from managed runtime")
 }
 
 pub struct ReqwestAsyncResponse {
     response: ReqwestResponse,
-    current_handle: Handle,
-    _runtime: Arc<OnceLock<Runtime>>,
+    runtime: Arc<ManagedRuntime>,
 }
 
 impl ReqwestAsyncResponse {
     async fn new(
         response: reqwest::Response,
         max_response_buffer_size: Option<u64>,
-        current_handle: Handle,
-        runtime: Arc<OnceLock<Runtime>>,
+        runtime: Arc<ManagedRuntime>,
     ) -> Result<Self> {
         Ok(Self {
             response: ReqwestResponse::new(response, max_response_buffer_size),
-            current_handle,
-            _runtime: runtime,
+            runtime,
         })
     }
 }
@@ -193,13 +168,11 @@ impl AsyncResponse for ReqwestAsyncResponse {
 
     async fn bytes(mut self: Pin<&mut Self>) -> NyquestResult<Vec<u8>> {
         let Self {
-            current_handle,
-            response,
-            ..
+            runtime, response, ..
         } = &mut *self;
         let mut task = pin!(response.collect_all_bytes());
         poll_fn(|cx| {
-            let _enter = current_handle.enter();
+            let _enter = runtime.get_handle_for_async().enter();
             task.as_mut().poll(cx)
         })
         .await
@@ -220,7 +193,7 @@ impl futures::AsyncRead for ReqwestAsyncResponse {
             if written > 0 {
                 return Poll::Ready(Ok(written));
             }
-            let _enter = self.current_handle.enter();
+            let _enter = self.runtime.get_handle_for_async().enter();
             let received = ready!(self.response.poll_receive_data_frame_buffered(cx))?;
             if received == 0 {
                 break Poll::Ready(Ok(0));

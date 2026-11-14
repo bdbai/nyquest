@@ -1,26 +1,24 @@
 use std::borrow::Cow;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use futures::{SinkExt, StreamExt};
 use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
-use tokio::runtime::{Handle, Runtime};
 
-use super::{block_on_with_handle, select_runtime_handle};
+use super::block_on_with_handle;
 use crate::client::ReqwestClient;
+use crate::runtime::ManagedRuntime;
 use crate::websocket::{
     connect_parts, from_tungstenite_message, into_tungstenite_message, map_error, Sink, Source,
 };
 
 struct BlockingSender {
     sink: Sink,
-    handle: Handle,
-    _runtime: Arc<OnceLock<Runtime>>,
+    runtime: Arc<ManagedRuntime>,
 }
 
 struct BlockingReceiver {
     source: Source,
-    handle: Handle,
-    _runtime: Arc<OnceLock<Runtime>>,
+    runtime: Arc<ManagedRuntime>,
 }
 
 pub(super) fn connect_blocking(
@@ -32,7 +30,7 @@ pub(super) fn connect_blocking(
     let base_url = client.base_url.clone();
     let max_message_size = client.max_response_buffer_size;
     let runtime = client.managed_runtime.clone();
-    let handle = select_runtime_handle(&runtime);
+    let handle = runtime.get_handle_for_blocking();
     let (info, sink, source) = block_on_with_handle(&handle, || async move {
         connect_parts(
             http_client,
@@ -46,14 +44,12 @@ pub(super) fn connect_blocking(
     let sender =
         nyquest_interface::blocking::websocket::WebSocketSender::from_impl(BlockingSender {
             sink,
-            handle: handle.clone(),
-            _runtime: runtime.clone(),
+            runtime: runtime.clone(),
         });
     let receiver =
         nyquest_interface::blocking::websocket::WebSocketReceiver::from_impl(BlockingReceiver {
             source,
-            handle,
-            _runtime: runtime,
+            runtime,
         });
     Ok(nyquest_interface::blocking::websocket::WebSocket::new(
         info, sender, receiver,
@@ -64,14 +60,14 @@ impl nyquest_interface::blocking::websocket::BlockingWebSocketSender for Blockin
     fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()> {
         let sink = &mut self.sink;
         let message = into_tungstenite_message(data);
-        block_on_with_handle(&self.handle, || async move {
+        block_on_with_handle(&self.runtime.get_handle_for_blocking(), || async move {
             sink.send(message).await.map_err(map_error)
         })
     }
 
     fn close(&mut self) -> WebSocketResult<()> {
         let sink = &mut self.sink;
-        block_on_with_handle(&self.handle, || async move {
+        block_on_with_handle(&self.runtime.get_handle_for_blocking(), || async move {
             sink.close().await.map_err(map_error)
         })
     }
@@ -80,7 +76,7 @@ impl nyquest_interface::blocking::websocket::BlockingWebSocketSender for Blockin
 impl nyquest_interface::blocking::websocket::BlockingWebSocketReceiver for BlockingReceiver {
     fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
         let source = &mut self.source;
-        block_on_with_handle(&self.handle, || async move {
+        block_on_with_handle(&self.runtime.get_handle_for_blocking(), || async move {
             loop {
                 let message = source
                     .next()

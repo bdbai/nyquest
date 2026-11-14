@@ -1,28 +1,26 @@
 use std::borrow::Cow;
 use std::future::{poll_fn, Future};
 use std::pin::pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use futures::{SinkExt, StreamExt};
 use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
-use tokio::runtime::{Handle, Runtime};
 
 use super::execute_with_runtime_async;
 use crate::client::ReqwestClient;
+use crate::runtime::ManagedRuntime;
 use crate::websocket::{
     connect_parts, from_tungstenite_message, into_tungstenite_message, map_error, Sink, Source,
 };
 
 struct AsyncSender {
     sink: Sink,
-    handle: Handle,
-    _runtime: Arc<OnceLock<Runtime>>,
+    runtime: Arc<ManagedRuntime>,
 }
 
 struct AsyncReceiver {
     source: Source,
-    handle: Handle,
-    _runtime: Arc<OnceLock<Runtime>>,
+    runtime: Arc<ManagedRuntime>,
 }
 
 pub(super) async fn connect_async(
@@ -34,7 +32,7 @@ pub(super) async fn connect_async(
     let base_url = client.base_url.clone();
     let max_message_size = client.max_response_buffer_size;
     let runtime = client.managed_runtime.clone();
-    let (res, handle) = execute_with_runtime_async(&runtime, move || async move {
+    let res = execute_with_runtime_async(&runtime, move || async move {
         connect_parts(
             http_client,
             base_url.as_ref(),
@@ -50,13 +48,11 @@ pub(super) async fn connect_async(
         info,
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender {
             sink,
-            handle: handle.clone(),
-            _runtime: runtime.clone(),
+            runtime: runtime.clone(),
         }),
         nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(AsyncReceiver {
             source,
-            handle,
-            _runtime: runtime,
+            runtime,
         }),
     ))
 }
@@ -64,10 +60,10 @@ pub(super) async fn connect_async(
 impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender {
     async fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()> {
         let message = into_tungstenite_message(data);
-        let handle = &self.handle;
+        let runtime = &self.runtime;
         let mut fut = pin!(self.sink.send(message));
         poll_fn(|cx| {
-            let _enter = handle.enter();
+            let _enter = runtime.get_handle_for_async().enter();
             fut.as_mut().poll(cx)
         })
         .await
@@ -75,10 +71,10 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender
     }
 
     async fn close(&mut self) -> WebSocketResult<()> {
-        let handle = &self.handle;
+        let runtime = &self.runtime;
         let mut fut = pin!(self.sink.close());
         poll_fn(|cx| {
-            let _enter = handle.enter();
+            let _enter = runtime.get_handle_for_async().enter();
             fut.as_mut().poll(cx)
         })
         .await
@@ -88,7 +84,7 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender
 
 impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
     async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
-        let handle = &self.handle;
+        let handle = &self.runtime.get_handle_for_async();
         loop {
             let next = {
                 let mut fut = pin!(self.source.next());
