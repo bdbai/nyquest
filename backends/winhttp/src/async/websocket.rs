@@ -44,19 +44,7 @@ enum RecvState {
 struct RecvInner {
     state: RecvState,
     waker: Waker,
-    buffer: *mut MaybeUninit<[u8; WEBSOCKET_RECV_BUFFER_SIZE]>,
-}
-
-unsafe impl Send for RecvInner {}
-
-impl Drop for RecvInner {
-    fn drop(&mut self) {
-        if !self.buffer.is_null() {
-            unsafe {
-                drop(Box::from_raw(self.buffer));
-            }
-        }
-    }
+    buffer: Option<Box<MaybeUninit<[u8; WEBSOCKET_RECV_BUFFER_SIZE]>>>,
 }
 
 struct WsContext {
@@ -75,7 +63,7 @@ impl WsContext {
             recv: Mutex::new(RecvInner {
                 state: RecvState::Idle,
                 waker: futures_task::noop_waker(),
-                buffer: std::ptr::null_mut(),
+                buffer: None,
             }),
         })
     }
@@ -411,10 +399,9 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncRece
                 let mut recv = self.socket.ctx.recv.lock().unwrap();
                 if matches!(recv.state, RecvState::Idle) {
                     recv.state = RecvState::InFlight;
-                    if recv.buffer.is_null() {
-                        recv.buffer = Box::into_raw(Box::new_uninit());
-                    }
-                    Some(recv.buffer.cast::<c_void>())
+                    let buffer: &mut [MaybeUninit<u8>; _] =
+                        (**recv.buffer.get_or_insert_with(Box::new_uninit)).as_mut();
+                    Some(buffer.as_mut_ptr().cast::<c_void>())
                 } else {
                     None
                 }
@@ -447,9 +434,9 @@ impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncRece
                                 self.message.clear();
                                 return Err(WebSocketError::MessageTooLarge);
                             }
-                            let read_buf = unsafe {
-                                std::slice::from_raw_parts(recv.buffer.cast::<u8>(), read_len)
-                            };
+                            let buffer: &[MaybeUninit<u8>; WEBSOCKET_RECV_BUFFER_SIZE] =
+                                (**recv.buffer.as_ref().unwrap()).as_ref();
+                            let read_buf = unsafe { buffer[..read_len].assume_init_ref() };
                             self.message.extend_from_slice(read_buf);
                             Ok(buffer_type)
                         },
