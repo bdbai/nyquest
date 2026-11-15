@@ -28,6 +28,7 @@ cfg_if::cfg_if! {
         #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
         mod blocking;
         mod response;
+        mod runtime;
     }
 }
 mod backend;
@@ -35,7 +36,6 @@ mod client;
 mod customizer;
 mod error;
 mod request;
-mod runtime;
 #[cfg(all(
     feature = "ws",
     any(feature = "async", feature = "blocking"),

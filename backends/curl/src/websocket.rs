@@ -142,6 +142,10 @@ pub(crate) fn configure_websocket_easy<C: EasyCallback>(
             let mut raw = e.as_mut().as_raw_easy_mut();
             raw.as_mut().set_url(url)?;
             raw.as_mut().set_ws_options(0)?;
+            // libcurl has no way to set a timeout for the websocket handshake:
+            // blocking: CURLOPT_TIMEOUT_MS has no use when CURLOPT_CONNECT_ONLY=2L
+            // async: perform() fails when the timeout is reached even if the connection is established
+            raw.as_mut().set_timeout(Default::default())?;
             let header = e.as_easy_mut().as_easy_mut().as_easy_mut();
             header.set_headers(Some(header_list))?;
             Ok(())
