@@ -83,7 +83,7 @@ impl EasyCallback for AsyncHandler {
                 .req_streams
                 .get_mut(0)
                 .ok_or(curl::easy::ReadError::Abort)?;
-            return stream.read(buf, inner.ctx);
+            stream.read(buf, inner.ctx)
         }
         #[cfg(not(feature = "async-stream"))]
         Err(curl::easy::ReadError::Abort)

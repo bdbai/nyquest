@@ -144,7 +144,7 @@ impl DataTaskDelegate {
     ) {
         let ivars = &self.ivars().redirects_allowed;
         let allowed = ivars
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
             .is_ok();
         if allowed {
             completion_handler.call((request as *const _ as _,));

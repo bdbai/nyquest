@@ -68,8 +68,7 @@ impl Connection {
             return Err(curl_error(code));
         }
         if sock == curl_sys::CURL_SOCKET_BAD {
-            return Err(WebSocketError::Io(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(WebSocketError::Io(io::Error::other(
                 "WebSocket socket is invalid",
             )));
         }

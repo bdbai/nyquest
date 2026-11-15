@@ -117,7 +117,8 @@ fn websocket_client_options_default_headers() {
 #[test]
 fn websocket_client_options_base_url() {
     init_ws_backend();
-    let base_url = format!("{}/base/", crate::TOKIO_RT.block_on(spawn_server()));
+    let base_url =
+        format!("{}/base/", crate::TOKIO_RT.block_on(spawn_server())).replace("ws://", "http://");
 
     #[cfg(feature = "blocking")]
     {

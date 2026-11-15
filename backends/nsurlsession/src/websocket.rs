@@ -11,10 +11,10 @@ use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
 use objc2_foundation::{
-    NSError, NSObject, NSObjectProtocol, NSString, NSURLSession, NSURLSessionDelegate,
-    NSURLSessionTask, NSURLSessionTaskDelegate, NSURLSessionWebSocketDelegate,
-    NSURLSessionWebSocketMessage, NSURLSessionWebSocketMessageType, NSURLSessionWebSocketTask,
-    NSURL,
+    NSError, NSObject, NSObjectProtocol, NSString, NSURLComponents, NSURLSession,
+    NSURLSessionDelegate, NSURLSessionTask, NSURLSessionTaskDelegate,
+    NSURLSessionWebSocketDelegate, NSURLSessionWebSocketMessage, NSURLSessionWebSocketMessageType,
+    NSURLSessionWebSocketTask, NSURL,
 };
 
 use crate::datatask::GenericWaker;
@@ -185,12 +185,7 @@ pub(crate) fn create_task(
     waker: GenericWaker,
 ) -> WebSocketResult<(Arc<Socket>, Retained<WebSocketTaskDelegate>)> {
     let url =
-        NSURL::URLWithString_relativeToURL(&NSString::from_str(&uri), client.base_url.as_deref())
-            .ok_or(WebSocketError::InvalidUrl)?;
-    let scheme = url.scheme().map(|s| s.to_string()).unwrap_or_default();
-    if !scheme.eq_ignore_ascii_case("ws") && !scheme.eq_ignore_ascii_case("wss") {
-        return Err(WebSocketError::InvalidUrl);
-    }
+        normalize_ws_url(client.base_url.as_deref(), &uri).ok_or(WebSocketError::InvalidUrl)?;
     let task = if !protocols.is_empty() {
         let ns_protocols: Vec<_> = protocols.iter().map(|p| NSString::from_str(p)).collect();
         let protocols_array = objc2_foundation::NSArray::from_retained_slice(&ns_protocols);
@@ -210,6 +205,31 @@ pub(crate) fn create_task(
         _delegate: delegate.clone(),
     });
     Ok((socket, delegate))
+}
+
+fn normalize_ws_url(base: Option<&NSURL>, url_str: &str) -> Option<Retained<NSURL>> {
+    let ns_str = NSString::from_str(url_str);
+
+    // 1. Parse the string against the optional base URL.
+    //    - If `url_str` is relative (e.g. "/chat"), it attaches to `base`.
+    //    - If `url_str` is already absolute (e.g. "https://other.com"), `base` is ignored.
+    //    - If `base` is `None`, `url_str` must be a valid full URL.
+    let raw_url = NSURL::URLWithString_relativeToURL(&ns_str, base)?;
+
+    // 2. Initialize NSURLComponents with `resolvingAgainstBaseURL: true`
+    //    so any relative components are flattened into a single full URL.
+    let components = NSURLComponents::componentsWithURL_resolvingAgainstBaseURL(&raw_url, true)?;
+
+    let scheme = components.scheme()?;
+    let new_scheme = match scheme.to_string().to_ascii_lowercase().as_str() {
+        "http" => NSString::from_str("ws"),
+        "https" => NSString::from_str("wss"),
+        "ws" | "wss" => scheme,
+        _ => return None,
+    };
+
+    components.setScheme(Some(&new_scheme));
+    components.URL()
 }
 
 pub(crate) fn into_ws_info(protocol: Option<String>) -> WebSocketInfo {
