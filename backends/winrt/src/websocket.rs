@@ -168,12 +168,29 @@ pub(crate) fn extract_negotiated_protocol(
 
 impl WinrtClient {
     pub(crate) fn validate_ws_uri(&self, uri: &str) -> WebSocketResult<Uri> {
-        let uri_parsed = build_uri(&self.base_url, uri).map_err(|_| WebSocketError::InvalidUrl)?;
+        let mut uri_parsed =
+            build_uri(&self.base_url, uri).map_err(|_| WebSocketError::InvalidUrl)?;
         let scheme = uri_parsed
             .SchemeName()
             .map_err(|_| WebSocketError::InvalidUrl)?
             .to_string_lossy();
-        if !scheme.eq_ignore_ascii_case("ws") && !scheme.eq_ignore_ascii_case("wss") {
+        if scheme.eq_ignore_ascii_case("http") {
+            let uri_str = uri_parsed
+                .AbsoluteUri()
+                .map_err(|_| WebSocketError::InvalidUrl)?
+                .to_string_lossy()
+                .replacen("http://", "ws://", 1);
+            uri_parsed =
+                Uri::CreateUri(&(uri_str.into())).map_err(|_| WebSocketError::InvalidUrl)?;
+        } else if scheme.eq_ignore_ascii_case("https") {
+            let uri_str = uri_parsed
+                .AbsoluteUri()
+                .map_err(|_| WebSocketError::InvalidUrl)?
+                .to_string_lossy()
+                .replacen("https://", "wss://", 1);
+            uri_parsed =
+                Uri::CreateUri(&(uri_str.into())).map_err(|_| WebSocketError::InvalidUrl)?;
+        } else if !scheme.eq_ignore_ascii_case("ws") && !scheme.eq_ignore_ascii_case("wss") {
             return Err(WebSocketError::InvalidUrl);
         }
         Ok(uri_parsed)

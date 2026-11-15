@@ -116,14 +116,14 @@ pub(crate) fn configure_websocket_easy<C: EasyCallback>(
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<()> {
-    let url = concat_url(options.base_url.as_deref(), &uri);
-    let is_ws = url
-        .get(..5)
-        .is_some_and(|s| s.eq_ignore_ascii_case("ws://"))
-        || url
-            .get(..6)
-            .is_some_and(|s| s.eq_ignore_ascii_case("wss://"));
-    if !is_ws || url.contains('\0') {
+    let mut url = concat_url(options.base_url.as_deref(), &uri);
+    if url_has_scheme(&url, "http://") {
+        url = url.replacen("http://", "ws://", 1);
+    } else if url_has_scheme(&url, "https://") {
+        url = url.replacen("https://", "wss://", 1);
+    } else if url.contains('\0')
+        || (!url_has_scheme(&url, "ws://") && !url_has_scheme(&url, "wss://"))
+    {
         return Err(WebSocketError::InvalidUrl);
     }
 
@@ -151,4 +151,9 @@ pub(crate) fn configure_websocket_easy<C: EasyCallback>(
             Ok(())
         })
         .map_err(|e| nyquest_to_ws_error(e.into()))
+}
+
+fn url_has_scheme(url: &str, scheme: &str) -> bool {
+    url.get(..scheme.len())
+        .is_some_and(|s| s.eq_ignore_ascii_case(scheme))
 }

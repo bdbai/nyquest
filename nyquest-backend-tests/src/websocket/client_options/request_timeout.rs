@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use nyquest::WebSocketMessage;
@@ -47,6 +47,8 @@ async fn spawn_delayed_ws_server(delay: Duration) -> String {
 // async: perform() fails when the timeout is reached even if the connection is established
 #[cfg(not(feature = "curl"))]
 fn websocket_client_options_request_timeout() {
+    use std::time::Instant;
+
     init_ws_backend();
     let slow_uri = crate::TOKIO_RT.block_on(spawn_delayed_ws_server(Duration::from_secs(30)));
 

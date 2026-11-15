@@ -72,8 +72,8 @@ pub(crate) async fn connect_parts(
 ) -> WebSocketResult<(WebSocketInfo, Sink, Source)> {
     let mut url = build_url(base_url, &uri).map_err(|_| WebSocketError::InvalidUrl)?;
     let http_scheme = match url.scheme() {
-        "ws" => "http",
-        "wss" => "https",
+        "ws" | "http" => "http",
+        "wss" | "https" => "https",
         _ => return Err(WebSocketError::InvalidUrl),
     };
     url.set_scheme(http_scheme)
