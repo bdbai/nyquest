@@ -249,7 +249,7 @@ impl RawEasy {
         }
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
     pub fn set_ws_options(self: Pin<&mut Self>, flags: c_long) -> Result<(), CurlCodeContext> {
         const CURLOPT_WS_OPTIONS: curl_sys::CURLoption = curl_sys::CURLOPTTYPE_LONG + 320;
         unsafe {
@@ -258,7 +258,7 @@ impl RawEasy {
         }
     }
 
-    #[cfg(all(feature = "ws", feature = "blocking"))]
+    #[cfg(feature = "blocking-ws")]
     pub fn set_connect_only_websocket(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         const CURL_CONNECT_ONLY_WEBSOCKET: c_long = 2;
         unsafe {

@@ -138,7 +138,7 @@ impl RequestHandle {
         Poll::Pending
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     pub(super) fn manager(&self) -> &LoopManagerShared {
         &self.manager
     }
@@ -240,7 +240,11 @@ impl LoopManagerShared {
         .await
     }
 
-    #[cfg(any(feature = "async-stream", feature = "ws"))]
+    #[cfg(any(
+        feature = "async-stream",
+        feature = "async-ws",
+        feature = "blocking-ws"
+    ))]
     pub(super) async fn batch_unpause_send<
         's,
         E,

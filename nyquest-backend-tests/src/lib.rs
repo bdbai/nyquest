@@ -17,7 +17,7 @@ use tokio::sync::OnceCell;
 mod fixtures;
 mod hyper_fixture_collection;
 mod request_ext;
-#[cfg(feature = "ws")]
+#[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
 mod websocket;
 
 use hyper_fixture_collection::FixtureAssertionResult;

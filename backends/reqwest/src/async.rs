@@ -16,7 +16,7 @@ use crate::runtime::ManagedRuntime;
 
 #[cfg(feature = "async-stream")]
 mod stream;
-#[cfg(feature = "ws")]
+#[cfg(feature = "async-ws")]
 mod websocket;
 
 #[derive(Clone)]
@@ -87,7 +87,7 @@ impl AsyncClient for ReqwestAsyncClient {
         .map_err(Into::into)
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     async fn connect_websocket(
         &self,
         uri: Cow<'static, str>,

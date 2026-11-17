@@ -97,7 +97,7 @@ impl BlockingClient for WinHttpBlockingClient {
         ))
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,

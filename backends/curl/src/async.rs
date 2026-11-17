@@ -16,7 +16,7 @@ mod read_task;
 mod read_task;
 mod set;
 mod shared;
-#[cfg(feature = "ws")]
+#[cfg(feature = "async-ws")]
 pub(crate) mod websocket;
 
 use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
@@ -183,7 +183,7 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         Ok(res)
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     async fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,

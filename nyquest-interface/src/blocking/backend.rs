@@ -28,7 +28,7 @@ pub trait BlockingClient: Clone + Send + Sync + 'static {
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> crate::Result<Self::Response>;
     /// Opens a WebSocket connection.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
         &self,
         _uri: std::borrow::Cow<'static, str>,

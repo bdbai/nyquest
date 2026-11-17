@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "async")]
+use futures_util::{SinkExt, StreamExt};
 use nyquest::WebSocketMessage;
 
 use super::{init_ws_backend, spawn_server};
@@ -69,7 +71,7 @@ async fn websocket_async_concurrent_send_while_receiving() {
     let mut sender = websocket.sender;
     let mut receiver = websocket.receiver;
 
-    let recv_task = tokio::spawn(async move { receiver.receive().await.unwrap() });
+    let recv_task = tokio::spawn(async move { receiver.next().await.unwrap().unwrap() });
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     tokio::time::timeout(
@@ -102,7 +104,7 @@ async fn websocket_async_cancel_receive_does_not_lose_message() {
 
     // Start a receive and cancel (drop) its future before any message arrives.
     let timed_out =
-        tokio::time::timeout(Duration::from_millis(100), websocket.receiver.receive()).await;
+        tokio::time::timeout(Duration::from_millis(100), websocket.receiver.next()).await;
     assert!(
         timed_out.is_err(),
         "receive should time out when no message is sent"
@@ -120,15 +122,17 @@ async fn websocket_async_cancel_receive_does_not_lose_message() {
         .await
         .unwrap();
 
-    let first = tokio::time::timeout(Duration::from_secs(3), websocket.receiver.receive())
+    let first = tokio::time::timeout(Duration::from_secs(3), websocket.receiver.next())
         .await
         .expect("receive timed out after cancelled receive")
+        .expect("stream ended after cancelled receive")
         .expect("receive failed after cancelled receive");
     assert_eq!(first, WebSocketMessage::Utf8("msg-after-cancel-1".into()));
 
-    let second = tokio::time::timeout(Duration::from_secs(3), websocket.receiver.receive())
+    let second = tokio::time::timeout(Duration::from_secs(3), websocket.receiver.next())
         .await
         .expect("second receive timed out")
+        .expect("stream ended on second receive")
         .expect("second receive failed");
     assert_eq!(second, WebSocketMessage::Utf8("msg-after-cancel-2".into()));
 
@@ -165,7 +169,7 @@ fn websocket_async_runtime_agnostic_and_outlives_client() {
                     .sender
                     .send(WebSocketMessage::Utf8("from-futures-executor".into()))
                     .await?;
-                let msg = websocket.receiver.receive().await?;
+                let msg = websocket.receiver.next().await.unwrap()?;
                 websocket.sender.close().await?;
                 Ok::<_, nyquest::WebSocketError>(msg)
             })

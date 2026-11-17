@@ -19,9 +19,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 async = ["nyquest-interface/async", "dep:futures-util"]
 async-stream = ["async", "nyquest-interface/async-stream"]
+async-ws = [
+    "async",
+    "nyquest-interface/async-ws",
+    "dep:futures-core",
+    "dep:futures-sink",
+    "windows/Networking_Sockets",
+]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
-ws = ["nyquest-interface/ws", "windows/Networking_Sockets", "futures-util/io"]
+blocking-ws = ["blocking", "nyquest-interface/blocking-ws", "windows/Networking_Sockets"]
 multipart = ["nyquest-interface/multipart"]
 
 [target.'cfg(windows)'.dependencies]
@@ -43,6 +50,12 @@ features = [
 [dependencies]
 nyquest-interface = { version = "0.5.0", path = "../../nyquest-interface", default-features = false }
 cfg-if.workspace = true
-futures-util = { version = "0.3", optional = true, default-features = false, features = [
+futures-core = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
+futures-sink = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
+futures-util = { workspace = true, optional = true, default-features = false, features = [
     "io",
 ] }

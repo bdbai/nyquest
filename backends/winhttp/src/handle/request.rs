@@ -171,7 +171,7 @@ impl RequestHandle {
         Ok(())
     }
 
-    #[cfg(all(feature = "ws", any(feature = "async", feature = "blocking")))]
+    #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
     pub(crate) fn enable_websocket_upgrade(&self) -> Result<()> {
         let result = unsafe {
             WinHttpSetOption(
@@ -189,7 +189,7 @@ impl RequestHandle {
         Ok(())
     }
 
-    #[cfg(all(feature = "ws", any(feature = "async", feature = "blocking")))]
+    #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
     pub(crate) fn complete_websocket_upgrade(
         &self,
         context: usize,

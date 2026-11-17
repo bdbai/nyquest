@@ -9,7 +9,7 @@ use nyquest_interface::{
 
 use super::response::Response;
 use crate::ClientBuilder;
-#[cfg(feature = "ws")]
+#[cfg(feature = "async-ws")]
 use nyquest_interface::websocket::WebSocketResult;
 
 /// A async HTTP client to make Requests with.
@@ -60,7 +60,7 @@ impl AsyncClient {
     /// Connects to a WebSocket endpoint.
     ///
     /// Received messages are limited by [`crate::ClientBuilder::max_response_buffer_size`].
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     pub async fn connect_websocket(
         &self,
         uri: impl Into<Cow<'static, str>>,

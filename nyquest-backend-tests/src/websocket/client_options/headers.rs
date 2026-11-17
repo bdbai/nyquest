@@ -1,3 +1,5 @@
+#[cfg(feature = "async")]
+use futures_util::{SinkExt, StreamExt};
 use nyquest::WebSocketMessage;
 
 use crate::websocket::{init_ws_backend, spawn_server};
@@ -41,7 +43,7 @@ fn websocket_client_options_user_agent() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8(USER_AGENT_VALUE.into())
         );
         ws.sender.close().await.unwrap();
@@ -99,7 +101,7 @@ fn websocket_client_options_default_headers() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8(HEADER_X_TEST.into())
         );
         ws.sender
@@ -107,7 +109,7 @@ fn websocket_client_options_default_headers() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8(HEADER_LANG.into())
         );
         ws.sender.close().await.unwrap();
@@ -150,7 +152,7 @@ fn websocket_client_options_base_url() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8("base-url-msg".into())
         );
         ws.sender.close().await.unwrap();

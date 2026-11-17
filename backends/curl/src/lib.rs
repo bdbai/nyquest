@@ -18,7 +18,7 @@ mod error;
 mod request;
 mod state;
 mod url;
-#[cfg(all(feature = "ws", any(feature = "async", feature = "blocking")))]
+#[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
 mod websocket;
 
 pub use backend::CurlBackend;

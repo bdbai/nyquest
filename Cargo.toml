@@ -20,9 +20,20 @@ exclude = [".vscode/*", ".github/*", "examples/README.md", "rustfmt.toml"]
 
 [workspace.dependencies]
 futures = "0.3.31"
+futures-core = { version = "0.3", default-features = false }
+futures-sink = { version = "0.3", default-features = false }
+futures-channel = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
 thiserror = "2"
 cfg-if = "1"
-arc-swap = "1"
+serde = "1"
+serde_json = "1.0.140"
+pin-project-lite = "0.2"
+memchr = { version = "2", default-features = false }
+form_urlencoded = { version = "1", default-features = false }
+iconv-native = { version = "0.1.0", default-features = false }
+tokio = { version = "1", default-features = false }
+tokio-tungstenite = "0.30"
 
 [package]
 name = "nyquest"
@@ -38,15 +49,16 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async-stream", "blocking-stream", "multipart", "json", "ws"]
+features = ["async-stream", "blocking-stream", "multipart", "json", "async-ws", "blocking-ws"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 async = ["nyquest-interface/async"]
 async-stream = ["async", "nyquest-interface/async-stream"]
+async-ws = ["async", "nyquest-interface/async-ws"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
-ws = ["nyquest-interface/ws"]
+blocking-ws = ["blocking", "nyquest-interface/blocking-ws"]
 multipart = ["nyquest-interface/multipart"]
 json = ["dep:serde", "dep:serde_json"]
 
@@ -54,8 +66,8 @@ json = ["dep:serde", "dep:serde_json"]
 nyquest-interface = { version = "0.5.0", path = "nyquest-interface", default-features = false }
 thiserror.workspace = true
 
-serde = { version = "1", optional = true }
-serde_json = { version = "1.0.140", optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
 futures.workspace = true

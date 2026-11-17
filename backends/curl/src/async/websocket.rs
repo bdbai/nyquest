@@ -1,16 +1,17 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::ffi::c_int;
-use std::future::poll_fn;
-use std::ops::ControlFlow;
+use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Poll, Waker};
+use std::task::{Context, Poll, Waker};
 
+use futures_core::Stream;
+use futures_sink::Sink;
 use nyquest_interface::websocket::{
     WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
 };
 
-use super::r#loop::{LoopManager, RequestHandle};
+use super::r#loop::{LoopManager, LoopTask, RequestHandle};
 use crate::curl_ng::easy::{AsRawEasyMut, Share};
 use crate::r#async::shared::{RequestResult, SharedRequestStates};
 use crate::request::{create_easy, AsCallbackMut};
@@ -233,6 +234,8 @@ pub(super) async fn connect_async(
     let sender = AsyncSender {
         shared,
         handle: req_handle.clone(),
+        closing: false,
+        close_sent: false,
     };
     let receiver = AsyncReceiver { handle: req_handle };
 
@@ -246,67 +249,164 @@ pub(super) async fn connect_async(
 struct AsyncSender {
     handle: Arc<RequestHandle>,
     shared: Arc<SharedRequestStates>,
+    closing: bool,
+    close_sent: bool,
 }
 
 impl AsyncSender {
-    async fn wait_for_outgoing_ready(&self, cb: impl FnOnce(&mut WsState)) {
-        let mut cb = Some(cb);
-        poll_fn(|cx| {
-            let mut state = self.shared.state.lock().unwrap();
-            let RequestResult::InProgress { .. } = state.result else {
-                // Any connection error should be collected by the receiver, so we can just return here.
-                return Poll::Ready(());
+    fn is_in_progress(&self) -> Option<usize> {
+        let state = self.shared.state.lock().unwrap();
+        match state.result {
+            RequestResult::InProgress { id } => Some(id),
+            _ => None,
+        }
+    }
+
+    fn ensure_unpaused(&self, id: usize) {
+        let _ = self
+            .handle
+            .manager()
+            .dispatch_task(LoopTask::UnpauseSendHandle(id));
+    }
+}
+
+fn closed_error() -> WebSocketError {
+    WebSocketError::Protocol("WebSocket sender is closed".into())
+}
+
+impl Sink<WebSocketMessage> for AsyncSender {
+    type Error = WebSocketError;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // All fields are `Unpin`, so pinning is trivial.
+        let this = self.get_mut();
+        if this.closing || this.close_sent {
+            return Poll::Ready(Err(closed_error()));
+        }
+        let Some(_id) = this.is_in_progress() else {
+            // Connection is gone; behave as ready and drop subsequent sends,
+            // errors surface on the receive half.
+            return Poll::Ready(Ok(()));
+        };
+        let mut state = this.shared.state.lock().unwrap();
+        let ws = state
+            .ws
+            .as_mut()
+            .expect("WebSocket state should be present");
+        if ws.outgoing_queue.is_some() {
+            ws.outgoing_waker.clone_from(cx.waker());
+            Poll::Pending
+        } else {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: WebSocketMessage) -> Result<(), Self::Error> {
+        let this = self.get_mut();
+        if this.closing || this.close_sent {
+            return Err(closed_error());
+        }
+        let Some(_id) = this.is_in_progress() else {
+            // Drop the message; the receive half will report the failure.
+            return Ok(());
+        };
+        let close = matches!(item, WebSocketMessage::Close { .. });
+        let (flags, encoded) = encode_message(item);
+        let mut state = this.shared.state.lock().unwrap();
+        let ws = state
+            .ws
+            .as_mut()
+            .expect("WebSocket state should be present");
+        if ws.outgoing_queue.is_some() {
+            return Err(WebSocketError::Protocol(
+                "WebSocket send buffer is full".into(),
+            ));
+        }
+        ws.outgoing_queue = Some(OutgoingMessage {
+            flags,
+            encoded,
+            offset: 0,
+            frame_started: false,
+        });
+        if close {
+            this.close_sent = true;
+        }
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        let Some(id) = this.is_in_progress() else {
+            return Poll::Ready(Ok(()));
+        };
+        let mut state = this.shared.state.lock().unwrap();
+        let ws = state
+            .ws
+            .as_mut()
+            .expect("WebSocket state should be present");
+        if ws.outgoing_queue.is_none() {
+            return Poll::Ready(Ok(()));
+        }
+        ws.outgoing_waker.clone_from(cx.waker());
+        drop(state);
+        this.ensure_unpaused(id);
+        Poll::Pending
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        this.closing = true;
+        // A close frame already queued via `start_send` initiates the handshake;
+        // only flush it instead of emitting a second one.
+        if this.close_sent {
+            let Some(id) = this.is_in_progress() else {
+                return Poll::Ready(Ok(()));
             };
+            let mut state = this.shared.state.lock().unwrap();
+            let ws = state
+                .ws
+                .as_mut()
+                .expect("WebSocket state should be present");
+            if ws.outgoing_queue.is_none() {
+                return Poll::Ready(Ok(()));
+            }
+            ws.outgoing_waker.clone_from(cx.waker());
+            drop(state);
+            this.ensure_unpaused(id);
+            return Poll::Pending;
+        }
+        let Some(id) = this.is_in_progress() else {
+            return Poll::Ready(Ok(()));
+        };
+        // If there is still user data in flight, wait for it before enqueueing close.
+        {
+            let mut state = this.shared.state.lock().unwrap();
             let ws = state
                 .ws
                 .as_mut()
                 .expect("WebSocket state should be present");
             if ws.outgoing_queue.is_some() {
                 ws.outgoing_waker.clone_from(cx.waker());
+                drop(state);
+                this.ensure_unpaused(id);
                 return Poll::Pending;
             }
-            if let Some(cb) = cb.take() {
-                cb(ws);
-            }
-            Poll::Ready(())
-        })
-        .await
-    }
-}
-
-impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender {
-    async fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()> {
-        let (flags, encoded) = encode_message(data);
-        let mut msg = Some(OutgoingMessage {
-            flags,
-            encoded,
-            offset: 0,
-            frame_started: false,
-        });
-        self.wait_for_outgoing_ready(|ws| {
-            ws.outgoing_queue = msg.take();
-        })
-        .await;
-
-        let _ = self
-            .handle
-            .manager()
-            .batch_unpause_send(&self.shared, |_cx, unpauser| {
-                unpauser.unpause_send();
-                ControlFlow::Continue::<(), _>(())
-            })
-            .await;
-
-        self.wait_for_outgoing_ready(|_| {}).await;
-        Ok(())
-    }
-
-    async fn close(&mut self) -> WebSocketResult<()> {
-        self.send(WebSocketMessage::Close {
-            code: 1000,
-            reason: String::new(),
-        })
-        .await
+            let (flags, encoded) = encode_message(WebSocketMessage::Close {
+                code: 1000,
+                reason: String::new(),
+            });
+            ws.outgoing_queue = Some(OutgoingMessage {
+                flags,
+                encoded,
+                offset: 0,
+                frame_started: false,
+            });
+            this.close_sent = true;
+            ws.outgoing_waker.clone_from(cx.waker());
+            drop(state);
+            this.ensure_unpaused(id);
+            Poll::Pending
+        }
     }
 }
 
@@ -314,30 +414,39 @@ struct AsyncReceiver {
     handle: Arc<RequestHandle>,
 }
 
-impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
-    async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
-        let res = poll_fn(|cx| {
-            self.handle.poll_recv(cx, |state| {
-                let ws = state
-                    .ws
-                    .as_mut()
-                    .expect("WebSocket state should be present");
-                if let Some(msg) = ws.incoming_messages.pop_front() {
-                    return Some(msg);
-                }
-                if ws.done {
-                    return Some(Err(WebSocketError::Protocol(
-                        "WebSocket stream closed".into(),
-                    )));
-                }
-                None
-            })
-        })
-        .await
-        .map_err(nyquest_to_ws_error)?;
+impl Stream for AsyncReceiver {
+    type Item = WebSocketResult<WebSocketMessage>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // `AsyncReceiver` only holds an `Arc`, so pinning is trivial.
+        let this = self.get_mut();
+        let res = this.handle.poll_recv(cx, |state| {
+            let ws = state
+                .ws
+                .as_mut()
+                .expect("WebSocket state should be present");
+            if let Some(msg) = ws.incoming_messages.pop_front() {
+                return Some(msg);
+            }
+            if ws.done {
+                return Some(Err(WebSocketError::Protocol(
+                    "WebSocket stream closed".into(),
+                )));
+            }
+            None
+        });
         match res {
-            Some(msg) => msg,
-            None => Err(WebSocketError::Protocol("WebSocket stream closed".into())),
+            Poll::Ready(Ok(Some(Ok(msg)))) => Poll::Ready(Some(Ok(msg))),
+            Poll::Ready(Ok(Some(Err(e)))) => {
+                if matches!(&e, WebSocketError::Protocol(s) if s == "WebSocket stream closed") {
+                    Poll::Ready(None)
+                } else {
+                    Poll::Ready(Some(Err(e)))
+                }
+            }
+            Poll::Ready(Ok(None)) => Poll::Ready(None),
+            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(nyquest_to_ws_error(e)))),
+            Poll::Pending => Poll::Pending,
         }
     }
 }

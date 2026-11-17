@@ -1453,6 +1453,8 @@ dependencies = [
  "curl",
  "curl-sys",
  "futures-channel",
+ "futures-core",
+ "futures-sink",
  "futures-util",
  "iconv-native",
  "libc",
@@ -1471,6 +1473,8 @@ dependencies = [
  "block2",
  "cfg-if",
  "futures-channel",
+ "futures-core",
+ "futures-sink",
  "futures-util",
  "nyquest-interface",
  "objc2",
@@ -1494,6 +1498,7 @@ dependencies = [
  "mime",
  "nyquest-backend-tests",
  "nyquest-interface",
+ "pin-project-lite",
  "reqwest",
  "thiserror",
  "tokio",
@@ -1535,6 +1540,8 @@ dependencies = [
  "cfg-if",
  "form_urlencoded",
  "futures-channel",
+ "futures-core",
+ "futures-sink",
  "futures-task",
  "getrandom 0.4.3",
  "iconv-native",
@@ -1549,6 +1556,8 @@ name = "nyquest-backend-winrt"
 version = "0.5.0"
 dependencies = [
  "cfg-if",
+ "futures-core",
+ "futures-sink",
  "futures-util",
  "nyquest-interface",
  "windows",
@@ -1564,6 +1573,7 @@ dependencies = [
  "cfg-if",
  "futures-core",
  "futures-io",
+ "futures-sink",
  "thiserror",
 ]
 

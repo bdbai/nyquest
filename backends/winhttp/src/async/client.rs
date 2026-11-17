@@ -154,7 +154,7 @@ impl AsyncClient for WinHttpAsyncClient {
         ))
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,

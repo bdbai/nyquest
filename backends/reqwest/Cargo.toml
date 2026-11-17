@@ -12,16 +12,17 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async", "blocking", "multipart", "ws"]
+features = ["async", "blocking", "multipart", "async-ws", "blocking-ws"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["default-tls", "reqwest/system-proxy"]
 async = ["nyquest-interface/async"]
 async-stream = ["async", "nyquest-interface/async-stream"]
+async-ws = ["async", "nyquest-interface/async-ws", "dep:tokio-tungstenite", "dep:pin-project-lite"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
-ws = ["nyquest-interface/ws", "dep:tokio-tungstenite"]
+blocking-ws = ["blocking", "nyquest-interface/blocking-ws", "dep:tokio-tungstenite"]
 multipart = ["nyquest-interface/multipart", "reqwest/multipart"]
 charset = ["dep:encoding_rs", "dep:mime"]
 default-tls = ["reqwest/default-tls"]
@@ -37,6 +38,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 cfg-if.workspace = true
 thiserror.workspace = true
 futures.workspace = true
+pin-project-lite = { workspace = true, optional = true }
 url = "2.4"
 http = "1.0"
 
@@ -49,15 +51,15 @@ http-body = "1.0"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio]
 default-features = false
 features = ["rt-multi-thread", "sync"]
-version = "1.0"
+workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio-tungstenite]
-version = "0.30"
+workspace = true
 optional = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.iconv-native]
 default-features = false
-version = "0.1"
+workspace = true
 features = ["web-encoding"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.reqwest]
@@ -67,8 +69,8 @@ features = ["form", "stream", "cookies"]
 
 [dev-dependencies]
 nyquest-backend-tests = { path = "../../nyquest-backend-tests" }
-tokio = { version = "1.0", features = ["macros"] }
-futures = { version = "0.3", features = ["executor"] }
+tokio = { workspace = true, features = ["macros"] }
+futures = { workspace = true, features = ["executor"] }
 async-std = { version = "1.12", features = ["attributes"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]

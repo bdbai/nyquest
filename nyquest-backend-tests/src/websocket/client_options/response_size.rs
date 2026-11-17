@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "async")]
+use futures_util::{SinkExt, StreamExt};
 use nyquest::WebSocketMessage;
 
 use crate::websocket::{init_ws_backend, spawn_server};
@@ -43,7 +45,7 @@ fn websocket_client_options_message_within_limit() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8(BODY.into())
         );
         ws.sender.close().await.unwrap();
@@ -86,5 +88,5 @@ async fn websocket_async_enforces_message_limit() {
         .send(WebSocketMessage::Utf8("too large".into()))
         .await
         .unwrap();
-    assert!(websocket.receiver.receive().await.is_err());
+    assert!(websocket.receiver.next().await.unwrap().is_err());
 }

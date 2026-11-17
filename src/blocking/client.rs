@@ -9,7 +9,7 @@ use nyquest_interface::{
 
 use super::{response::Response, Request};
 use crate::client::ClientBuilder;
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 use nyquest_interface::websocket::WebSocketResult;
 
 /// A blocking HTTP client to make Requests with.
@@ -67,7 +67,7 @@ impl BlockingClient {
     /// Connects to a WebSocket endpoint.
     ///
     /// Received messages are limited by [`crate::ClientBuilder::max_response_buffer_size`].
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "blocking-ws")]
     pub fn connect_websocket(
         &self,
         uri: impl Into<Cow<'static, str>>,

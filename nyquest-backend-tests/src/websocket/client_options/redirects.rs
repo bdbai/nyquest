@@ -61,6 +61,8 @@ fn websocket_client_options_redirects() {
 
     #[cfg(feature = "async")]
     crate::TOKIO_RT.block_on(async {
+        use futures_util::{SinkExt, StreamExt};
+
         let port = crate::init_main_service_port().await.unwrap();
         let redirect_ws_url = format!("ws://127.0.0.1:{port}/{PATH}");
 
@@ -78,7 +80,7 @@ fn websocket_client_options_redirects() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8("after-redirect".into())
         );
         ws.sender.close().await.unwrap();

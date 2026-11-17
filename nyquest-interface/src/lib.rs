@@ -13,10 +13,11 @@
 //!
 //! - `async`: Enable async interface support
 //! - `async-stream`: Enable async interface and streaming upload/download support
+//! - `async-ws`: Enable async WebSocket support
 //! - `blocking`: Enable blocking interface support
 //! - `blocking-stream`: Enable blocking interface and streaming upload/download support
+//! - `blocking-ws`: Enable blocking WebSocket support
 //! - `multipart`: Enable multipart form support
-//! - `ws`: Enable WebSocket support
 //!
 //! [`nyquest`]: https://docs.rs/nyquest
 
@@ -35,8 +36,8 @@ mod error;
 #[doc(hidden)] // For nyquest facade only
 pub mod register;
 mod request;
-#[cfg(feature = "ws")]
-#[cfg_attr(docsrs, doc(cfg(feature = "ws")))]
+#[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "async-ws", feature = "blocking-ws"))))]
 pub mod websocket;
 
 pub use body::Body;
@@ -46,6 +47,6 @@ pub use body::{Part, PartBody};
 pub use error::{Error, Result};
 pub use register::register_backend;
 pub use request::{Method, Request};
-#[cfg(feature = "ws")]
-#[cfg_attr(docsrs, doc(cfg(feature = "ws")))]
+#[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "async-ws", feature = "blocking-ws"))))]
 pub use websocket::{WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult};

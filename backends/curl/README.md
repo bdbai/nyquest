@@ -17,7 +17,8 @@ libcurl **8.16.0** or later because it uses `CURLOPT_READFUNCTION`.
 - `async`
 - `async-stream`
 - `multipart`
-- `ws`: Enable WebSocket support.
+- `async-ws`: Enable async WebSocket support.
+- `blocking-ws`: Enable blocking WebSocket support.
 - `charset-defaults`: Enable encoding conversion via [`iconv-native`] with its default features
   enabled.
 - `charset`: Enable encoding conversion via [`iconv-native`] without activating any of its default

@@ -25,7 +25,7 @@ pub type Part = crate::body::Part<BoxedStream>;
 pub type PartBody = crate::body::PartBody<BoxedStream>;
 #[cfg(feature = "async-stream")]
 pub use async_read_stream::AsyncReadStream;
-#[cfg(feature = "ws")]
+#[cfg(feature = "async-ws")]
 pub use nyquest_interface::r#async::{WebSocket, WebSocketReceiver, WebSocketSender};
 pub use response::Response;
 

@@ -2,5 +2,5 @@
 
 mod client;
 mod response;
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 mod websocket;

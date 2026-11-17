@@ -10,14 +10,25 @@ rust-version.workspace = true
 publish = false
 
 [features]
-ws = [
-    "nyquest/ws",
+async-ws = [
+    "async",
+    "nyquest/async-ws",
     "dep:tokio-tungstenite",
-    "nyquest-backend-winrt?/ws",
-    "nyquest-backend-winhttp?/ws",
-    "nyquest-backend-curl?/ws",
-    "nyquest-backend-nsurlsession?/ws",
-    "nyquest-backend-reqwest?/ws",
+    "nyquest-backend-winrt?/async-ws",
+    "nyquest-backend-winhttp?/async-ws",
+    "nyquest-backend-curl?/async-ws",
+    "nyquest-backend-nsurlsession?/async-ws",
+    "nyquest-backend-reqwest?/async-ws",
+]
+blocking-ws = [
+    "blocking",
+    "nyquest/blocking-ws",
+    "dep:tokio-tungstenite",
+    "nyquest-backend-winrt?/blocking-ws",
+    "nyquest-backend-winhttp?/blocking-ws",
+    "nyquest-backend-curl?/blocking-ws",
+    "nyquest-backend-nsurlsession?/blocking-ws",
+    "nyquest-backend-reqwest?/blocking-ws",
 ]
 async = [
     "nyquest/async",
@@ -69,14 +80,14 @@ reqwest = ["dep:nyquest-backend-reqwest"]
 
 [dev-dependencies]
 hyper = { version = "1", features = ["http1", "client"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["full"] }
 form_urlencoded = "1"
 memchr = "2"
 multer = "3"
-futures = "0.3"
-serde = { version = "1", features = ["derive"] }
+futures.workspace = true
+serde = { workspace = true, features = ["derive"] }
 cfg-if.workspace = true
 futures-util = "0.3"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
@@ -88,4 +99,4 @@ nyquest-backend-winhttp = { path = "../backends/winhttp", optional = true }
 nyquest-backend-curl = { path = "../backends/curl", optional = true }
 nyquest-backend-nsurlsession = { path = "../backends/nsurlsession", optional = true }
 nyquest-backend-reqwest = { path = "../backends/reqwest", optional = true }
-tokio-tungstenite = { version = "0.30", optional = true }
+tokio-tungstenite = { workspace = true, optional = true }

@@ -6,7 +6,7 @@ use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
 
 pub(crate) mod waker;
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 mod websocket;
 
 use crate::blocking::waker::BlockingWaker;
@@ -137,7 +137,7 @@ impl BlockingClient for NSUrlSessionBlockingClient {
         }
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,

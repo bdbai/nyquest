@@ -15,7 +15,7 @@ use std::sync::Arc;
 use super::backend::BlockingResponse;
 use super::Request;
 use crate::client::ClientOptions;
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 use crate::websocket::{WebSocketMessage, WebSocketResult};
 use crate::Result;
 
@@ -36,7 +36,7 @@ pub trait AnyBlockingClient: Any + Send + Sync + 'static {
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> crate::Result<Box<dyn AnyBlockingResponse>>;
     /// Opens a WebSocket connection.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
@@ -44,7 +44,7 @@ pub trait AnyBlockingClient: Any + Send + Sync + 'static {
     ) -> WebSocketResult<super::websocket::WebSocket>;
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 /// Type-erased blocking WebSocket sender.
 pub trait AnyBlockingWebSocketSender: Send {
     /// Sends a message.
@@ -53,7 +53,7 @@ pub trait AnyBlockingWebSocketSender: Send {
     fn close(&mut self) -> WebSocketResult<()>;
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 /// Type-erased blocking WebSocket receiver.
 pub trait AnyBlockingWebSocketReceiver: Send {
     /// Receives the next message.
@@ -131,7 +131,7 @@ where
         Ok(Box::new(self.request(req)?))
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,

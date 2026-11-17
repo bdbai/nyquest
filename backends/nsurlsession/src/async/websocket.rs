@@ -1,10 +1,13 @@
 use std::borrow::Cow;
 use std::future::poll_fn;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::task::Poll;
+use std::task::{Context, Poll};
 
 use block2::RcBlock;
 use futures_channel::oneshot;
+use futures_core::Stream;
+use futures_sink::Sink;
 use nyquest_interface::websocket::{WebSocketMessage, WebSocketResult};
 use nyquest_interface::WebSocketError;
 use objc2::{AllocAnyThread, DefinedClass};
@@ -102,47 +105,168 @@ pub(super) async fn connect_async(
     .await?;
     Ok(nyquest_interface::r#async::websocket::WebSocket::new(
         into_ws_info(protocol),
-        nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender(
-            socket.clone(),
-        )),
+        nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender {
+            socket: socket.clone(),
+            pending: None,
+            closing: false,
+            close_sent: false,
+        }),
         nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(AsyncReceiver {
             socket,
             pending_recv: None,
+            terminated: false,
         }),
     ))
 }
 
-struct AsyncSender(Arc<Socket>);
+struct AsyncSender {
+    socket: Arc<Socket>,
+    pending: Option<Pin<Box<oneshot::Receiver<WebSocketResult<()>>>>>,
+    closing: bool,
+    close_sent: bool,
+}
 
-impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender {
-    async fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()> {
-        self.0
-            .send_async(data)
-            .await
-            .map_err(|_| WebSocketError::Protocol("WebSocket send callback stopped".into()))?
+fn closed_error() -> WebSocketError {
+    WebSocketError::Protocol("WebSocket sender is closed".into())
+}
+
+impl AsyncSender {
+    fn poll_pending(&mut self, cx: &mut Context<'_>) -> Poll<WebSocketResult<()>> {
+        let Some(rx) = self.pending.as_mut() else {
+            return Poll::Ready(Ok(()));
+        };
+        match rx.as_mut().poll(cx) {
+            Poll::Ready(Ok(Ok(()))) => {
+                self.pending = None;
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Ok(Err(e))) => {
+                self.pending = None;
+                Poll::Ready(Err(e))
+            }
+            Poll::Ready(Err(_canceled)) => {
+                self.pending = None;
+                Poll::Ready(Err(WebSocketError::Protocol(
+                    "WebSocket send callback stopped".into(),
+                )))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Sink<WebSocketMessage> for AsyncSender {
+    type Error = WebSocketError;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // All fields are `Unpin` (futures are boxed), so pinning is trivial.
+        let this = self.get_mut();
+        if this.closing || this.close_sent {
+            return Poll::Ready(Err(closed_error()));
+        }
+        if this.pending.is_some() {
+            match this.poll_pending(cx) {
+                Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+                Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+                Poll::Pending => Poll::Pending,
+            }
+        } else {
+            Poll::Ready(Ok(()))
+        }
     }
 
-    async fn close(&mut self) -> WebSocketResult<()> {
-        self.send(WebSocketMessage::Close {
+    fn start_send(self: Pin<&mut Self>, item: WebSocketMessage) -> Result<(), Self::Error> {
+        let this = self.get_mut();
+        if this.closing || this.close_sent {
+            return Err(closed_error());
+        }
+        if this.pending.is_some() {
+            return Err(WebSocketError::Protocol(
+                "WebSocket send buffer is full".into(),
+            ));
+        }
+        let close = matches!(item, WebSocketMessage::Close { .. });
+        this.pending = Some(Box::pin(this.socket.send_async(item)));
+        if close {
+            this.close_sent = true;
+        }
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        this.poll_pending(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        this.closing = true;
+        // A close frame sent via `start_send` already initiates the handshake;
+        // only flush it instead of emitting a second one.
+        if this.close_sent {
+            return this.poll_pending(cx);
+        }
+        // Flush any in-flight message first.
+        match this.poll_pending(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+            Poll::Ready(Ok(())) => {}
+        }
+        // `send_async` with Close completes synchronously (already-resolved channel),
+        // but poll it once for uniformity.
+        this.pending = Some(Box::pin(this.socket.send_async(WebSocketMessage::Close {
             code: 1000,
             reason: String::new(),
-        })
-        .await
+        })));
+        this.close_sent = true;
+        this.poll_pending(cx)
     }
 }
 
 struct AsyncReceiver {
     socket: Arc<Socket>,
-    pending_recv: Option<oneshot::Receiver<WebSocketResult<WebSocketMessage>>>,
+    pending_recv: Option<Pin<Box<oneshot::Receiver<WebSocketResult<WebSocketMessage>>>>>,
+    /// Set once a close frame or a fatal error has been yielded;
+    /// subsequent `poll_next` calls return `None`.
+    terminated: bool,
 }
 
-impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
-    async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
-        let rx = self
+impl Stream for AsyncReceiver {
+    type Item = WebSocketResult<WebSocketMessage>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.terminated {
+            return Poll::Ready(None);
+        }
+        let rx = this
             .pending_recv
-            .get_or_insert_with(|| self.socket.receive_async());
-        let res = rx.await;
-        self.pending_recv = None;
-        res.map_err(|_| WebSocketError::Protocol("WebSocket receive callback stopped".into()))?
+            .get_or_insert_with(|| Box::pin(this.socket.receive_async()));
+        match rx.as_mut().poll(cx) {
+            Poll::Ready(Ok(Ok(msg))) => {
+                this.pending_recv = None;
+                if matches!(msg, WebSocketMessage::Close { .. }) {
+                    this.terminated = true;
+                }
+                Poll::Ready(Some(Ok(msg)))
+            }
+            Poll::Ready(Ok(Err(e))) => {
+                this.pending_recv = None;
+                // `MessageTooLarge` is recoverable (see above); any other
+                // receive failure terminates the stream after this item.
+                if !matches!(e, WebSocketError::MessageTooLarge) {
+                    this.terminated = true;
+                }
+                Poll::Ready(Some(Err(e)))
+            }
+            Poll::Ready(Err(_canceled)) => {
+                this.pending_recv = None;
+                this.terminated = true;
+                Poll::Ready(Some(Err(WebSocketError::Protocol(
+                    "WebSocket receive callback stopped".into(),
+                ))))
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }

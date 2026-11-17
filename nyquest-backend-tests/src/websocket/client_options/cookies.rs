@@ -1,3 +1,5 @@
+#[cfg(feature = "async")]
+use futures_util::{SinkExt, StreamExt};
 use http_body_util::Full;
 use hyper::header::SET_COOKIE;
 use hyper::{body::Bytes, Response};
@@ -64,7 +66,8 @@ fn websocket_client_options_cookies_enabled() {
             .send(WebSocketMessage::Utf8("get-header:cookie".into()))
             .await
             .unwrap();
-        let WebSocketMessage::Utf8(cookie_header) = ws.receiver.receive().await.unwrap() else {
+        let WebSocketMessage::Utf8(cookie_header) = ws.receiver.next().await.unwrap().unwrap()
+        else {
             panic!("expected text message");
         };
         assert!(
@@ -139,7 +142,8 @@ fn websocket_client_options_cookies_disabled() {
             .send(WebSocketMessage::Utf8("get-header:cookie".into()))
             .await
             .unwrap();
-        let WebSocketMessage::Utf8(cookie_header) = ws.receiver.receive().await.unwrap() else {
+        let WebSocketMessage::Utf8(cookie_header) = ws.receiver.next().await.unwrap().unwrap()
+        else {
             panic!("expected text message");
         };
         assert!(

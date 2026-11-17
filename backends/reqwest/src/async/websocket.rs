@@ -1,26 +1,37 @@
 use std::borrow::Cow;
-use std::future::{poll_fn, Future};
-use std::pin::pin;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
-use futures::{SinkExt, StreamExt};
+use futures::{Sink, Stream};
 use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
+use pin_project_lite::pin_project;
 
 use super::execute_with_runtime_async;
 use crate::client::ReqwestClient;
 use crate::runtime::ManagedRuntime;
 use crate::websocket::{
-    connect_parts, from_tungstenite_message, into_tungstenite_message, map_error, Sink, Source,
+    connect_parts, from_tungstenite_message, into_tungstenite_message, map_error,
+    Sink as InnerSink, Source as InnerSource,
 };
 
-struct AsyncSender {
-    sink: Sink,
-    runtime: Arc<ManagedRuntime>,
+pin_project! {
+    struct AsyncSender {
+        #[pin]
+        sink: InnerSink,
+        runtime: Arc<ManagedRuntime>,
+        closing: bool,
+        close_sent: bool,
+    }
 }
 
-struct AsyncReceiver {
-    source: Source,
-    runtime: Arc<ManagedRuntime>,
+pin_project! {
+    struct AsyncReceiver {
+        #[pin]
+        source: InnerSource,
+        runtime: Arc<ManagedRuntime>,
+        terminated: bool,
+    }
 }
 
 pub(super) async fn connect_async(
@@ -49,56 +60,108 @@ pub(super) async fn connect_async(
         nyquest_interface::r#async::websocket::WebSocketSender::from_impl(AsyncSender {
             sink,
             runtime: runtime.clone(),
+            closing: false,
+            close_sent: false,
         }),
         nyquest_interface::r#async::websocket::WebSocketReceiver::from_impl(AsyncReceiver {
             source,
             runtime,
+            terminated: false,
         }),
     ))
 }
 
-impl nyquest_interface::r#async::websocket::AsyncWebSocketSender for AsyncSender {
-    async fn send(&mut self, data: WebSocketMessage) -> WebSocketResult<()> {
-        let message = into_tungstenite_message(data);
-        let runtime = &self.runtime;
-        let mut fut = pin!(self.sink.send(message));
-        poll_fn(|cx| {
-            let _enter = runtime.get_handle_for_async().enter();
-            fut.as_mut().poll(cx)
-        })
-        .await
-        .map_err(map_error)
+fn is_close(item: &WebSocketMessage) -> bool {
+    matches!(item, WebSocketMessage::Close { .. })
+}
+
+fn closed_error() -> WebSocketError {
+    WebSocketError::Protocol("WebSocket sender is closed".into())
+}
+
+impl Sink<WebSocketMessage> for AsyncSender {
+    type Error = nyquest_interface::websocket::WebSocketError;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut this = self.project();
+        if *this.closing || *this.close_sent {
+            return Poll::Ready(Err(closed_error()));
+        }
+        let _enter = this.runtime.get_handle_for_async().enter();
+        this.sink.as_mut().poll_ready(cx).map_err(map_error)
     }
 
-    async fn close(&mut self) -> WebSocketResult<()> {
-        let runtime = &self.runtime;
-        let mut fut = pin!(self.sink.close());
-        poll_fn(|cx| {
-            let _enter = runtime.get_handle_for_async().enter();
-            fut.as_mut().poll(cx)
-        })
-        .await
-        .map_err(map_error)
+    fn start_send(self: Pin<&mut Self>, item: WebSocketMessage) -> Result<(), Self::Error> {
+        let mut this = self.project();
+        if *this.closing || *this.close_sent {
+            return Err(closed_error());
+        }
+        let close = is_close(&item);
+        let _enter = this.runtime.get_handle_for_async().enter();
+        this.sink
+            .as_mut()
+            .start_send(into_tungstenite_message(item))
+            .map_err(map_error)?;
+        if close {
+            *this.close_sent = true;
+        }
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut this = self.project();
+        let _enter = this.runtime.get_handle_for_async().enter();
+        this.sink.as_mut().poll_flush(cx).map_err(map_error)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut this = self.project();
+        *this.closing = true;
+        // A close frame sent via `start_send` already initiates the handshake;
+        // only flush it instead of emitting a second one.
+        if *this.close_sent {
+            let _enter = this.runtime.get_handle_for_async().enter();
+            return this.sink.as_mut().poll_flush(cx).map_err(map_error);
+        }
+        let _enter = this.runtime.get_handle_for_async().enter();
+        this.sink.as_mut().poll_close(cx).map_err(map_error)
     }
 }
 
-impl nyquest_interface::r#async::websocket::AsyncWebSocketReceiver for AsyncReceiver {
-    async fn receive(&mut self) -> WebSocketResult<WebSocketMessage> {
-        let handle = &self.runtime.get_handle_for_async();
+impl Stream for AsyncReceiver {
+    type Item = WebSocketResult<WebSocketMessage>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self.project();
+        if *this.terminated {
+            return Poll::Ready(None);
+        }
         loop {
             let next = {
-                let mut fut = pin!(self.source.next());
-                poll_fn(|cx| {
-                    let _enter = handle.enter();
-                    fut.as_mut().poll(cx)
-                })
-                .await
+                let _enter = this.runtime.get_handle_for_async().enter();
+                this.source.as_mut().poll_next(cx)
             };
-            let message = next
-                .ok_or_else(|| WebSocketError::Protocol("WebSocket stream ended".into()))?
-                .map_err(map_error)?;
-            if let Some(msg) = from_tungstenite_message(message) {
-                return Ok(msg);
+            match next {
+                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Ready(Some(Err(e))) => {
+                    *this.terminated = true;
+                    return Poll::Ready(Some(Err(map_error(e))));
+                }
+                Poll::Ready(Some(Ok(message))) => {
+                    if let Some(msg) = from_tungstenite_message(message) {
+                        if matches!(msg, WebSocketMessage::Close { .. }) {
+                            *this.terminated = true;
+                        }
+                        return Poll::Ready(Some(Ok(msg)));
+                    }
+                    // Ping/Pong/Frame: poll again within the same task.
+                    // If the underlying stream is now Pending, the waker is
+                    // already registered; loop to re-poll.
+                    // To avoid busy-loop when the underlying source keeps
+                    // yielding skippable messages, re-poll directly.
+                    continue;
+                }
+                Poll::Pending => return Poll::Pending,
             }
         }
     }

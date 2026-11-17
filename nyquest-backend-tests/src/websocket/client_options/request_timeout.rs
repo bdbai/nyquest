@@ -119,7 +119,7 @@ fn websocket_client_options_request_didnt_timeout() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8("didnt-timeout".into())
         );
         ws.sender.close().await.unwrap();
@@ -163,7 +163,7 @@ fn websocket_client_options_late_sendrecv_didnt_timeout() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8("didnt-timeout".into())
         );
         ws.sender.close().await.unwrap();

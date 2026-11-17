@@ -11,7 +11,7 @@ mod multi_easy;
 #[cfg(feature = "blocking-stream")]
 mod part_reader;
 mod set;
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 mod websocket;
 
 use crate::curl_ng::easy::Share;
@@ -201,7 +201,7 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
         })
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,

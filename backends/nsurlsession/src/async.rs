@@ -9,7 +9,7 @@ use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
 
 pub(crate) mod waker;
-#[cfg(feature = "ws")]
+#[cfg(feature = "async-ws")]
 mod websocket;
 
 use crate::client::NSUrlSessionClient;
@@ -147,7 +147,7 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         })
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     async fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,

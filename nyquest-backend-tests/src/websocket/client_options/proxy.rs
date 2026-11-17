@@ -3,6 +3,8 @@ use std::sync::{
     Arc,
 };
 
+#[cfg(feature = "async")]
+use futures_util::{SinkExt, StreamExt};
 use nyquest::{client::CustomProxy, WebSocketMessage};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -105,7 +107,7 @@ fn websocket_client_options_custom_proxy() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8("via-proxy".into())
         );
         assert!(
@@ -157,7 +159,7 @@ fn websocket_client_options_custom_proxy_bypass() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8("bypass-proxy".into())
         );
         assert_eq!(proxy_hits.load(Ordering::SeqCst), 0);

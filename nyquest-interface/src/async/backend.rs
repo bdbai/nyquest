@@ -33,7 +33,7 @@ pub trait AsyncClient: Clone + Send + Sync + 'static {
     // TODO: fn request_file
 
     /// Opens a WebSocket connection.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     fn connect_websocket(
         &self,
         _uri: std::borrow::Cow<'static, str>,

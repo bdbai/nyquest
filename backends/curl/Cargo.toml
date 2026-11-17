@@ -23,10 +23,16 @@ async = [
     "dep:futures-util",
     "dep:slab",
 ]
+async-ws = [
+    "async",
+    "nyquest-interface/async-ws",
+    "dep:futures-core",
+    "dep:futures-sink",
+]
 async-stream = ["async", "nyquest-interface/async-stream"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
-ws = ["nyquest-interface/ws"]
+blocking-ws = ["blocking", "nyquest-interface/blocking-ws"]
 multipart = ["nyquest-interface/multipart"]
 ssl = ["curl/ssl"]
 charset = ["dep:iconv-native"]
@@ -39,15 +45,21 @@ curl = { version = "0.4.51", features = [
 ], default-features = false }
 curl-sys = { version = "0.4", default-features = false }
 socket2 = "0.6"
-iconv-native = { version = "0.1.0", optional = true, default-features = false }
-futures-channel = { version = "0.3", optional = true, default-features = false, features = [
+iconv-native = { workspace = true, optional = true, default-features = false }
+futures-channel = { workspace = true, optional = true, default-features = false, features = [
     "alloc",
 ] }
-futures-util = { version = "0.3", optional = true, default-features = false, features = [
+futures-core = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
+futures-sink = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
+futures-util = { workspace = true, optional = true, default-features = false, features = [
     "std",
     "io",
 ] }
 slab = { version = "0.4", optional = true, default-features = false }
-pin-project-lite = "0.2"
+pin-project-lite.workspace = true
 libc = "0.2.42"
-memchr = { version = "2", default-features = false }
+memchr = { workspace = true, default-features = false }

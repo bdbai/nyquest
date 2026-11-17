@@ -11,7 +11,7 @@ mod read_task;
 #[cfg(feature = "async-stream")]
 mod stream_content;
 mod timer_ext;
-#[cfg(feature = "ws")]
+#[cfg(feature = "async-ws")]
 mod websocket;
 
 use crate::client::WinrtClient;
@@ -147,7 +147,7 @@ impl AsyncClient for WinrtClient {
         self.send_request_async(req).await
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     async fn connect_websocket(
         &self,
         uri: std::borrow::Cow<'static, str>,

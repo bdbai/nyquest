@@ -16,7 +16,7 @@ use crate::runtime::ManagedRuntime;
 
 #[cfg(feature = "blocking-stream")]
 mod stream;
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 mod websocket;
 
 #[derive(Clone)]
@@ -43,7 +43,7 @@ impl BlockingClient for ReqwestBlockingClient {
         block_on_with_handle(&handle, || execute_request(self, req))
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,

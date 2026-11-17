@@ -26,7 +26,7 @@ pub type Part = crate::body::Part<BoxedStream>;
 /// The multipart form part body type for blocking requests.
 #[cfg(feature = "multipart")]
 pub type PartBody = crate::body::PartBody<BoxedStream>;
-#[cfg(feature = "ws")]
+#[cfg(feature = "blocking-ws")]
 pub use nyquest_interface::blocking::{WebSocket, WebSocketReceiver, WebSocketSender};
 #[cfg(feature = "blocking-stream")]
 pub use read_stream::ReadStream;

@@ -37,8 +37,7 @@ mod customizer;
 mod error;
 mod request;
 #[cfg(all(
-    feature = "ws",
-    any(feature = "async", feature = "blocking"),
+    any(feature = "async-ws", feature = "blocking-ws"),
     not(target_arch = "wasm32")
 ))]
 mod websocket;

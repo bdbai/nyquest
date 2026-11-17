@@ -161,7 +161,7 @@ fn websocket_client_options_certificate_expired_ignored() {
             .await
             .unwrap();
         assert_eq!(
-            ws.receiver.receive().await.unwrap(),
+            ws.receiver.next().await.unwrap().unwrap(),
             WebSocketMessage::Utf8("tls-ok".into())
         );
         ws.sender.close().await.unwrap();

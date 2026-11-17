@@ -18,9 +18,13 @@ use futures_core::future::BoxFuture;
 use super::backend::AsyncResponse;
 use super::Request;
 use crate::client::ClientOptions;
-#[cfg(feature = "ws")]
-use crate::websocket::{WebSocketMessage, WebSocketResult};
+#[cfg(feature = "async-ws")]
+use crate::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
 use crate::Result;
+#[cfg(feature = "async-ws")]
+use futures_core::Stream;
+#[cfg(feature = "async-ws")]
+use futures_sink::Sink;
 
 /// Trait for type-erased async backend implementations.
 ///
@@ -42,7 +46,7 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>>;
     /// Opens a WebSocket connection.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
@@ -50,20 +54,28 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>>;
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "async-ws")]
 /// Type-erased asynchronous WebSocket sender.
-pub trait AnyAsyncWebSocketSender: Send {
-    /// Sends a message.
-    fn send(&mut self, data: WebSocketMessage) -> BoxFuture<'_, WebSocketResult<()>>;
-    /// Closes the connection.
-    fn close(&mut self) -> BoxFuture<'_, WebSocketResult<()>>;
+///
+/// Automatically implemented for all [`Sink`]s of [`WebSocketMessage`].
+pub trait AnyAsyncWebSocketSender: Sink<WebSocketMessage, Error = WebSocketError> + Send {}
+
+#[cfg(feature = "async-ws")]
+impl<T> AnyAsyncWebSocketSender for T where T: Sink<WebSocketMessage, Error = WebSocketError> + Send {}
+
+#[cfg(feature = "async-ws")]
+/// Type-erased asynchronous WebSocket receiver.
+///
+/// Automatically implemented for all [`Stream`]s of [`WebSocketResult`]`<`[`WebSocketMessage`]`>`.
+pub trait AnyAsyncWebSocketReceiver:
+    Stream<Item = WebSocketResult<WebSocketMessage>> + Send
+{
 }
 
-#[cfg(feature = "ws")]
-/// Type-erased asynchronous WebSocket receiver.
-pub trait AnyAsyncWebSocketReceiver: Send {
-    /// Receives the next message.
-    fn receive(&mut self) -> BoxFuture<'_, WebSocketResult<WebSocketMessage>>;
+#[cfg(feature = "async-ws")]
+impl<T> AnyAsyncWebSocketReceiver for T where
+    T: Stream<Item = WebSocketResult<WebSocketMessage>> + Send
+{
 }
 
 /// Trait for type-erased async HTTP responses.
@@ -149,7 +161,7 @@ where
         }) as _
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "async-ws")]
     fn connect_websocket(
         &self,
         uri: Cow<'static, str>,
