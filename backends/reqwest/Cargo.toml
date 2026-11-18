@@ -19,7 +19,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["default-tls", "reqwest/system-proxy"]
 async = ["nyquest-interface/async"]
 async-stream = ["async", "nyquest-interface/async-stream"]
-async-ws = ["async", "nyquest-interface/async-ws", "dep:tokio-tungstenite", "dep:pin-project-lite"]
+async-ws = [
+    "async",
+    "nyquest-interface/async-ws",
+    "dep:tokio-tungstenite",
+    "dep:pin-project-lite",
+    "dep:gloo-net",
+    "dep:js-sys",
+    "dep:wasm-bindgen",
+    "dep:web-sys",
+]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
 blocking-ws = ["blocking", "nyquest-interface/blocking-ws", "dep:tokio-tungstenite"]
@@ -61,6 +70,25 @@ optional = true
 default-features = false
 workspace = true
 features = ["web-encoding"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.gloo-net]
+version = "0.8"
+default-features = false
+features = ["websocket"]
+optional = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.js-sys]
+version = "0.3"
+optional = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.wasm-bindgen]
+version = "0.2"
+optional = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "0.3"
+features = ["WebSocket"]
+optional = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.reqwest]
 version = "0.13"

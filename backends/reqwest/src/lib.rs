@@ -17,6 +17,8 @@ cfg_if::cfg_if! {
             mod options;
             mod response;
             mod send_wrapper;
+            #[cfg(feature = "async-ws")]
+            mod websocket;
 
             pub(crate) use options::WasmOptions;
         }
