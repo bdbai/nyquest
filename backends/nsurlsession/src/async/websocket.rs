@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 
 use block2::RcBlock;
 use futures_channel::oneshot;
-use futures_core::Stream;
+use futures_core::{Future, Stream};
 use futures_sink::Sink;
 use nyquest_interface::websocket::{WebSocketMessage, WebSocketResult};
 use nyquest_interface::WebSocketError;

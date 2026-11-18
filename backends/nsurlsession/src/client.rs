@@ -228,6 +228,7 @@ impl NSUrlSessionClient {
         }
         #[cfg(not(any(feature = "async-stream", feature = "blocking-stream")))]
         {
+            _ = waker;
             unreachable!("async-stream or blocking-stream feature is required for stream body")
         }
     }

@@ -24,7 +24,7 @@ cfg_if::cfg_if! {
         mod response;
         mod retained_ext;
         mod stream;
-        #[cfg(feature = "async-ws")]
+        #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
         mod websocket;
     }
 }
