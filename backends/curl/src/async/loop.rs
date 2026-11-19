@@ -11,18 +11,17 @@ use futures_util::lock::Mutex as FuturesMutex;
 use crate::curl_ng::easy::AsRawEasyMut as _;
 use crate::curl_ng::multi::{MultiWaker, MultiWithSet, RawMulti, WakeableMulti};
 use crate::r#async::set::SlabMultiSet;
-use crate::r#async::shared::{RequestResult, SharedRequestStates};
+use crate::r#async::shared::{RequestResult, SharedRequestStates, SharedRequestStatesInner};
 use crate::r#async::AsyncHandler;
 use crate::request::{AsCallbackMut as _, BoxEasyHandle};
 
-pub(super) struct RequestHandle {
+pub(crate) struct RequestHandle {
     id: usize,
     shared_state: Arc<SharedRequestStates>,
     manager: LoopManagerShared,
-    is_recv_unpause_sent: bool,
 }
 
-enum LoopTask {
+pub(crate) enum LoopTask {
     ConstructHandle(super::Easy),
     QueryHandleResponse(RequestHandle),
     UnpauseRecvHandle(usize),
@@ -100,23 +99,48 @@ impl RequestHandle {
         cx: &mut Context<'_>,
         cb: impl FnOnce(&mut Vec<u8>) -> nyquest_interface::Result<T>,
     ) -> Poll<nyquest_interface::Result<Option<T>>> {
+        self.poll_recv(cx, |state| {
+            state
+                .state
+                .data_available()
+                .then(|| cb(&mut state.state.response_buffer))
+        })
+        .map(|res| res.and_then(|opt| opt.transpose()))
+    }
+
+    pub(super) fn poll_recv<T>(
+        &self,
+        cx: &mut Context<'_>,
+        cb: impl FnOnce(&mut SharedRequestStatesInner) -> Option<T>,
+    ) -> Poll<nyquest_interface::Result<Option<T>>> {
         let mut state = self.shared_state.state.lock().unwrap();
-        if state.state.data_available() {
-            let res = cb(&mut state.state.response_buffer);
-            self.is_recv_unpause_sent = false;
-            return Poll::Ready(res.map(Some));
+        if let Some(res) = cb(&mut state) {
+            state.is_recv_unpause_sent = false;
+            return Poll::Ready(Ok(Some(res)));
         }
-        if let RequestResult::Done { res, .. } = std::mem::take(&mut state.result) {
-            self.is_recv_unpause_sent = false;
-            return Poll::Ready(res.map(|_| None));
-        };
-        if !std::mem::replace(&mut self.is_recv_unpause_sent, true) {
+        match std::mem::take(&mut state.result) {
+            r @ RequestResult::InProgress { .. } => state.result = r,
+            RequestResult::Done { res, .. } => {
+                state.is_recv_unpause_sent = false;
+                return Poll::Ready(res.map(|_| None));
+            }
+            RequestResult::Init | RequestResult::EasyLost(_) => {
+                state.is_recv_unpause_sent = false;
+                return Poll::Ready(Ok(None));
+            }
+        }
+        if !std::mem::replace(&mut state.is_recv_unpause_sent, true) {
             self.manager
                 .dispatch_task(LoopTask::UnpauseRecvHandle(self.id))
                 .ok();
         }
         self.shared_state.waker.register(cx.waker());
         Poll::Pending
+    }
+
+    #[cfg(feature = "async-ws")]
+    pub(super) fn manager(&self) -> &LoopManagerShared {
+        &self.manager
     }
 }
 
@@ -147,11 +171,11 @@ impl Drop for LoopManagerInner {
 }
 
 #[derive(Clone)]
-struct LoopManagerShared {
+pub(crate) struct LoopManagerShared {
     inner: Weak<Mutex<LoopManagerInner>>,
 }
 
-pub(super) struct LoopManager {
+pub(crate) struct LoopManager {
     inner: FuturesMutex<Option<LoopManagerShared>>,
 }
 
@@ -172,7 +196,7 @@ impl LoopManagerShared {
             .expect("failed to spawn curl multi loop");
         multi_waker_rx.await.expect("not receiving request manager")
     }
-    fn dispatch_task(&self, task: LoopTask) -> Result<(), LoopTask> {
+    pub(crate) fn dispatch_task(&self, task: LoopTask) -> Result<(), LoopTask> {
         let Some(inner) = self.inner.upgrade() else {
             return Err(task);
         };
@@ -215,54 +239,12 @@ impl LoopManagerShared {
         })
         .await
     }
-}
 
-impl PartialEq for LoopManagerShared {
-    fn eq(&self, other: &Self) -> bool {
-        Weak::ptr_eq(&self.inner, &other.inner)
-    }
-}
-
-impl Eq for LoopManagerShared {}
-
-impl LoopManager {
-    pub(super) fn new() -> Self {
-        Self {
-            inner: FuturesMutex::new(None),
-        }
-    }
-    pub(super) async fn start_request(
-        &self,
-        mut easy: BoxEasyHandle<AsyncHandler>,
-    ) -> nyquest_interface::Result<RequestHandle> {
-        let shared_state = easy.as_callback_mut().ctx.clone();
-        loop {
-            let inner = match &mut *self.inner.lock().await {
-                Some(inner) => inner.clone(),
-                manager @ None => manager
-                    .insert(LoopManagerShared::start_loop().await)
-                    .clone(),
-            };
-            let backup_easy = match inner.start_request(easy, &shared_state).await {
-                Ok(res) => {
-                    return Ok(RequestHandle {
-                        id: res,
-                        shared_state,
-                        manager: inner,
-                        is_recv_unpause_sent: false,
-                    })
-                }
-                Err(res) => res,
-            };
-            {
-                let mut new_manager = self.inner.lock().await;
-                if *new_manager == Some(inner) {
-                    *new_manager = Some(LoopManagerShared::start_loop().await);
-                }
-            }
-            easy = backup_easy;
-        }
-    }
+    #[cfg(any(
+        feature = "async-stream",
+        feature = "async-ws",
+        feature = "blocking-ws"
+    ))]
     pub(super) async fn batch_unpause_send<
         's,
         E,
@@ -272,8 +254,7 @@ impl LoopManager {
         shared_state: &SharedRequestStates,
         mut cb: C,
     ) -> ControlFlow<E, C> {
-        let mut inner = self.inner.lock().await;
-        let Some(inner) = inner.as_mut().and_then(|i| i.inner.upgrade()) else {
+        let Some(inner) = self.inner.upgrade() else {
             return ControlFlow::Continue(cb);
         };
         let RequestResult::InProgress { id } = shared_state.state.lock().unwrap().result else {
@@ -297,8 +278,74 @@ impl LoopManager {
     }
 }
 
+impl PartialEq for LoopManagerShared {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Eq for LoopManagerShared {}
+
+impl LoopManager {
+    pub(super) fn new() -> Self {
+        Self {
+            inner: FuturesMutex::new(None),
+        }
+    }
+    pub(crate) async fn start_request(
+        &self,
+        mut easy: BoxEasyHandle<AsyncHandler>,
+    ) -> nyquest_interface::Result<RequestHandle> {
+        let shared_state = easy.as_callback_mut().ctx.clone();
+        loop {
+            let inner = match &mut *self.inner.lock().await {
+                Some(inner) => inner.clone(),
+                manager @ None => manager
+                    .insert(LoopManagerShared::start_loop().await)
+                    .clone(),
+            };
+            let backup_easy = match inner.start_request(easy, &shared_state).await {
+                Ok(res) => {
+                    return Ok(RequestHandle {
+                        id: res,
+                        shared_state,
+                        manager: inner,
+                    })
+                }
+                Err(res) => res,
+            };
+            {
+                let mut new_manager = self.inner.lock().await;
+                if *new_manager == Some(inner) {
+                    *new_manager = Some(LoopManagerShared::start_loop().await);
+                }
+            }
+            easy = backup_easy;
+        }
+    }
+    #[cfg(feature = "async-stream")]
+    pub(super) async fn batch_unpause_send<
+        's,
+        E,
+        C: for<'a> FnMut(&mut Context<'a>, &mut SendUnpauser) -> ControlFlow<E>,
+    >(
+        &self,
+        shared_state: &SharedRequestStates,
+        cb: C,
+    ) -> ControlFlow<E, C> {
+        let inner = self.inner.lock().await;
+        let Some(inner) = &*inner else {
+            return ControlFlow::Continue(cb);
+        };
+        inner.batch_unpause_send(shared_state, cb).await
+    }
+}
+
 impl<'a> SendUnpauser<'a> {
     pub fn unpause_send(&mut self) {
+        if self.sent {
+            return;
+        }
         self.manager
             .tasks
             .push_back(LoopTask::UnpauseSendHandle(self.id));
@@ -368,14 +415,14 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                     let mut state = ctx.state.lock().unwrap();
                     ctx.waker.wake();
                     let Some(handle) = multi.lookup(id) else {
-                        state.result = RequestResult::Done {
-                            res: Err(io::Error::new(
+                        state.set_done(
+                            id,
+                            Err(io::Error::new(
                                 io::ErrorKind::ConnectionAborted,
                                 "handle not found",
                             )
                             .into()),
-                            id,
-                        };
+                        );
                         continue;
                     };
                     let res = handle
@@ -390,14 +437,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                             Ok(super::CurlAsyncResponse {
                                 status,
                                 content_length,
-                                headers: state
-                                    .state
-                                    .response_headers_buffer
-                                    .iter_mut()
-                                    .filter_map(|line| std::str::from_utf8_mut(&mut *line).ok())
-                                    .filter_map(|line| line.split_once(':'))
-                                    .map(|(k, v)| (k.into(), v.trim_start().into()))
-                                    .collect(),
+                                headers: state.state.get_headers(),
                                 handle: req_handle,
                                 max_response_buffer_size: None, // To be filled in client.request()
                             })
@@ -408,7 +448,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                             state.response = Some(response);
                         }
                         Err(e) => {
-                            state.result = RequestResult::Done { res: Err(e), id };
+                            state.set_done(id, Err(e));
                         }
                     };
                 }
@@ -421,7 +461,7 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                         handle.with_error_message(|e| e.as_raw_easy_mut().unpause_recv())
                     {
                         let res = Err(e.into());
-                        ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
+                        ctx.state.lock().unwrap().set_done(id, res);
                         ctx.waker.wake();
                     }
                 }
@@ -436,8 +476,9 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
                         e.as_mut().as_raw_easy_mut().pause_send()?;
                         e.as_raw_easy_mut().unpause_send()
                     }) {
-                        let res = Err(e.into());
-                        ctx.state.lock().unwrap().result = RequestResult::Done { res, id };
+                        let err: nyquest_interface::Error = e.into();
+                        let res = Err(err);
+                        ctx.state.lock().unwrap().set_done(id, res);
                         ctx.waker.wake();
                     }
                 }
@@ -459,14 +500,12 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             Ok(res) => res,
             Err(err) => {
                 for (id, ctx) in multi.iter_mut() {
+                    let err_nyquest: nyquest_interface::Error = err.clone().into();
                     let ctx = &*ctx.as_callback_mut().ctx;
                     let state = ctx.state.lock();
                     if let Ok(mut state) = state {
                         if !matches!(state.result, RequestResult::Done { .. }) {
-                            state.result = RequestResult::Done {
-                                res: Err(err.clone().into()),
-                                id,
-                            };
+                            state.set_done(id, Err(err_nyquest));
                             ctx.waker.wake();
                         }
                     }
@@ -475,14 +514,14 @@ fn run_loop(multl_waker_tx: oneshot::Sender<LoopManagerShared>) {
             }
         };
         multi.messages(|token, mut e, res| {
-            let res = e
+            let res: Result<Option<()>, nyquest_interface::Error> = e
                 .as_mut()
                 .with_error_message(|_| res.transpose())
                 .map_err(|e| e.into());
             let ctx = &*e.as_callback_mut().ctx;
             if let Some(res) = res.transpose() {
                 let mut state = ctx.state.lock().unwrap();
-                state.result = RequestResult::Done { res, id: token };
+                state.set_done(token, res);
             }
             ctx.waker.wake();
         });

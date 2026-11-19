@@ -17,6 +17,8 @@ cfg_if::cfg_if! {
             mod options;
             mod response;
             mod send_wrapper;
+            #[cfg(feature = "async-ws")]
+            mod websocket;
 
             pub(crate) use options::WasmOptions;
         }
@@ -28,6 +30,7 @@ cfg_if::cfg_if! {
         #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
         mod blocking;
         mod response;
+        mod runtime;
     }
 }
 mod backend;
@@ -35,6 +38,11 @@ mod client;
 mod customizer;
 mod error;
 mod request;
+#[cfg(all(
+    any(feature = "async-ws", feature = "blocking-ws"),
+    not(target_arch = "wasm32")
+))]
+mod websocket;
 
 pub use crate::backend::ReqwestBackend;
 #[doc(no_inline)]

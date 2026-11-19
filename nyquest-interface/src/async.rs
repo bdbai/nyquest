@@ -5,11 +5,22 @@
 
 mod any;
 mod backend;
+#[cfg(feature = "async-ws")]
+pub mod websocket;
+#[cfg(feature = "async-ws")]
+pub use websocket::{
+    AsyncWebSocketReceiver, AsyncWebSocketSender, WebSocket, WebSocketReceiver, WebSocketSender,
+};
 
 pub use any::{AnyAsyncBackend, AnyAsyncClient, AnyAsyncResponse};
 pub use backend::{AsyncBackend, AsyncClient, AsyncResponse};
 /// Type alias for asynchronous HTTP requests.
 pub type Request = crate::Request<BoxedStream>;
+
+#[cfg(feature = "async-ws")]
+pub use futures_core;
+#[cfg(feature = "async-ws")]
+pub use futures_sink;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "async-stream")] {

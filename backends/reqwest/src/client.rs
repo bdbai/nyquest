@@ -1,13 +1,13 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::OnceLock;
 
 use http::{HeaderMap, HeaderName, HeaderValue};
 use nyquest_interface::{client::ClientOptions, Result as NyquestResult};
 use reqwest::Client;
 use url::Url;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::runtime::ManagedRuntime;
 use crate::{
     customizer::Customizer,
     error::{ReqwestBackendError, Result},
@@ -21,7 +21,7 @@ pub struct ReqwestClient {
     #[cfg(target_arch = "wasm32")]
     pub(crate) wasm_options: crate::wasm::WasmOptions,
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) managed_runtime: Arc<OnceLock<tokio::runtime::Runtime>>,
+    pub(crate) managed_runtime: Arc<ManagedRuntime>,
 }
 
 impl ReqwestClient {
@@ -50,7 +50,7 @@ impl ReqwestClient {
                 use_cookies: options.use_cookies,
             },
             #[cfg(not(target_arch = "wasm32"))]
-            managed_runtime: Arc::new(OnceLock::new()),
+            managed_runtime: Arc::new(Default::default()),
         })
     }
 }

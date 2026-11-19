@@ -64,18 +64,21 @@ impl RawEasy {
         }
     }
 
+    #[cfg(feature = "async")]
     pub fn pause_send(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         unsafe {
             curl_sys::curl_easy_pause(self.raw(), curl_sys::CURLPAUSE_SEND)
                 .with_easy_context("curl_easy_pause SEND")
         }
     }
+    #[cfg(feature = "async")]
     pub fn unpause_send(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         unsafe {
             curl_sys::curl_easy_pause(self.raw(), curl_sys::CURLPAUSE_SEND_CONT)
                 .with_easy_context("curl_easy_pause SEND_CONT")
         }
     }
+    #[cfg(feature = "async")]
     pub fn unpause_recv(self: Pin<&mut Self>) -> Result<(), CurlCodeContext> {
         unsafe {
             curl_sys::curl_easy_pause(self.raw(), curl_sys::CURLPAUSE_RECV_CONT)

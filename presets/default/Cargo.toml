@@ -25,6 +25,13 @@ async-stream = [
     "nyquest-backend-winrt/async-stream",
     "nyquest-backend-nsurlsession/async-stream",
 ]
+async-ws = [
+    "async",
+    "nyquest/async-ws",
+    "nyquest-backend-curl/async-ws",
+    "nyquest-backend-winrt/async-ws",
+    "nyquest-backend-nsurlsession/async-ws",
+]
 blocking = [
     "nyquest/blocking",
     "nyquest-backend-curl/blocking",
@@ -38,6 +45,13 @@ blocking-stream = [
     "nyquest-backend-winrt/blocking-stream",
     "nyquest-backend-nsurlsession/blocking-stream",
 ]
+blocking-ws = [
+    "blocking",
+    "nyquest/blocking-ws",
+    "nyquest-backend-curl/blocking-ws",
+    "nyquest-backend-winrt/blocking-ws",
+    "nyquest-backend-nsurlsession/blocking-ws",
+]
 multipart = [
     "nyquest/multipart",
     "nyquest-backend-curl/multipart",
@@ -48,7 +62,7 @@ auto-register = ["dep:ctor"]
 
 [dependencies]
 nyquest = { version = "0.5.0", path = "../..", default-features = false }
-cfg-if = "1"
+cfg-if.workspace = true
 ctor = { version = "1", optional = true, default-features = false }
 
 [target.'cfg(windows)'.dependencies]

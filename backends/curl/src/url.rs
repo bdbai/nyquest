@@ -1,8 +1,17 @@
 use std::{borrow::Cow, ffi::CStr};
 
 fn is_absolute(url: &str) -> bool {
-    url.len() >= 8
-        && (url[..7].eq_ignore_ascii_case("http://") || url[..8].eq_ignore_ascii_case("https://"))
+    url.get(..7)
+        .is_some_and(|s| s.eq_ignore_ascii_case("http://"))
+        || url
+            .get(..8)
+            .is_some_and(|s| s.eq_ignore_ascii_case("https://"))
+        || url
+            .get(..5)
+            .is_some_and(|s| s.eq_ignore_ascii_case("ws://"))
+        || url
+            .get(..6)
+            .is_some_and(|s| s.eq_ignore_ascii_case("wss://"))
 }
 
 pub(crate) fn concat_url(base: Option<&str>, relative: &str) -> String {
@@ -72,6 +81,10 @@ mod tests {
             "https://example.com",
             "HTTP://EXAMPLE.COM",
             "HTTPS://EXAMPLE.COM",
+            "ws://example.com",
+            "wss://example.com",
+            "WS://EXAMPLE.COM",
+            "WSS://EXAMPLE.COM",
         ];
         for url in urls {
             assert!(is_absolute(url), "{url}");

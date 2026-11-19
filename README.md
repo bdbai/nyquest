@@ -72,13 +72,13 @@ The following items are planned in MVP:
 - [x] Client Options
 - [x] Streaming download
 - [x] Streaming upload
+- [x] WebSocket
 - [x] Test framework for backends
 - [x] Presets
 - [x] Documentation
 
 Future work may include:
 
-- [ ] WebSocket
 - [ ] Backend: WASM fetch
 - [ ] Cookie management
 - [ ] Progress tracking

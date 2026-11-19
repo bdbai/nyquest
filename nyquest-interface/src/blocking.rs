@@ -5,6 +5,10 @@
 
 mod any;
 mod backend;
+#[cfg(feature = "blocking-ws")]
+pub mod websocket;
+#[cfg(feature = "blocking-ws")]
+pub use websocket::{WebSocket, WebSocketReceiver, WebSocketSender};
 
 pub use any::{AnyBlockingBackend, AnyBlockingClient, AnyBlockingResponse};
 pub use backend::{BlockingBackend, BlockingClient, BlockingResponse};

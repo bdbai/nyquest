@@ -239,14 +239,8 @@ impl MultiEasy {
         f(&mut self.easy_mut().as_callback_mut().state.response_buffer)
     }
 
-    pub fn take_response_headers_buffer(&mut self) -> Vec<Vec<u8>> {
-        std::mem::take(
-            &mut self
-                .easy_mut()
-                .as_callback_mut()
-                .state
-                .response_headers_buffer,
-        )
+    pub fn get_response_headers_buffer(&mut self) -> Vec<(String, String)> {
+        self.easy_mut().as_callback_mut().state.get_headers()
     }
 }
 

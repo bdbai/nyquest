@@ -20,8 +20,15 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = []
 async = ["nyquest-interface/async", "dep:futures-channel", "dep:futures-task"]
 async-stream = ["async", "nyquest-interface/async-stream"]
+async-ws = [
+    "async",
+    "nyquest-interface/async-ws",
+    "dep:futures-core",
+    "dep:futures-sink",
+]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
+blocking-ws = ["blocking", "nyquest-interface/blocking-ws"]
 multipart = ["nyquest-interface/multipart", "dep:getrandom"]
 charset = ["dep:iconv-native"]
 charset-defaults = ["charset", "iconv-native/default"]
@@ -38,14 +45,20 @@ windows-threading = "0.2"
 [dependencies]
 nyquest-interface = { version = "0.5.0", path = "../../nyquest-interface", default-features = false }
 cfg-if.workspace = true
-futures-channel = { version = "0.3", optional = true, default-features = false, features = [
+futures-channel = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
+futures-core = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
+futures-sink = { workspace = true, optional = true, default-features = false, features = [
     "alloc",
 ] }
 widestring = { version = "1", default-features = false }
 getrandom = { version = "0.4", optional = true }
-iconv-native = { version = "0.1.0", optional = true, default-features = false }
+iconv-native = { workspace = true, optional = true, default-features = false }
 bitflags = { version = "2", default-features = false }
 futures-task = { version = "0.3", optional = true, default-features = false }
-form_urlencoded = { version = "1", default-features = false, features = [
+form_urlencoded = { workspace = true, default-features = false, features = [
     "alloc",
 ] }

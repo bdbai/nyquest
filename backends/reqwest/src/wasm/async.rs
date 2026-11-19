@@ -122,6 +122,23 @@ impl AsyncClient for ReqwestAsyncClient {
             max_response_buffer_size: self.inner.max_response_buffer_size,
         })
     }
+
+    #[cfg(feature = "async-ws")]
+    async fn connect_websocket(
+        &self,
+        uri: std::borrow::Cow<'static, str>,
+        protocols: Vec<std::borrow::Cow<'static, str>>,
+    ) -> nyquest_interface::websocket::WebSocketResult<
+        nyquest_interface::r#async::websocket::WebSocket,
+    > {
+        SendWrapper::new(super::websocket::connect_async(
+            self.inner.base_url.clone(),
+            uri,
+            protocols,
+            self.inner.max_response_buffer_size,
+        ))
+        .await
+    }
 }
 
 impl AsyncBackend for crate::ReqwestBackend {

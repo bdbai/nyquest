@@ -17,6 +17,8 @@ use tokio::sync::OnceCell;
 mod fixtures;
 mod hyper_fixture_collection;
 mod request_ext;
+#[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
+mod websocket;
 
 use hyper_fixture_collection::FixtureAssertionResult;
 pub use request_ext::RequestExt;
@@ -31,6 +33,11 @@ static TOKIO_RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 });
 
 static MAIN_HYPER_FIXTURE_COLLECTION: HyperFixtureCollection = HyperFixtureCollection::new();
+static BACKEND_INIT: Once = Once::new();
+
+pub(crate) fn init_backend_once() {
+    BACKEND_INIT.call_once(init_backend);
+}
 
 async fn init_main_service_port() -> io::Result<u16> {
     static HYPER_SERVICE_INIT: OnceCell<io::Result<u16>> = OnceCell::const_new();
@@ -48,8 +55,7 @@ async fn init_main_service_port() -> io::Result<u16> {
 }
 
 async fn init_builder() -> io::Result<ClientBuilder> {
-    static BACKEND_INIT: Once = Once::new();
-    BACKEND_INIT.call_once(init_backend);
+    init_backend_once();
 
     let port = init_main_service_port().await?;
     let base_url = format!("http://localhost.:{port}"); // Use localhost. to avoid potential proxy bypass due to "localhost" being a special domain in some environments
@@ -64,6 +70,7 @@ fn init_builder_blocking() -> io::Result<ClientBuilder> {
     })
 }
 
+#[cfg(any(feature = "curl", feature = "reqwest"))]
 async fn init_builder_from_backend<Backend>(
     backend: &Backend,
 ) -> io::Result<ClientBuilder<&Backend>> {
@@ -74,6 +81,7 @@ async fn init_builder_from_backend<Backend>(
         .custom_backend(backend))
 }
 
+#[cfg(any(feature = "curl", feature = "reqwest"))]
 fn init_builder_from_backend_blocking<Backend>(
     backend: &Backend,
 ) -> io::Result<ClientBuilder<&Backend>> {

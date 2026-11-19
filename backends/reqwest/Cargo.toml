@@ -12,15 +12,26 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async", "blocking", "multipart"]
+features = ["async", "blocking", "multipart", "async-ws", "blocking-ws"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["default-tls", "reqwest/system-proxy"]
 async = ["nyquest-interface/async"]
 async-stream = ["async", "nyquest-interface/async-stream"]
+async-ws = [
+    "async",
+    "nyquest-interface/async-ws",
+    "dep:tokio-tungstenite",
+    "dep:pin-project-lite",
+    "dep:gloo-net",
+    "dep:js-sys",
+    "dep:wasm-bindgen",
+    "dep:web-sys",
+]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
+blocking-ws = ["blocking", "nyquest-interface/blocking-ws", "dep:tokio-tungstenite"]
 multipart = ["nyquest-interface/multipart", "reqwest/multipart"]
 charset = ["dep:encoding_rs", "dep:mime"]
 default-tls = ["reqwest/default-tls"]
@@ -36,6 +47,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 cfg-if.workspace = true
 thiserror.workspace = true
 futures.workspace = true
+pin-project-lite = { workspace = true, optional = true }
 url = "2.4"
 http = "1.0"
 
@@ -47,13 +59,36 @@ http-body = "1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio]
 default-features = false
-features = ["rt-multi-thread"]
-version = "1.0"
+features = ["rt-multi-thread", "sync"]
+workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio-tungstenite]
+workspace = true
+optional = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.iconv-native]
 default-features = false
-version = "0.1"
+workspace = true
 features = ["web-encoding"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.gloo-net]
+version = "0.8"
+default-features = false
+features = ["websocket"]
+optional = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.js-sys]
+version = "0.3"
+optional = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.wasm-bindgen]
+version = "0.2"
+optional = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "0.3"
+features = ["WebSocket"]
+optional = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.reqwest]
 version = "0.13"
@@ -62,8 +97,8 @@ features = ["form", "stream", "cookies"]
 
 [dev-dependencies]
 nyquest-backend-tests = { path = "../../nyquest-backend-tests" }
-tokio = { version = "1.0", features = ["macros"] }
-futures = { version = "0.3", features = ["executor"] }
+tokio = { workspace = true, features = ["macros"] }
+futures = { workspace = true, features = ["executor"] }
 async-std = { version = "1.12", features = ["attributes"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]

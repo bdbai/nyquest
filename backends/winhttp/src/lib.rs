@@ -23,6 +23,8 @@ cfg_if::cfg_if! {
         mod session;
         mod stream;
         mod url;
+        #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
+        mod websocket;
     }
 }
 

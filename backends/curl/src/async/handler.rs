@@ -7,10 +7,10 @@ use super::shared::SharedRequestStates;
 use crate::curl_ng::easy::EasyCallback;
 
 #[derive(Default)]
-pub(super) struct AsyncHandler {
+pub(crate) struct AsyncHandler {
     pub(super) ctx: Arc<SharedRequestStates>,
     // To be filled after Easy2 is constructed
-    pub(super) pause: Option<EasyPause>,
+    pub(crate) pause: Option<EasyPause>,
 }
 
 struct AsyncHandlerRef<'a> {
@@ -33,8 +33,12 @@ impl EasyCallback for AsyncHandler {
             return Ok(0);
         };
         let mut state = inner.ctx.state.lock().unwrap();
-        let state = &mut state.state;
         inner.ctx.waker.wake();
+        #[cfg(feature = "async-ws")]
+        if let Some(ws) = &mut state.ws {
+            return ws.on_write(data, inner.pause.raw());
+        }
+        let state = &mut state.state;
         if state.data_available() {
             Err(WriteError::Pause)
         } else {
@@ -63,14 +67,39 @@ impl EasyCallback for AsyncHandler {
         true
     }
 
-    #[cfg(feature = "async-stream")]
+    #[cfg(any(
+        feature = "async-stream",
+        feature = "async-ws",
+        feature = "blocking-ws"
+    ))]
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
-        let mut state = self.ctx.state.lock().unwrap();
-        let stream = state
-            .req_streams
-            .get_mut(0)
-            .ok_or(curl::easy::ReadError::Abort)?;
-        stream.read(buf, &self.ctx)
+        let Some(inner) = self.get_ref() else {
+            return Err(curl::easy::ReadError::Abort);
+        };
+        let mut state = inner.ctx.state.lock().unwrap();
+        #[cfg(feature = "async-ws")]
+        if let Some(ws) = &mut state.ws {
+            return ws.on_read(buf, inner.pause.raw());
+        }
+        #[cfg(feature = "async-stream")]
+        {
+            let stream = state
+                .req_streams
+                .get_mut(0)
+                .ok_or(curl::easy::ReadError::Abort)?;
+            stream.read(buf, inner.ctx)
+        }
+        #[cfg(not(feature = "async-stream"))]
+        Err(curl::easy::ReadError::Abort)
+    }
+
+    #[cfg(not(any(
+        feature = "async-stream",
+        feature = "async-ws",
+        feature = "blocking-ws"
+    )))]
+    fn read(&mut self, _buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
+        Err(curl::easy::ReadError::Abort)
     }
 
     #[cfg(feature = "async-stream")]
@@ -80,11 +109,6 @@ impl EasyCallback for AsyncHandler {
             return curl::easy::SeekResult::Fail;
         };
         stream.seek(whence, &self.ctx)
-    }
-
-    #[cfg(not(feature = "async-stream"))]
-    fn read(&mut self, _buf: &mut [u8]) -> Result<usize, curl::easy::ReadError> {
-        Err(curl::easy::ReadError::Abort)
     }
 
     #[cfg(not(feature = "async-stream"))]

@@ -19,13 +19,27 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 async = ["nyquest-interface/async", "dep:futures-util"]
 async-stream = ["async", "nyquest-interface/async-stream"]
+async-ws = [
+    "async",
+    "nyquest-interface/async-ws",
+    "dep:futures-core",
+    "dep:futures-sink",
+    "dep:futures-channel",
+]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
+blocking-ws = ["blocking", "nyquest-interface/blocking-ws"]
 multipart = ["nyquest-interface/multipart"]
 
 [dependencies]
 nyquest-interface = { version = "0.5.0", path = "../../nyquest-interface", default-features = false }
 cfg-if.workspace = true
+futures-core = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
+futures-sink = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
 block2 = { version = "0.6", default-features = false }
@@ -62,8 +76,11 @@ objc2-security = { version = "0.3", default-features = false, features = [
     "objc2",
     "SecTrust",
 ] }
-futures-util = { version = "0.3", optional = true, default-features = false, features = [
+futures-util = { workspace = true, optional = true, default-features = false, features = [
     "std",
     "io",
 ] }
-arc-swap.workspace = true
+futures-channel = { workspace = true, optional = true, default-features = false, features = [
+    "alloc",
+] }
+arc-swap = "1"

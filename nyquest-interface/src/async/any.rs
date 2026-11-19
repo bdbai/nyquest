@@ -8,6 +8,7 @@
 //! to implement them directly.
 
 use std::any::Any;
+use std::borrow::Cow;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -17,7 +18,13 @@ use futures_core::future::BoxFuture;
 use super::backend::AsyncResponse;
 use super::Request;
 use crate::client::ClientOptions;
+#[cfg(feature = "async-ws")]
+use crate::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
 use crate::Result;
+#[cfg(feature = "async-ws")]
+use futures_core::Stream;
+#[cfg(feature = "async-ws")]
+use futures_sink::Sink;
 
 /// Trait for type-erased async backend implementations.
 ///
@@ -38,6 +45,37 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>>;
+    /// Opens a WebSocket connection.
+    #[cfg(feature = "async-ws")]
+    fn connect_websocket(
+        &self,
+        uri: Cow<'static, str>,
+        protocols: Vec<Cow<'static, str>>,
+    ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>>;
+}
+
+#[cfg(feature = "async-ws")]
+/// Type-erased asynchronous WebSocket sender.
+///
+/// Automatically implemented for all [`Sink`]s of [`WebSocketMessage`].
+pub trait AnyAsyncWebSocketSender: Sink<WebSocketMessage, Error = WebSocketError> + Send {}
+
+#[cfg(feature = "async-ws")]
+impl<T> AnyAsyncWebSocketSender for T where T: Sink<WebSocketMessage, Error = WebSocketError> + Send {}
+
+#[cfg(feature = "async-ws")]
+/// Type-erased asynchronous WebSocket receiver.
+///
+/// Automatically implemented for all [`Stream`]s of [`WebSocketResult`]`<`[`WebSocketMessage`]`>`.
+pub trait AnyAsyncWebSocketReceiver:
+    Stream<Item = WebSocketResult<WebSocketMessage>> + Send
+{
+}
+
+#[cfg(feature = "async-ws")]
+impl<T> AnyAsyncWebSocketReceiver for T where
+    T: Stream<Item = WebSocketResult<WebSocketMessage>> + Send
+{
 }
 
 /// Trait for type-erased async HTTP responses.
@@ -121,5 +159,14 @@ where
                 .await
                 .map(|res| Box::pin(res) as Pin<Box<dyn AnyAsyncResponse>>)
         }) as _
+    }
+
+    #[cfg(feature = "async-ws")]
+    fn connect_websocket(
+        &self,
+        uri: Cow<'static, str>,
+        protocols: Vec<Cow<'static, str>>,
+    ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>> {
+        Box::pin(super::AsyncClient::connect_websocket(self, uri, protocols))
     }
 }

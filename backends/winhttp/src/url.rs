@@ -97,7 +97,18 @@ pub(crate) fn concat_url(
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
-    let is_absolute = relative_uri.starts_with("http://") || relative_uri.starts_with("https://");
+    let is_absolute = relative_uri
+        .get(..7)
+        .is_some_and(|s| s.eq_ignore_ascii_case("http://"))
+        || relative_uri
+            .get(..8)
+            .is_some_and(|s| s.eq_ignore_ascii_case("https://"))
+        || relative_uri
+            .get(..5)
+            .is_some_and(|s| s.eq_ignore_ascii_case("ws://"))
+        || relative_uri
+            .get(..6)
+            .is_some_and(|s| s.eq_ignore_ascii_case("wss://"));
     if let Some(base_wide) = base_url_wide.filter(|_| !is_absolute) {
         if !base_wide.ends_with(&[0]) {
             panic!("base_url must be null-terminated wide string");
@@ -187,6 +198,22 @@ mod tests {
         assert_eq!(
             concat_url(None, "https://example.com/path").unwrap(),
             u16str!("https://example.com/path").as_slice()
+        );
+        assert_eq!(
+            concat_url(
+                Some(u16cstr!("https://api.example.com").as_slice_with_nul()),
+                "ws://example.com/ws"
+            )
+            .unwrap(),
+            u16str!("ws://example.com/ws").as_slice()
+        );
+        assert_eq!(
+            concat_url(
+                Some(u16cstr!("https://api.example.com").as_slice_with_nul()),
+                "wss://example.com/ws"
+            )
+            .unwrap(),
+            u16str!("wss://example.com/ws").as_slice()
         );
     }
 }

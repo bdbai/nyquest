@@ -14,6 +14,19 @@ pub(super) struct SharedRequestStatesInner {
     pub(super) req_streams: Vec<SharedStreamState>,
     pub(super) result: RequestResult,
     pub(super) response: Option<super::CurlAsyncResponse>,
+    pub(super) is_recv_unpause_sent: bool,
+    #[cfg(feature = "async-ws")]
+    pub(super) ws: Option<super::websocket::WsState>,
+}
+
+impl SharedRequestStatesInner {
+    pub(super) fn set_done(&mut self, id: usize, res: NyquestResult<()>) {
+        self.result = RequestResult::Done { res, id };
+        #[cfg(feature = "async-ws")]
+        if let Some(ws) = &self.ws {
+            ws.wake_outgoing();
+        }
+    }
 }
 
 #[derive(Default)]

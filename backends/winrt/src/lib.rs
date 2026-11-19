@@ -23,6 +23,8 @@ cfg_if::cfg_if! {
         mod string_pair;
         mod timer;
         mod uri;
+        #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
+        mod websocket;
 
         /// Registers [`WinrtBackend`] as global default.
         pub fn register() {

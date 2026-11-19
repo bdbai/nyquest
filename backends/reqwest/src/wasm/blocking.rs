@@ -47,6 +47,15 @@ impl BlockingClient for DummyBlockingClient {
     ) -> nyquest_interface::Result<Self::Response> {
         bail_unimplemented()
     }
+
+    #[cfg(feature = "blocking-ws")]
+    fn connect_websocket(
+        &self,
+        _uri: std::borrow::Cow<'static, str>,
+        _protocols: Vec<std::borrow::Cow<'static, str>>,
+    ) -> nyquest_interface::WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
+        bail_unimplemented()
+    }
 }
 
 impl BlockingBackend for crate::ReqwestBackend {
