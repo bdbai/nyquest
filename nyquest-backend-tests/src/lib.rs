@@ -54,11 +54,19 @@ async fn init_main_service_port() -> io::Result<u16> {
     }
 }
 
+async fn service_base_url() -> io::Result<String> {
+    let port = init_main_service_port().await?;
+    Ok(format!("http://localhost.:{port}")) // Use localhost. to avoid potential proxy bypass due to "localhost" being a special domain in some environments
+}
+
+fn service_base_url_blocking() -> io::Result<String> {
+    TOKIO_RT.block_on(service_base_url())
+}
+
 async fn init_builder() -> io::Result<ClientBuilder> {
     init_backend_once();
 
-    let port = init_main_service_port().await?;
-    let base_url = format!("http://localhost.:{port}"); // Use localhost. to avoid potential proxy bypass due to "localhost" being a special domain in some environments
+    let base_url = service_base_url().await?;
     Ok(ClientBuilder::default().base_url(base_url))
 }
 

@@ -147,6 +147,24 @@ impl BlockingClient for NSUrlSessionBlockingClient {
     > {
         websocket::connect_blocking(&self.inner, uri, protocols)
     }
+
+    #[cfg(feature = "cookies")]
+    fn add_cookie(
+        &self,
+        name: std::borrow::Cow<'static, str>,
+        value: std::borrow::Cow<'static, str>,
+        url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<()> {
+        self.inner.add_cookie_impl(&name, &value, &url)
+    }
+
+    #[cfg(feature = "cookies")]
+    fn get_cookies_for(
+        &self,
+        url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<Vec<nyquest_interface::Cookie>> {
+        self.inner.get_cookies_for_impl(&url)
+    }
 }
 
 impl BlockingBackend for NSUrlSessionBackend {

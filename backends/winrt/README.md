@@ -13,5 +13,6 @@ UWP/WinRT [`HttpClient`](https://learn.microsoft.com/en-us/uwp/api/Windows.Web.H
 - `async`
 - `async-stream`
 - `multipart`
+- `cookies`
 
 [`nyquest`]: https://docs.rs/nyquest

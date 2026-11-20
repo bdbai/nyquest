@@ -49,6 +49,24 @@ mod async_tests {
                 position: 0,
             })
         }
+
+        #[cfg(feature = "cookies")]
+        async fn add_cookie(
+            &self,
+            _name: std::borrow::Cow<'static, str>,
+            _value: std::borrow::Cow<'static, str>,
+            _url: std::borrow::Cow<'static, str>,
+        ) -> nyquest_interface::Result<()> {
+            Ok(())
+        }
+
+        #[cfg(feature = "cookies")]
+        async fn get_cookies_for(
+            &self,
+            _url: std::borrow::Cow<'static, str>,
+        ) -> nyquest_interface::Result<Vec<nyquest_interface::Cookie>> {
+            Ok(Vec::new())
+        }
     }
 
     impl AsyncResponse for TestResponse {
@@ -159,6 +177,24 @@ mod blocking_tests {
 
         fn request(&self, _request: Request) -> nyquest_interface::Result<Self::Response> {
             Ok(TestResponse(Cursor::new(self.0.as_bytes().to_vec())))
+        }
+
+        #[cfg(feature = "cookies")]
+        fn add_cookie(
+            &self,
+            _name: std::borrow::Cow<'static, str>,
+            _value: std::borrow::Cow<'static, str>,
+            _url: std::borrow::Cow<'static, str>,
+        ) -> nyquest_interface::Result<()> {
+            Ok(())
+        }
+
+        #[cfg(feature = "cookies")]
+        fn get_cookies_for(
+            &self,
+            _url: std::borrow::Cow<'static, str>,
+        ) -> nyquest_interface::Result<Vec<nyquest_interface::Cookie>> {
+            Ok(Vec::new())
         }
     }
 

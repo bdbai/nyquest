@@ -26,9 +26,14 @@ While mixing async and blocking code is generally discouraged, some situations m
 - **blocking**: Enable blocking interface support using reqwest's blocking client on a background thread
 - **blocking-stream**: Enable blocking interface and streaming upload/download support using reqwest's blocking client on a background thread
 - **multipart**: Enable multipart form support
+- **cookies**: Enable cookie management support
 - **async-ws**: Enable async WebSocket support through `tokio-tungstenite`
 - **blocking-ws**: Enable blocking WebSocket support through `tokio-tungstenite` (blocking WebSockets are unavailable on WASM)
 - **charset**: Enable charset conversion support using the `encoding_rs` crate
+
+On WASM targets, cookie management through the blocking client is backed by the synchronous
+`document.cookie` API. It is therefore scoped to the current document's origin, and cookies
+obtained that way carry no attribute metadata (expiry, HttpOnly, Secure).
 
 ### TLS features
 

@@ -1038,15 +1038,15 @@ dependencies = [
 
 [[package]]
 name = "iconv-native"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93a1156e71e53be4dff168b017c6483f579968c578577184eebb33d164c0f02c"
+checksum = "a0a5c7a5ccf18d718cdfe00d989b9205c2fc34b90613cdb63db99e863c276a7b"
 dependencies = [
  "cfg-if",
  "vcpkg",
  "web-sys",
  "widestring",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1520,6 +1520,7 @@ dependencies = [
  "async-std",
  "bytes",
  "cfg-if",
+ "cookie_store",
  "encoding_rs",
  "futures",
  "gloo-net",
@@ -1530,6 +1531,7 @@ dependencies = [
  "mime",
  "nyquest-backend-tests",
  "nyquest-interface",
+ "percent-encoding",
  "pin-project-lite",
  "reqwest",
  "thiserror",
@@ -1537,6 +1539,7 @@ dependencies = [
  "tokio-tungstenite",
  "url",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
 ]
@@ -3061,15 +3064,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets",
 ]

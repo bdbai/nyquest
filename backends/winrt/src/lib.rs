@@ -15,6 +15,8 @@ cfg_if::cfg_if! {
         mod blocking;
         mod buffer;
         mod client;
+        #[cfg(feature = "cookies")]
+        mod cookies;
         mod error;
         mod ibuffer;
         mod request;

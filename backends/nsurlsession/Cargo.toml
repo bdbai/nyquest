@@ -30,6 +30,11 @@ blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
 blocking-ws = ["blocking", "nyquest-interface/blocking-ws"]
 multipart = ["nyquest-interface/multipart"]
+cookies = [
+    "nyquest-interface/cookies",
+    "objc2-foundation/NSHTTPCookie",
+    "objc2-foundation/NSHTTPCookieStorage",
+]
 
 [dependencies]
 nyquest-interface = { version = "0.5.0", path = "../../nyquest-interface", default-features = false }

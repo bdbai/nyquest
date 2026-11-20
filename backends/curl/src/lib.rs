@@ -12,6 +12,8 @@ mod backend;
 #[cfg(feature = "blocking")]
 #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
 mod blocking;
+#[cfg(feature = "cookies")]
+mod cookies;
 mod curl_ng;
 mod custom;
 mod error;

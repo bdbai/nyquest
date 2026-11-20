@@ -37,6 +37,12 @@ impl CurlStringList {
     pub fn raw(&self) -> *mut curl_sys::curl_slist {
         self.raw
     }
+
+    /// Takes ownership of a `curl_slist` returned by libcurl.
+    #[cfg(feature = "cookies")]
+    pub(crate) fn from_raw(raw: *mut curl_sys::curl_slist) -> Self {
+        Self { raw }
+    }
 }
 
 impl Clone for CurlStringList {

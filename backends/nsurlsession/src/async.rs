@@ -157,6 +157,24 @@ impl AsyncClient for NSUrlSessionAsyncClient {
     > {
         websocket::connect_async(self.inner.clone(), uri, protocols).await
     }
+
+    #[cfg(feature = "cookies")]
+    async fn add_cookie(
+        &self,
+        name: std::borrow::Cow<'static, str>,
+        value: std::borrow::Cow<'static, str>,
+        url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<()> {
+        self.inner.add_cookie_impl(&name, &value, &url)
+    }
+
+    #[cfg(feature = "cookies")]
+    async fn get_cookies_for(
+        &self,
+        url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<Vec<nyquest_interface::Cookie>> {
+        self.inner.get_cookies_for_impl(&url)
+    }
 }
 
 impl AsyncBackend for NSUrlSessionBackend {

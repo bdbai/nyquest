@@ -11,6 +11,7 @@ use nyquest_interface::websocket::{
 use super::handler::BlockingHandler;
 use crate::curl_ng::easy::{AsRawEasyMut, Share};
 use crate::curl_ng::multi::RawMulti;
+use crate::curl_ng::url::CurlUrl;
 use crate::curl_ng::WithCurlCodeContext;
 use crate::request::{create_easy, AsCallbackMut, BoxEasyHandle};
 use crate::websocket::{
@@ -77,13 +78,14 @@ impl Connection {
 
     fn connect(
         share: &Share,
+        base_url: Option<Arc<CurlUrl>>,
         uri: Cow<'static, str>,
         protocols: Vec<Cow<'static, str>>,
         options: &nyquest_interface::client::ClientOptions,
     ) -> WebSocketResult<(Self, Option<String>)> {
         let mut easy =
             create_easy(BlockingHandler::default(), share).map_err(nyquest_to_ws_error)?;
-        configure_websocket_easy(easy.as_mut(), options, uri, protocols)?;
+        configure_websocket_easy(easy.as_mut(), base_url.as_deref(), options, uri, protocols)?;
         easy.as_mut()
             .with_error_message(|mut e| {
                 e.as_mut().as_raw_easy_mut().set_connect_only_websocket()?;
@@ -112,11 +114,12 @@ impl Connection {
 
 pub(super) fn connect_blocking(
     share: &Share,
+    base_url: Option<Arc<CurlUrl>>,
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
     options: &nyquest_interface::client::ClientOptions,
 ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
-    let (connection, protocol) = Connection::connect(share, uri, protocols, options)?;
+    let (connection, protocol) = Connection::connect(share, base_url, uri, protocols, options)?;
     let connection = Arc::new(Mutex::new(connection));
     let max_message_size = options
         .max_response_buffer_size

@@ -15,7 +15,8 @@ mod set;
 mod websocket;
 
 use crate::curl_ng::easy::Share;
-use crate::url::concat_url;
+use crate::curl_ng::url::CurlUrl;
+use crate::url::{join_url, parse_base_url};
 use crate::{CurlCodeContext, CurlHandle, HandleCustomizer};
 use multi_easy::MultiEasy;
 
@@ -25,6 +26,7 @@ pub(crate) type Customizer = Arc<CustomizerFn>;
 #[derive(Clone)]
 pub struct CurlEasyClient {
     options: Arc<nyquest_interface::client::ClientOptions>,
+    base_url: Option<Arc<CurlUrl>>,
     customizer: Customizer,
     slot: Arc<MultiEasySlot>,
     share: Share,
@@ -83,15 +85,25 @@ impl<S: AsRef<MultiEasySlot>> Drop for EasyHandleGuard<S> {
 }
 
 impl CurlEasyClient {
-    pub fn new(options: nyquest_interface::client::ClientOptions, customizer: Customizer) -> Self {
-        Self {
+    pub fn new(
+        options: nyquest_interface::client::ClientOptions,
+        customizer: Customizer,
+    ) -> NyquestResult<Self> {
+        let base_url = options
+            .base_url
+            .as_deref()
+            .map(parse_base_url)
+            .transpose()?
+            .map(Arc::new);
+        Ok(Self {
             options: Arc::new(options),
+            base_url,
             customizer,
             slot: Arc::new(MultiEasySlot {
                 multi_easy: Mutex::new(None),
             }),
             share: Share::new(),
-        }
+        })
     }
 
     fn get_or_create_handle(&self) -> NyquestResult<EasyHandleGuard<&Arc<MultiEasySlot>>> {
@@ -107,6 +119,11 @@ impl CurlEasyClient {
             slot: &self.slot,
             handle: ManuallyDrop::new(Mutex::new(handle)),
         })
+    }
+
+    #[cfg(feature = "cookies")]
+    pub(crate) fn share(&self) -> &Share {
+        &self.share
     }
 }
 
@@ -186,8 +203,7 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
 
     fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
         let mut handle_guard = self.get_or_create_handle()?;
-        // FIXME: properly concat base_url and url
-        let url = concat_url(self.options.base_url.as_deref(), &req.relative_uri);
+        let url = join_url(self.base_url.as_deref(), &req.relative_uri)?;
         let handle: &mut MultiEasy = handle_guard.handle_mut();
         handle.populate_request(&url, req, &self.options, &*self.customizer)?;
         handle.poll_until_response_headers()?;
@@ -209,7 +225,31 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
     ) -> nyquest_interface::websocket::WebSocketResult<
         nyquest_interface::blocking::websocket::WebSocket,
     > {
-        websocket::connect_blocking(&self.share, uri, protocols, &self.options)
+        websocket::connect_blocking(
+            &self.share,
+            self.base_url.clone(),
+            uri,
+            protocols,
+            &self.options,
+        )
+    }
+
+    #[cfg(feature = "cookies")]
+    fn add_cookie(
+        &self,
+        name: std::borrow::Cow<'static, str>,
+        value: std::borrow::Cow<'static, str>,
+        url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<()> {
+        crate::cookies::add_cookie(self.share(), &name, &value, &url)
+    }
+
+    #[cfg(feature = "cookies")]
+    fn get_cookies_for(
+        &self,
+        url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<Vec<nyquest_interface::Cookie>> {
+        crate::cookies::get_cookies_for(self.share(), &url)
     }
 }
 
@@ -220,10 +260,7 @@ impl nyquest_interface::blocking::BlockingBackend for crate::CurlBackend {
         &self,
         options: nyquest_interface::client::ClientOptions,
     ) -> NyquestResult<Self::BlockingClient> {
-        Ok(CurlEasyClient::new(
-            options,
-            self.blocking_customizer.clone(),
-        ))
+        CurlEasyClient::new(options, self.blocking_customizer.clone())
     }
 }
 

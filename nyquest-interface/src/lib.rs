@@ -18,6 +18,7 @@
 //! - `blocking-stream`: Enable blocking interface and streaming upload/download support
 //! - `blocking-ws`: Enable blocking WebSocket support
 //! - `multipart`: Enable multipart form support
+//! - `cookies`: Enable cookie management support
 //!
 //! [`nyquest`]: https://docs.rs/nyquest
 
@@ -32,6 +33,9 @@ pub mod r#async;
 pub mod blocking;
 pub mod body;
 pub mod client;
+#[cfg(feature = "cookies")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
+mod cookie;
 mod error;
 #[doc(hidden)] // For nyquest facade only
 pub mod register;
@@ -44,6 +48,9 @@ pub use body::Body;
 #[cfg(feature = "multipart")]
 #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use body::{Part, PartBody};
+#[cfg(feature = "cookies")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
+pub use cookie::Cookie;
 pub use error::{Error, Result};
 pub use register::register_backend;
 pub use request::{Method, Request};

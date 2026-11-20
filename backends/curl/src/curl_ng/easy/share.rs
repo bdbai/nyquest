@@ -65,6 +65,11 @@ impl Share {
             share: self.raw.clone(),
         }
     }
+
+    #[cfg(feature = "cookies")]
+    pub(crate) fn as_raw(&self) -> *mut curl_sys::CURLSH {
+        self.raw.raw.as_ptr()
+    }
 }
 
 impl RawShare {

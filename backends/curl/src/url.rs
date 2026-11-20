@@ -1,38 +1,17 @@
-use std::{borrow::Cow, ffi::CStr};
+use std::{borrow::Cow, ffi::CString};
 
-fn is_absolute(url: &str) -> bool {
-    url.get(..7)
-        .is_some_and(|s| s.eq_ignore_ascii_case("http://"))
-        || url
-            .get(..8)
-            .is_some_and(|s| s.eq_ignore_ascii_case("https://"))
-        || url
-            .get(..5)
-            .is_some_and(|s| s.eq_ignore_ascii_case("ws://"))
-        || url
-            .get(..6)
-            .is_some_and(|s| s.eq_ignore_ascii_case("wss://"))
+use nyquest_interface::Error as NyquestError;
+
+use crate::curl_ng::url::CurlUrl;
+
+pub(crate) fn parse_base_url(base: &str) -> Result<CurlUrl, NyquestError> {
+    let base_cstr = CString::new(base).map_err(|_| NyquestError::InvalidUrl)?;
+    CurlUrl::parse_base(&base_cstr).map_err(|_| NyquestError::InvalidUrl)
 }
 
-pub(crate) fn concat_url(base: Option<&str>, relative: &str) -> String {
-    let Some(base) = base.filter(|_| !is_absolute(relative)) else {
-        return relative.into();
-    };
-    let (proto, protsep) = base.split_once("//").unwrap_or(("", base));
-    let host_path = protsep.split_once('?').unwrap_or((protsep, "")).0;
-    if relative.starts_with("//") {
-        proto.to_owned() + relative
-    } else if relative.starts_with('/') {
-        let host = host_path
-            .split_once('/')
-            .map_or(host_path, |(host, _)| host);
-        format!("{proto}//{host}{relative}")
-    } else {
-        let pathsep = host_path
-            .rsplit_once('/')
-            .map_or(host_path, |(pathsep, _)| pathsep);
-        format!("{proto}//{pathsep}/{relative}")
-    }
+pub(crate) fn join_url(base: Option<&CurlUrl>, relative: &str) -> Result<String, NyquestError> {
+    let relative_cstr = CString::new(relative).map_err(|_| NyquestError::InvalidUrl)?;
+    CurlUrl::join(base, &relative_cstr).map_err(|_| NyquestError::InvalidUrl)
 }
 
 pub(crate) fn form_url_encode<'s>(
@@ -40,7 +19,7 @@ pub(crate) fn form_url_encode<'s>(
     input: impl Into<Cow<'s, str>>,
     output: &mut Vec<u8>,
 ) {
-    use std::ffi::c_char;
+    use std::ffi::{c_char, CStr};
 
     let input = input.into();
     if input.is_empty() {
@@ -74,53 +53,60 @@ pub(crate) fn form_url_encode<'s>(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_is_absolute() {
-        let urls = [
-            "http://example.com",
-            "https://example.com",
-            "HTTP://EXAMPLE.COM",
-            "HTTPS://EXAMPLE.COM",
-            "ws://example.com",
-            "wss://example.com",
-            "WS://EXAMPLE.COM",
-            "WSS://EXAMPLE.COM",
-        ];
-        for url in urls {
-            assert!(is_absolute(url), "{url}");
-        }
+    fn join(base: Option<&str>, relative: &str) -> Result<String, NyquestError> {
+        let base = base.map(parse_base_url).transpose()?;
+        join_url(base.as_ref(), relative)
     }
 
     #[test]
-    fn test_is_not_absolute() {
-        let urls = ["example.com", "/example", "example"];
-        for url in urls {
-            assert!(!is_absolute(url), "{url}");
-        }
-    }
-
-    #[test]
-    fn test_concat_url() {
+    fn test_join_url() {
+        crate::init();
         let testcases = [
-            (None, "http://example.com", "http://example.com"),
-            (Some("http://a.com"), "https://b.com", "https://b.com"),
-            (Some("http://a.com"), "//b.com", "http://b.com"),
-            (Some("https://a.com"), "//b.com", "https://b.com"),
+            (None, "http://example.com", "http://example.com/"),
+            (
+                None,
+                "https://example.com/path?q=1",
+                "https://example.com/path?q=1",
+            ),
+            (Some("http://a.com"), "https://b.com", "https://b.com/"),
+            (Some("http://a.com"), "//b.com", "http://b.com/"),
+            (Some("https://a.com"), "//b.com", "https://b.com/"),
             (Some("http://a.com"), "/b", "http://a.com/b"),
             (Some("http://a.com/a/b"), "/c", "http://a.com/c"),
             (Some("http://a.com?q=1"), "/c", "http://a.com/c"),
+            // RFC 3986 resolution: relative paths merge against the base path,
+            // `..`/`.` segments are normalized.
             (Some("http://a.com/a/b"), "c", "http://a.com/a/c"),
             (Some("http://a.com/a/b/"), "c", "http://a.com/a/b/c"),
+            (Some("http://a.com/a/b"), "../c", "http://a.com/c"),
+            (Some("http://a.com/a/b"), "./c", "http://a.com/a/c"),
             (Some("http://a.com/a/b?q=1"), "c", "http://a.com/a/c"),
             (Some("http://a.com?q=1"), "c", "http://a.com/c"),
+            (Some("http://a.com/a/b"), "c?q=1", "http://a.com/a/c?q=1"),
+            (Some("ws://a.com"), "/ws", "ws://a.com/ws"),
+            (Some("http://a.com"), "ws://b.com/ws", "ws://b.com/ws"),
         ];
         for (base, relative, expected) in testcases {
             assert_eq!(
-                concat_url(base, relative),
+                join(base, relative).unwrap(),
                 expected,
                 "{}, {relative}, {expected}",
                 base.unwrap_or("None"),
             );
         }
+    }
+
+    #[test]
+    fn test_join_url_invalid() {
+        crate::init();
+        // Schemeless base fails fast at parse time.
+        assert!(parse_base_url("a.com").is_err());
+        assert!(parse_base_url("http://a.com\0").is_err());
+        // Relative with NUL is rejected.
+        let base = parse_base_url("http://a.com").unwrap();
+        assert!(join_url(Some(&base), "/b\0").is_err());
+        // Relative path without base has no host to resolve against.
+        assert!(join(None, "/only-path").is_err());
+        assert!(join(None, "not a url ^").is_err());
     }
 }

@@ -58,6 +58,12 @@ multipart = [
     "nyquest-backend-winrt/multipart",
     "nyquest-backend-nsurlsession/multipart",
 ]
+cookies = [
+    "nyquest/cookies",
+    "nyquest-backend-curl/cookies",
+    "nyquest-backend-winrt/cookies",
+    "nyquest-backend-nsurlsession/cookies",
+]
 auto-register = ["dep:ctor"]
 
 [dependencies]

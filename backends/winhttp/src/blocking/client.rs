@@ -31,15 +31,11 @@ impl WinHttpBlockingClient {
         let session = WinHttpSession::new(options, false).into_nyquest()?;
         Ok(Self { session })
     }
-}
 
-impl BlockingClient for WinHttpBlockingClient {
-    type Response = WinHttpBlockingResponse;
-
-    fn request(&self, req: Request) -> NyquestResult<Self::Response> {
+    fn request_single(&self, req: Request) -> NyquestResult<WinHttpBlockingResponse> {
         // Create connection and request handles
+        let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
         let (connection, request) = {
-            let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
             let parsed_url = ParsedUrl::parse(&url).ok_or(nyquest_interface::Error::InvalidUrl)?;
             let method = method_to_cwstr(&req.method);
             create_request(&self.session, &parsed_url, &method).into_nyquest()?
@@ -96,6 +92,14 @@ impl BlockingClient for WinHttpBlockingClient {
             self.session.options.max_response_buffer_size,
         ))
     }
+}
+
+impl BlockingClient for WinHttpBlockingClient {
+    type Response = WinHttpBlockingResponse;
+
+    fn request(&self, req: Request) -> NyquestResult<Self::Response> {
+        self.request_single(req)
+    }
 
     #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
@@ -106,6 +110,36 @@ impl BlockingClient for WinHttpBlockingClient {
         nyquest_interface::blocking::websocket::WebSocket,
     > {
         super::websocket::connect_blocking(&self.session, uri, protocols)
+    }
+
+    #[cfg(feature = "cookies")]
+    fn add_cookie(
+        &self,
+        _name: std::borrow::Cow<'static, str>,
+        _value: std::borrow::Cow<'static, str>,
+        _url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<()> {
+        // WinHTTP manages cookies internally per session and does not expose
+        // an API to enumerate or modify its cookie cache. Automatic cookie
+        // handling (controlled by `ClientOptions::use_cookies`) keeps working;
+        // only explicit management is unsupported.
+        Err(nyquest_interface::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "explicit cookie management is not supported by the WinHTTP backend; \
+             automatic cookies remain controlled by `use_cookies`",
+        )))
+    }
+
+    #[cfg(feature = "cookies")]
+    fn get_cookies_for(
+        &self,
+        _url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<Vec<nyquest_interface::Cookie>> {
+        Err(nyquest_interface::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "explicit cookie management is not supported by the WinHTTP backend; \
+             automatic cookies remain controlled by `use_cookies`",
+        )))
     }
 }
 

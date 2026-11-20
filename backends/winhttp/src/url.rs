@@ -36,6 +36,10 @@ impl<'b> ParsedUrl<'b> {
                 lpszUrlPath: null_mut(),
                 dwUrlPathLength: u32::MAX,
                 lpszExtraInfo: null_mut(),
+                // Keep this 0: WinHttpCrackUrl then includes any query/fragment
+                // in lpszUrlPath, so it already serves as path-and-query.
+                // Requesting extra info separately and concatenating yields
+                // identical output plus a needless allocation (verified).
                 dwExtraInfoLength: 0,
             };
 

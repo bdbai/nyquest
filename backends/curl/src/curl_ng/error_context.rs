@@ -4,8 +4,8 @@ use std::ffi::{c_int, c_uint};
 /// The error code and context of a libcurl operation, for use in internal error reporting.
 #[derive(Debug, Clone)]
 pub struct CurlCodeContext {
-    pub(super) code: curl_sys::CURLcode,
-    pub(super) context: &'static str,
+    pub(crate) code: curl_sys::CURLcode,
+    pub(crate) context: &'static str,
 }
 
 #[derive(Debug, Clone)]

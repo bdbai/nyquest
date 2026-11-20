@@ -12,6 +12,10 @@ WinHTTP is the recommended API for Windows services.
 - `async`: Enable async HTTP client support
 - `async-stream`: Enable async streaming upload/download
 - `multipart`: Enable multipart form support
+- `cookies`: Enable cookie support. Automatic session cookies keep working via
+  WinHTTP's native cookie handling (controlled by `use_cookies`); explicit
+  `add_cookie` / `get_cookies_for` management is not supported by this backend
+  and returns an `Unsupported` I/O error.
 - `charset-defaults`: Enable encoding conversion via [`iconv-native`] with its default features
   enabled.
 - `charset`: Enable encoding conversion via [`iconv-native`] without activating any of its default

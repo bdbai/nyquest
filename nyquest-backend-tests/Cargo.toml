@@ -72,6 +72,14 @@ multipart = [
     "nyquest-backend-nsurlsession?/multipart",
     "nyquest-backend-reqwest?/multipart",
 ]
+cookies = [
+    "nyquest/cookies",
+    "nyquest-backend-winrt?/cookies",
+    "nyquest-backend-winhttp?/cookies",
+    "nyquest-backend-curl?/cookies",
+    "nyquest-backend-nsurlsession?/cookies",
+    "nyquest-backend-reqwest?/cookies",
+]
 winrt = ["dep:nyquest-backend-winrt"]
 winhttp = ["dep:nyquest-backend-winhttp"]
 curl = ["dep:nyquest-backend-curl"]

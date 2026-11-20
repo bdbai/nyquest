@@ -52,6 +52,17 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
         uri: Cow<'static, str>,
         protocols: Vec<Cow<'static, str>>,
     ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>>;
+    /// Adds a cookie for the given URL.
+    #[cfg(feature = "cookies")]
+    fn add_cookie(
+        &self,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
+        url: Cow<'static, str>,
+    ) -> BoxFuture<'_, Result<()>>;
+    /// Returns the cookies that apply to the given URL.
+    #[cfg(feature = "cookies")]
+    fn get_cookies_for(&self, url: Cow<'static, str>) -> BoxFuture<'_, Result<Vec<crate::Cookie>>>;
 }
 
 #[cfg(feature = "async-ws")]
@@ -168,5 +179,22 @@ where
         protocols: Vec<Cow<'static, str>>,
     ) -> BoxFuture<'_, WebSocketResult<super::websocket::WebSocket>> {
         Box::pin(super::AsyncClient::connect_websocket(self, uri, protocols))
+    }
+
+    #[cfg(feature = "cookies")]
+    fn add_cookie(
+        &self,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
+        url: Cow<'static, str>,
+    ) -> BoxFuture<'_, Result<()>> {
+        Box::pin(super::backend::AsyncClient::add_cookie(
+            self, name, value, url,
+        ))
+    }
+
+    #[cfg(feature = "cookies")]
+    fn get_cookies_for(&self, url: Cow<'static, str>) -> BoxFuture<'_, Result<Vec<crate::Cookie>>> {
+        Box::pin(super::backend::AsyncClient::get_cookies_for(self, url))
     }
 }

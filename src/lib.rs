@@ -120,6 +120,7 @@
 //! - `json`: Enable JSON request/response shorthand methods.
 //! - `async-ws`: Enable async WebSocket support.
 //! - `blocking-ws`: Enable blocking WebSocket support.
+//! - `cookies`: Enable cookie management support.
 //!
 //! [^1]: Subject to the backend's capability.
 //!
@@ -131,6 +132,8 @@
 #![forbid(missing_docs)]
 
 mod body;
+#[cfg(feature = "cookies")]
+mod cookies;
 mod error;
 mod request;
 
@@ -153,6 +156,9 @@ pub use body::Body;
 pub use body::{Part, PartBody};
 #[doc(inline)]
 pub use client::ClientBuilder;
+#[cfg(feature = "cookies")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
+pub use cookies::Cookie;
 pub use error::{Error, Result};
 #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "async-ws", feature = "blocking-ws"))))]

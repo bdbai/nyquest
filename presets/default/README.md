@@ -41,6 +41,7 @@ the documentation of [`nyquest`] for usages.
 - `blocking`: Enable blocking support for backends and [`nyquest`].
 - `blocking-stream`: Enable blocking support and streaming upload/download for backends and [`nyquest`].
 - `multipart`: Enable multipart form support for backends and [`nyquest`].
+- `cookies`: Enable cookie management support for backends and [`nyquest`].
 - `auto-register`: Automatically register the backend before program startup using [`ctor`](https://docs.rs/ctor). Recommended to be used in tests and examples.
 
 Refer to the backends' documentation for more optional features. For example, enable

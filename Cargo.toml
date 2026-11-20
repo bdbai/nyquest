@@ -31,9 +31,10 @@ serde_json = "1.0.140"
 pin-project-lite = "0.2"
 memchr = { version = "2", default-features = false }
 form_urlencoded = { version = "1", default-features = false }
-iconv-native = { version = "0.1.0", default-features = false }
+iconv-native = { version = "0.2.0", default-features = false }
 tokio = { version = "1", default-features = false }
 tokio-tungstenite = "0.30"
+percent-encoding = "2"
 
 [package]
 name = "nyquest"
@@ -49,7 +50,7 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async-stream", "blocking-stream", "multipart", "json", "async-ws", "blocking-ws"]
+features = ["async-stream", "blocking-stream", "multipart", "json", "async-ws", "blocking-ws", "cookies"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
@@ -59,6 +60,7 @@ async-ws = ["async", "nyquest-interface/async-ws"]
 blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
 blocking-ws = ["blocking", "nyquest-interface/blocking-ws"]
+cookies = ["nyquest-interface/cookies"]
 multipart = ["nyquest-interface/multipart"]
 json = ["dep:serde", "dep:serde_json"]
 

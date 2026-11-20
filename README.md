@@ -70,6 +70,7 @@ The following items are planned in MVP:
 - [x] Backend: NSURLSession
 - [x] Backend: reqwest (with WASM support)
 - [x] Client Options
+- [x] Cookie management
 - [x] Streaming download
 - [x] Streaming upload
 - [x] WebSocket
@@ -80,7 +81,6 @@ The following items are planned in MVP:
 Future work may include:
 
 - [ ] Backend: WASM fetch
-- [ ] Cookie management
 - [ ] Progress tracking
 - [ ] Direct file upload/download support
 - [ ] URL manipulation utilities

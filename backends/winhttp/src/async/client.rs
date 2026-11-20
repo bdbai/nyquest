@@ -45,12 +45,17 @@ impl WinHttpAsyncClient {
 
         Ok(Self { session })
     }
-}
 
-impl AsyncClient for WinHttpAsyncClient {
-    type Response = WinHttpAsyncResponse;
-
-    async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
+    async fn do_single_request(
+        &self,
+        url: Vec<u16>,
+        method: nyquest_interface::Method,
+        additional_headers: Vec<(
+            std::borrow::Cow<'static, str>,
+            std::borrow::Cow<'static, str>,
+        )>,
+        body: Option<nyquest_interface::r#async::Body>,
+    ) -> NyquestResult<WinHttpAsyncResponse> {
         // Prepare headers and body before spawning to threadpool
         let mut prepared_body;
 
@@ -60,11 +65,10 @@ impl AsyncClient for WinHttpAsyncClient {
         let body_len;
         let (setup_tx, setup_rx) = oneshot::channel();
         windows_threading::submit({
-            let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
-            let method = method_to_cwstr(&req.method);
-            prepared_body = prepare_body(req.body, get_stream_content_length);
+            let method = method_to_cwstr(&method);
+            prepared_body = prepare_body(body, get_stream_content_length);
             let headers_str = prepare_additional_headers(
-                &req.additional_headers,
+                &additional_headers,
                 &self.session.options,
                 &prepared_body,
             );
@@ -153,6 +157,16 @@ impl AsyncClient for WinHttpAsyncClient {
             request,
         ))
     }
+}
+
+impl AsyncClient for WinHttpAsyncClient {
+    type Response = WinHttpAsyncResponse;
+
+    async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
+        let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
+        self.do_single_request(url, req.method, req.additional_headers, req.body)
+            .await
+    }
 
     #[cfg(feature = "async-ws")]
     fn connect_websocket(
@@ -165,6 +179,33 @@ impl AsyncClient for WinHttpAsyncClient {
         >,
     > + Send {
         super::websocket::connect_async(self.session.clone(), uri, protocols)
+    }
+
+    #[cfg(feature = "cookies")]
+    async fn add_cookie(
+        &self,
+        _name: std::borrow::Cow<'static, str>,
+        _value: std::borrow::Cow<'static, str>,
+        _url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<()> {
+        // See the blocking client for why explicit management is unsupported.
+        Err(nyquest_interface::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "explicit cookie management is not supported by the WinHTTP backend; \
+             automatic cookies remain controlled by `use_cookies`",
+        )))
+    }
+
+    #[cfg(feature = "cookies")]
+    async fn get_cookies_for(
+        &self,
+        _url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<Vec<nyquest_interface::Cookie>> {
+        Err(nyquest_interface::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "explicit cookie management is not supported by the WinHTTP backend; \
+             automatic cookies remain controlled by `use_cookies`",
+        )))
     }
 }
 
