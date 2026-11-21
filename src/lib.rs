@@ -120,7 +120,10 @@
 //! - `json`: Enable JSON request/response shorthand methods.
 //! - `async-ws`: Enable async WebSocket support.
 //! - `blocking-ws`: Enable blocking WebSocket support.
-//! - `cookies`: Enable cookie management support.
+//! - `cookies`: Enable manual cookie management support. This feature is not supported by
+//!   [`nyquest-backend-winhttp`](https://docs.rs/nyquest-backend-winhttp): its cookie management
+//!   APIs always return an [`std::io::ErrorKind::Unsupported`] I/O error. Automatic session
+//!   cookies still work there, controlled by [`ClientBuilder::no_cookies`].
 //!
 //! [^1]: Subject to the backend's capability.
 //!
