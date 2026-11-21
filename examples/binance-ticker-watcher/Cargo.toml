@@ -1,0 +1,11 @@
+[package]
+name = "binance-ticker-watcher"
+description = "Watch average prices from Binance over async WebSockets"
+edition.workspace = true
+
+[dependencies]
+nyquest = { path = "../..", features = ["async-ws"] }
+nyquest-preset = { path = "../../presets/default", features = ["async-ws"] }
+futures.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
