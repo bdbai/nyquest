@@ -12,6 +12,8 @@ pub(crate) mod client;
 #[cfg(feature = "blocking-stream")]
 mod read_stream;
 mod response;
+#[cfg(feature = "blocking-ws")]
+mod websocket;
 
 #[cfg(not(feature = "blocking-stream"))]
 type BoxedStream = std::convert::Infallible;
@@ -26,11 +28,11 @@ pub type Part = crate::body::Part<BoxedStream>;
 /// The multipart form part body type for blocking requests.
 #[cfg(feature = "multipart")]
 pub type PartBody = crate::body::PartBody<BoxedStream>;
-#[cfg(feature = "blocking-ws")]
-pub use nyquest_interface::blocking::{WebSocket, WebSocketReceiver, WebSocketSender};
 #[cfg(feature = "blocking-stream")]
 pub use read_stream::ReadStream;
 pub use response::Response;
+#[cfg(feature = "blocking-ws")]
+pub use websocket::{WebSocket, WebSocketReceiver, WebSocketReceiverIter, WebSocketSender};
 
 #[cfg(feature = "blocking-stream")]
 use crate::body::private::{IntoSizedStream, IntoUnsizedStream};

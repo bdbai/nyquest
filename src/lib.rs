@@ -139,6 +139,8 @@ mod body;
 mod cookies;
 mod error;
 mod request;
+#[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
+mod websocket;
 
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
@@ -163,13 +165,11 @@ pub use client::ClientBuilder;
 #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
 pub use cookies::Cookie;
 pub use error::{Error, Result};
-#[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
-#[cfg_attr(docsrs, doc(cfg(any(feature = "async-ws", feature = "blocking-ws"))))]
-pub use nyquest_interface::websocket::{
-    WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult,
-};
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use r#async::client::AsyncClient;
 pub use request::{Method, Request};
 pub use status::StatusCode;
+#[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "async-ws", feature = "blocking-ws"))))]
+pub use websocket::{WebSocketError, WebSocketInfo, WebSocketMessage, WebSocketResult};

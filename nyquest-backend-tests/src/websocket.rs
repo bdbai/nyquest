@@ -18,6 +18,8 @@ use tokio_tungstenite::{
 mod basic;
 mod client_options;
 mod concurrency;
+#[cfg(feature = "blocking")]
+mod iter;
 
 pub(super) async fn spawn_server() -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
