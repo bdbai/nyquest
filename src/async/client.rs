@@ -8,9 +8,11 @@ use nyquest_interface::{
 };
 
 use super::response::Response;
-use crate::ClientBuilder;
 #[cfg(feature = "async-ws")]
-use nyquest_interface::websocket::WebSocketResult;
+use super::websocket::WebSocket;
+#[cfg(feature = "async-ws")]
+use crate::websocket::WebSocketResult;
+use crate::ClientBuilder;
 
 /// A async HTTP client to make Requests with.
 ///
@@ -65,10 +67,12 @@ impl AsyncClient {
         &self,
         uri: impl Into<Cow<'static, str>>,
         protocols: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> WebSocketResult<nyquest_interface::r#async::websocket::WebSocket> {
-        self.client
-            .connect_websocket(uri.into(), protocols.into_iter().collect())
-            .await
+    ) -> WebSocketResult<WebSocket> {
+        Ok(WebSocket::from_interface(
+            self.client
+                .connect_websocket(uri.into(), protocols.into_iter().collect())
+                .await?,
+        ))
     }
 
     /// Adds a cookie to the client's cookie store.

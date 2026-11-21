@@ -7,10 +7,12 @@ use nyquest_interface::{
     register::BACKEND,
 };
 
+#[cfg(feature = "blocking-ws")]
+use super::websocket::WebSocket;
 use super::{response::Response, Request};
 use crate::client::ClientBuilder;
 #[cfg(feature = "blocking-ws")]
-use nyquest_interface::websocket::WebSocketResult;
+use crate::websocket::WebSocketResult;
 
 /// A blocking HTTP client to make Requests with.
 ///
@@ -72,9 +74,11 @@ impl BlockingClient {
         &self,
         uri: impl Into<Cow<'static, str>>,
         protocols: impl IntoIterator<Item = Cow<'static, str>>,
-    ) -> WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
-        self.client
-            .connect_websocket(uri.into(), protocols.into_iter().collect())
+    ) -> WebSocketResult<WebSocket> {
+        Ok(WebSocket::from_interface(self.client.connect_websocket(
+            uri.into(),
+            protocols.into_iter().collect(),
+        )?))
     }
 
     // TODO: request file

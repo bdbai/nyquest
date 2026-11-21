@@ -9,6 +9,8 @@ use nyquest_interface::r#async::{BoxedStream, SizedBodyStream, UnsizedBodyStream
 mod async_read_stream;
 pub(crate) mod client;
 mod response;
+#[cfg(feature = "async-ws")]
+mod websocket;
 
 #[cfg(not(feature = "async-stream"))]
 type BoxedStream = std::convert::Infallible;
@@ -25,9 +27,9 @@ pub type Part = crate::body::Part<BoxedStream>;
 pub type PartBody = crate::body::PartBody<BoxedStream>;
 #[cfg(feature = "async-stream")]
 pub use async_read_stream::AsyncReadStream;
-#[cfg(feature = "async-ws")]
-pub use nyquest_interface::r#async::{WebSocket, WebSocketReceiver, WebSocketSender};
 pub use response::Response;
+#[cfg(feature = "async-ws")]
+pub use websocket::{WebSocket, WebSocketReceiver, WebSocketSender};
 
 #[cfg(feature = "async-stream")]
 use crate::body::private::{IntoSizedStream, IntoUnsizedStream};
