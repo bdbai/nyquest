@@ -13,20 +13,6 @@ pub struct WebSocketInfo {
 
 impl WebSocketInfo {
     pub(crate) fn from_interface(value: ws_iface::WebSocketInfo) -> Self {
-        value.into()
-    }
-}
-
-impl From<ws_iface::WebSocketInfo> for WebSocketInfo {
-    fn from(value: ws_iface::WebSocketInfo) -> Self {
-        Self {
-            protocol: value.protocol,
-        }
-    }
-}
-
-impl From<WebSocketInfo> for ws_iface::WebSocketInfo {
-    fn from(value: WebSocketInfo) -> Self {
         Self {
             protocol: value.protocol,
         }
@@ -63,26 +49,11 @@ impl WebSocketError {
             ws_iface::WebSocketError::Protocol(s) => Self::Protocol(s),
         }
     }
-
-    pub(crate) fn into_interface(self) -> ws_iface::WebSocketError {
-        match self {
-            Self::InvalidUrl => ws_iface::WebSocketError::InvalidUrl,
-            Self::Io(e) => ws_iface::WebSocketError::Io(e),
-            Self::MessageTooLarge => ws_iface::WebSocketError::MessageTooLarge,
-            Self::Protocol(s) => ws_iface::WebSocketError::Protocol(s),
-        }
-    }
 }
 
 impl From<ws_iface::WebSocketError> for WebSocketError {
     fn from(value: ws_iface::WebSocketError) -> Self {
         Self::from_interface(value)
-    }
-}
-
-impl From<WebSocketError> for ws_iface::WebSocketError {
-    fn from(value: WebSocketError) -> Self {
-        value.into_interface()
     }
 }
 
@@ -114,16 +85,19 @@ impl WebSocketMessage {
     }
 
     /// Returns `true` if the message is a text message.
+    #[inline]
     pub fn is_text(&self) -> bool {
         matches!(self, Self::Utf8(_))
     }
 
     /// Returns `true` if the message is a binary message.
+    #[inline]
     pub fn is_binary(&self) -> bool {
         matches!(self, Self::Bytes(_))
     }
 
     /// Returns `true` if the message is a close message.
+    #[inline]
     pub fn is_close(&self) -> bool {
         matches!(self, Self::Close { .. })
     }
@@ -132,6 +106,7 @@ impl WebSocketMessage {
     ///
     /// For text messages this returns the UTF-8 bytes, for binary messages the
     /// bytes themselves, and for close messages the close reason bytes.
+    #[inline]
     pub fn into_data(self) -> Vec<u8> {
         match self {
             Self::Utf8(s) => s.into_bytes(),
@@ -144,6 +119,7 @@ impl WebSocketMessage {
     ///
     /// For text and close messages this returns the text/reason directly. For
     /// binary messages the bytes must be valid UTF-8.
+    #[inline]
     pub fn into_text(self) -> Result<String, std::str::Utf8Error> {
         match self {
             Self::Utf8(s) => Ok(s),
@@ -156,6 +132,7 @@ impl WebSocketMessage {
     ///
     /// For text and close messages this returns the text/reason directly. For
     /// binary messages the bytes must be valid UTF-8.
+    #[inline]
     pub fn to_text(&self) -> Result<&str, std::str::Utf8Error> {
         match self {
             Self::Utf8(s) => Ok(s),

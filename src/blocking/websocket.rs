@@ -162,7 +162,10 @@ mod tests {
         BlockingWebSocketReceiver, BlockingWebSocketSender,
     };
     use nyquest_interface::websocket as ws_iface;
-    use nyquest_interface::websocket::WebSocketMessage as IfaceMessage;
+    use nyquest_interface::websocket::{
+        WebSocketError as IfaceError, WebSocketMessage as IfaceMessage,
+        WebSocketResult as IfaceResult,
+    };
 
     struct MockReceiver {
         messages: std::collections::VecDeque<ws_iface::WebSocketResult<IfaceMessage>>,
@@ -192,15 +195,9 @@ mod tests {
         }
     }
 
-    fn mock_receiver(messages: Vec<WebSocketResult<WebSocketMessage>>) -> WebSocketReceiver {
+    fn mock_receiver(messages: Vec<IfaceResult<IfaceMessage>>) -> WebSocketReceiver {
         let iface_messages: std::collections::VecDeque<ws_iface::WebSocketResult<IfaceMessage>> =
-            messages
-                .into_iter()
-                .map(|r| {
-                    r.map(|m| m.into_interface())
-                        .map_err(WebSocketError::into_interface)
-                })
-                .collect();
+            messages.into_iter().collect();
         let inner = ws_impl::WebSocketReceiver::from_impl(MockReceiver {
             messages: iface_messages,
         });
@@ -210,8 +207,8 @@ mod tests {
     #[test]
     fn receiver_iter_yields_messages_and_stops_after_close() {
         let mut receiver = mock_receiver(vec![
-            Ok(WebSocketMessage::Utf8("hello".into())),
-            Ok(WebSocketMessage::Close {
+            Ok(IfaceMessage::Utf8("hello".into())),
+            Ok(IfaceMessage::Close {
                 code: 1000,
                 reason: "done".into(),
             }),
@@ -223,8 +220,8 @@ mod tests {
         );
         // Iterator fuses after Close.
         let receiver = mock_receiver(vec![
-            Ok(WebSocketMessage::Utf8("hello".into())),
-            Ok(WebSocketMessage::Close {
+            Ok(IfaceMessage::Utf8("hello".into())),
+            Ok(IfaceMessage::Close {
                 code: 1000,
                 reason: "done".into(),
             }),
@@ -240,9 +237,9 @@ mod tests {
     #[test]
     fn receiver_iter_yields_error_and_then_stops() {
         let receiver = mock_receiver(vec![
-            Ok(WebSocketMessage::Utf8("hello".into())),
-            Err(WebSocketError::Protocol("boom".into())),
-            Ok(WebSocketMessage::Utf8("unreached".into())),
+            Ok(IfaceMessage::Utf8("hello".into())),
+            Err(IfaceError::Protocol("boom".into())),
+            Ok(IfaceMessage::Utf8("unreached".into())),
         ]);
         let mut iter = receiver.into_iter();
         assert_eq!(
@@ -269,9 +266,9 @@ mod tests {
     #[test]
     fn for_loop_over_receiver_stops_on_error() {
         let receiver = mock_receiver(vec![
-            Ok(WebSocketMessage::Utf8("a".into())),
-            Ok(WebSocketMessage::Utf8("b".into())),
-            Err(WebSocketError::Protocol("boom".into())),
+            Ok(IfaceMessage::Utf8("a".into())),
+            Ok(IfaceMessage::Utf8("b".into())),
+            Err(IfaceError::Protocol("boom".into())),
         ]);
         let mut count = 0;
         let mut saw_error = false;
