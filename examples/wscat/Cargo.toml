@@ -1,0 +1,8 @@
+[package]
+name = "wscat"
+description = "Connect to a WebSocket endpoint and pipe stdin/stdout"
+edition.workspace = true
+
+[dependencies]
+nyquest = { path = "../..", features = ["blocking-ws"] }
+nyquest-preset = { path = "../../presets/default", features = ["blocking-ws"] }
