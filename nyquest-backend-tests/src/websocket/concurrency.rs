@@ -1,3 +1,4 @@
+#[cfg(feature = "blocking")]
 use std::borrow::Cow;
 
 #[cfg(feature = "async")]

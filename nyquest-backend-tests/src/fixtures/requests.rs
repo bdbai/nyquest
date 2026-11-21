@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "blocking-stream")]
+    use std::io::Cursor;
     use std::{
-        io::Cursor,
         ops::Deref,
         sync::{Arc, OnceLock},
     };

@@ -1,9 +1,11 @@
 #![cfg(test)]
 
+#[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+use std::sync::Mutex;
 use std::{
     future::Future,
     io,
-    sync::{LazyLock, Mutex, Once},
+    sync::{LazyLock, Once},
 };
 
 use http_body_util::{BodyExt, Full};
@@ -59,6 +61,7 @@ async fn service_base_url() -> io::Result<String> {
     Ok(format!("http://localhost.:{port}")) // Use localhost. to avoid potential proxy bypass due to "localhost" being a special domain in some environments
 }
 
+#[cfg(all(feature = "blocking", feature = "cookies", not(feature = "winhttp")))]
 fn service_base_url_blocking() -> io::Result<String> {
     TOKIO_RT.block_on(service_base_url())
 }
@@ -78,7 +81,10 @@ fn init_builder_blocking() -> io::Result<ClientBuilder> {
     })
 }
 
-#[cfg(any(feature = "curl", feature = "reqwest"))]
+#[cfg(all(
+    any(feature = "curl", feature = "reqwest"),
+    any(feature = "async", feature = "blocking")
+))]
 async fn init_builder_from_backend<Backend>(
     backend: &Backend,
 ) -> io::Result<ClientBuilder<&Backend>> {
@@ -89,7 +95,7 @@ async fn init_builder_from_backend<Backend>(
         .custom_backend(backend))
 }
 
-#[cfg(any(feature = "curl", feature = "reqwest"))]
+#[cfg(all(any(feature = "curl", feature = "reqwest"), feature = "blocking"))]
 fn init_builder_from_backend_blocking<Backend>(
     backend: &Backend,
 ) -> io::Result<ClientBuilder<&Backend>> {
