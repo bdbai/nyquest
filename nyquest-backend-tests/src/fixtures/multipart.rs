@@ -1,18 +1,23 @@
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "blocking-stream")]
+    use std::io::Cursor;
+    use std::sync::{Arc, OnceLock};
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     use std::{
-        io::Cursor,
         pin::pin,
-        sync::{Arc, OnceLock},
         task::{Context, Poll},
     };
 
-    use futures::{task::noop_waker_ref, StreamExt as _};
-    use http_body_util::{BodyExt, BodyStream};
-    use hyper::{
-        body::Incoming,
-        header::{HeaderValue, CONTENT_TYPE},
-    };
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+    use futures::task::noop_waker_ref;
+    use futures::StreamExt as _;
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+    use http_body_util::BodyExt;
+    use http_body_util::BodyStream;
+    use hyper::header::CONTENT_TYPE;
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+    use hyper::{body::Incoming, header::HeaderValue};
     use multer::Multipart;
     #[cfg(feature = "blocking")]
     use nyquest::blocking::Body as NyquestBlockingBody;
@@ -23,6 +28,7 @@ mod tests {
 
     use crate::*;
 
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     const TEST_CONTENT: &str = "test content";
 
     #[test]
@@ -156,6 +162,7 @@ mod tests {
         }
     }
 
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     async fn echo_server_fixture(
         req: Request<Incoming>,
     ) -> (Response<Full<Bytes>>, Result<(), Request<Incoming>>) {
@@ -171,6 +178,7 @@ mod tests {
         (res, Ok(()))
     }
 
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     fn multipart_body_assertions(content_type: Option<String>, body: String) {
         fn poll_once<F: Future<Output = T>, T>(fut: F) -> T {
             let fut = pin!(fut);

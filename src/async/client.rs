@@ -70,6 +70,38 @@ impl AsyncClient {
             .connect_websocket(uri.into(), protocols.into_iter().collect())
             .await
     }
+
+    /// Adds a cookie to the client's cookie store.
+    ///
+    /// The cookie is applied to requests whose URL matches `url` according to the cookie's domain
+    /// and path.
+    #[cfg(feature = "cookies")]
+    pub async fn add_cookie(
+        &self,
+        name: impl Into<Cow<'static, str>>,
+        value: impl Into<Cow<'static, str>>,
+        url: impl Into<Cow<'static, str>>,
+    ) -> crate::Result<()> {
+        Ok(self
+            .client
+            .add_cookie(name.into(), value.into(), url.into())
+            .await?)
+    }
+
+    /// Returns the cookies that apply to `url`.
+    #[cfg(feature = "cookies")]
+    pub async fn get_cookies_for(
+        &self,
+        url: impl Into<Cow<'static, str>>,
+    ) -> crate::Result<Vec<crate::Cookie>> {
+        Ok(self
+            .client
+            .get_cookies_for(url.into())
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
 }
 
 impl Debug for AsyncClient {

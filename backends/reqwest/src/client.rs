@@ -18,6 +18,8 @@ pub struct ReqwestClient {
     pub(crate) client: Client,
     pub(crate) base_url: Option<Url>,
     pub(crate) max_response_buffer_size: Option<u64>,
+    #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+    pub(crate) cookie_jar: Arc<crate::cookies::NyquestCookieStore>,
     #[cfg(target_arch = "wasm32")]
     pub(crate) wasm_options: crate::wasm::WasmOptions,
     #[cfg(not(target_arch = "wasm32"))]
@@ -26,7 +28,14 @@ pub struct ReqwestClient {
 
 impl ReqwestClient {
     pub fn new(options: ClientOptions, customizer: &Customizer) -> NyquestResult<Self> {
-        let client = build_reqwest_client(&options, customizer)?;
+        #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+        let cookie_jar = Arc::new(crate::cookies::NyquestCookieStore::default());
+        let client = build_reqwest_client(
+            &options,
+            customizer,
+            #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+            &cookie_jar,
+        )?;
 
         let base_url = if let Some(ref base_url_str) = options.base_url {
             Some(Url::parse(base_url_str).map_err(|_| {
@@ -43,6 +52,8 @@ impl ReqwestClient {
             client,
             base_url,
             max_response_buffer_size: options.max_response_buffer_size,
+            #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+            cookie_jar,
             #[cfg(target_arch = "wasm32")]
             wasm_options: crate::wasm::WasmOptions {
                 request_timeout: options.request_timeout,
@@ -55,7 +66,13 @@ impl ReqwestClient {
     }
 }
 
-pub fn build_reqwest_client(options: &ClientOptions, customizer: &Customizer) -> Result<Client> {
+pub fn build_reqwest_client(
+    options: &ClientOptions,
+    customizer: &Customizer,
+    #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))] cookie_jar: &Arc<
+        crate::cookies::NyquestCookieStore,
+    >,
+) -> Result<Client> {
     let mut builder = Client::builder();
 
     if let Some(user_agent) = &options.user_agent {
@@ -77,6 +94,15 @@ pub fn build_reqwest_client(options: &ClientOptions, customizer: &Customizer) ->
     #[cfg(not(target_arch = "wasm32"))]
     {
         builder = build_non_wasm(builder, options).map_err(ReqwestBackendError::Reqwest)?;
+    }
+
+    #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+    if options.use_cookies {
+        builder = builder.cookie_provider(cookie_jar.clone());
+    }
+    #[cfg(all(not(feature = "cookies"), not(target_arch = "wasm32")))]
+    {
+        builder = builder.cookie_store(options.use_cookies);
     }
 
     builder = builder.default_headers(default_headers?);
@@ -118,13 +144,11 @@ fn build_non_wasm(
             }
         }
     }
-    builder = builder
-        .cookie_store(options.use_cookies)
-        .redirect(if options.follow_redirects {
-            reqwest::redirect::Policy::default()
-        } else {
-            reqwest::redirect::Policy::none()
-        });
+    builder = builder.redirect(if options.follow_redirects {
+        reqwest::redirect::Policy::default()
+    } else {
+        reqwest::redirect::Policy::none()
+    });
     #[cfg(any(
         feature = "default-tls",
         feature = "native-tls",

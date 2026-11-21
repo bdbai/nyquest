@@ -53,6 +53,24 @@ impl BlockingClient for ReqwestBlockingClient {
     > {
         websocket::connect_blocking(&self.inner, uri, protocols)
     }
+
+    #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+    fn add_cookie(
+        &self,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
+        url: Cow<'static, str>,
+    ) -> NyquestResult<()> {
+        self.inner.add_cookie(&name, &value, &url)
+    }
+
+    #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+    fn get_cookies_for(
+        &self,
+        url: Cow<'static, str>,
+    ) -> NyquestResult<Vec<nyquest_interface::Cookie>> {
+        self.inner.get_cookies_for(&url)
+    }
 }
 
 async fn execute_request(

@@ -13,6 +13,7 @@ use nyquest_interface::websocket::{
 
 use super::r#loop::{LoopManager, LoopTask, RequestHandle};
 use crate::curl_ng::easy::{AsRawEasyMut, Share};
+use crate::curl_ng::url::CurlUrl;
 use crate::r#async::shared::{RequestResult, SharedRequestStates};
 use crate::request::{create_easy, AsCallbackMut};
 use crate::websocket::{
@@ -174,6 +175,7 @@ impl WsState {
 pub(super) async fn connect_async(
     loop_manager: &LoopManager,
     share: &Share,
+    base_url: Option<Arc<CurlUrl>>,
     options: &nyquest_interface::client::ClientOptions,
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
@@ -206,7 +208,7 @@ pub(super) async fn connect_async(
     let raw = easy.as_mut().as_raw_easy_mut().raw();
     easy.as_callback_mut().pause = Some(super::pause::EasyPause::new(raw));
 
-    configure_websocket_easy(easy.as_mut(), options, uri, protocols)?;
+    configure_websocket_easy(easy.as_mut(), base_url.as_deref(), options, uri, protocols)?;
     easy.as_mut()
         .with_error_message(|e| e.as_raw_easy_mut().set_upload(true))
         .map_err(|e| nyquest_to_ws_error(e.into()))?;

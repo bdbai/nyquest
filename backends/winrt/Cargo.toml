@@ -30,6 +30,7 @@ blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
 blocking-ws = ["blocking", "nyquest-interface/blocking-ws", "windows/Networking_Sockets"]
 multipart = ["nyquest-interface/multipart"]
+cookies = ["nyquest-interface/cookies"]
 
 [target.'cfg(windows)'.dependencies]
 windows-core = { version = "0.62", default-features = false }

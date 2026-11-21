@@ -42,6 +42,17 @@ pub trait AnyBlockingClient: Any + Send + Sync + 'static {
         uri: Cow<'static, str>,
         protocols: Vec<Cow<'static, str>>,
     ) -> WebSocketResult<super::websocket::WebSocket>;
+    /// Adds a cookie for the given URL.
+    #[cfg(feature = "cookies")]
+    fn add_cookie(
+        &self,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
+        url: Cow<'static, str>,
+    ) -> crate::Result<()>;
+    /// Returns the cookies that apply to the given URL.
+    #[cfg(feature = "cookies")]
+    fn get_cookies_for(&self, url: Cow<'static, str>) -> crate::Result<Vec<crate::Cookie>>;
 }
 
 #[cfg(feature = "blocking-ws")]
@@ -138,5 +149,20 @@ where
         protocols: Vec<Cow<'static, str>>,
     ) -> WebSocketResult<super::websocket::WebSocket> {
         super::BlockingClient::connect_websocket(self, uri, protocols)
+    }
+
+    #[cfg(feature = "cookies")]
+    fn add_cookie(
+        &self,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
+        url: Cow<'static, str>,
+    ) -> crate::Result<()> {
+        super::backend::BlockingClient::add_cookie(self, name, value, url)
+    }
+
+    #[cfg(feature = "cookies")]
+    fn get_cookies_for(&self, url: Cow<'static, str>) -> crate::Result<Vec<crate::Cookie>> {
+        super::backend::BlockingClient::get_cookies_for(self, url)
     }
 }

@@ -1,13 +1,16 @@
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "blocking")]
+    #[cfg(feature = "blocking-stream")]
     use std::io::Read;
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
     use std::sync::Arc;
 
-    #[cfg(feature = "async")]
+    #[cfg(feature = "async-stream")]
     use futures::AsyncReadExt;
     use http_body_util::BodyExt;
-    use hyper::{body::Frame, Method, StatusCode};
+    #[cfg(any(feature = "blocking-stream", feature = "async-stream"))]
+    use hyper::body::Frame;
+    use hyper::{Method, StatusCode};
     #[cfg(feature = "blocking")]
     use nyquest::blocking::Body as NyquestBlockingBody;
     #[cfg(feature = "async")]
@@ -210,7 +213,9 @@ mod tests {
     fn test_stream_download() {
         const PATH: &str = "responses/stream_download";
 
+        #[cfg_attr(not(feature = "async-stream"), allow(unused_mut, unused_variables))]
         let (mut async_tx, async_rx) = futures::channel::mpsc::channel(1);
+        #[cfg_attr(not(feature = "blocking-stream"), allow(unused_mut, unused_variables))]
         let (mut blocking_tx, blocking_rx) = futures::channel::mpsc::channel(1);
         let rxs = Arc::new([Mutex::new(Some(async_rx)), Mutex::new(Some(blocking_rx))]);
 

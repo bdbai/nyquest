@@ -3,7 +3,12 @@ use std::io::Read;
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse};
 
 #[derive(Clone)]
-pub struct DummyBlockingClient;
+pub struct DummyBlockingClient {
+    /// The blocking client cannot send requests on WASM, but its cookie API works through the
+    /// synchronous `document.cookie` API.
+    #[cfg(feature = "cookies")]
+    inner: crate::client::ReqwestClient,
+}
 pub struct DummyBlockingResponse;
 
 fn bail_unimplemented() -> ! {
@@ -56,6 +61,24 @@ impl BlockingClient for DummyBlockingClient {
     ) -> nyquest_interface::WebSocketResult<nyquest_interface::blocking::websocket::WebSocket> {
         bail_unimplemented()
     }
+
+    #[cfg(feature = "cookies")]
+    fn add_cookie(
+        &self,
+        name: std::borrow::Cow<'static, str>,
+        value: std::borrow::Cow<'static, str>,
+        url: std::borrow::Cow<'static, str>,
+    ) -> nyquest_interface::Result<()> {
+        self.inner.add_cookie_sync(&name, &value, &url)
+    }
+
+    #[cfg(feature = "cookies")]
+    fn get_cookies_for(
+        &self,
+        url: std::borrow::Cow<'static, str>,
+    ) -> nyquest_interface::Result<Vec<nyquest_interface::Cookie>> {
+        self.inner.get_cookies_for_sync(&url)
+    }
 }
 
 impl BlockingBackend for crate::ReqwestBackend {
@@ -63,8 +86,18 @@ impl BlockingBackend for crate::ReqwestBackend {
 
     fn create_blocking_client(
         &self,
-        _options: nyquest_interface::client::ClientOptions,
+        options: nyquest_interface::client::ClientOptions,
     ) -> nyquest_interface::Result<Self::BlockingClient> {
-        bail_unimplemented()
+        #[cfg(feature = "cookies")]
+        {
+            Ok(DummyBlockingClient {
+                inner: crate::client::ReqwestClient::new(options, self.customizer())?,
+            })
+        }
+        #[cfg(not(feature = "cookies"))]
+        {
+            let _ = options;
+            bail_unimplemented()
+        }
     }
 }

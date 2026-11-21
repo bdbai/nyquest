@@ -14,6 +14,8 @@ cfg_if::cfg_if! {
             #[cfg(feature = "blocking")]
             #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
             mod blocking;
+            #[cfg(feature = "cookies")]
+            mod cookies;
             mod options;
             mod response;
             mod send_wrapper;
@@ -35,6 +37,10 @@ cfg_if::cfg_if! {
 }
 mod backend;
 mod client;
+#[cfg(feature = "cookies")]
+mod cookie_util;
+#[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+mod cookies;
 mod customizer;
 mod error;
 mod request;

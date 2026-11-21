@@ -20,9 +20,10 @@ mod shared;
 pub(crate) mod websocket;
 
 use crate::curl_ng::easy::{AsRawEasyMut as _, Share};
+use crate::curl_ng::url::CurlUrl;
 use crate::r#async::handler::AsyncHandler;
 use crate::request::{create_easy, AsCallbackMut as _};
-use crate::url::concat_url;
+use crate::url::{join_url, parse_base_url};
 use crate::{CurlCodeContext, CurlHandle, HandleCustomizer};
 
 type Easy = crate::request::BoxEasyHandle<handler::AsyncHandler>;
@@ -34,6 +35,7 @@ pub(crate) type Customizer = Arc<
 
 pub struct CurlMultiClientInner {
     options: nyquest_interface::client::ClientOptions,
+    base_url: Option<Arc<CurlUrl>>,
     customizer: Customizer,
     loop_manager: r#loop::LoopManager,
     share: Share,
@@ -49,6 +51,13 @@ pub struct CurlAsyncResponse {
     headers: Vec<(String, String)>,
     handle: r#loop::RequestHandle,
     max_response_buffer_size: Option<u64>,
+}
+
+impl CurlMultiClient {
+    #[cfg(feature = "cookies")]
+    pub(crate) fn share(&self) -> &Share {
+        &self.inner.share
+    }
 }
 
 impl AsyncResponse for CurlAsyncResponse {
@@ -148,8 +157,7 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
             let mut easy = create_easy(AsyncHandler::default(), &self.inner.share)?;
             let raw = easy.as_mut().as_raw_easy_mut().raw();
             easy.as_callback_mut().pause = Some(pause::EasyPause::new(raw));
-            // FIXME: properly concat base_url and url
-            let url = concat_url(self.inner.options.base_url.as_deref(), &req.relative_uri);
+            let url = join_url(self.inner.base_url.as_deref(), &req.relative_uri)?;
             let req_ctx = easy.as_callback_mut().ctx.clone();
             let read_task_collection = RefCell::new(read_task::ReadTaskCollection::new(req_ctx));
             crate::request::populate_request(
@@ -194,11 +202,30 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         websocket::connect_async(
             &self.inner.loop_manager,
             &self.inner.share,
+            self.inner.base_url.clone(),
             &self.inner.options,
             uri,
             protocols,
         )
         .await
+    }
+
+    #[cfg(feature = "cookies")]
+    async fn add_cookie(
+        &self,
+        name: std::borrow::Cow<'static, str>,
+        value: std::borrow::Cow<'static, str>,
+        url: std::borrow::Cow<'static, str>,
+    ) -> nyquest_interface::Result<()> {
+        crate::cookies::add_cookie(self.share(), &name, &value, &url)
+    }
+
+    #[cfg(feature = "cookies")]
+    async fn get_cookies_for(
+        &self,
+        url: std::borrow::Cow<'static, str>,
+    ) -> nyquest_interface::Result<Vec<nyquest_interface::Cookie>> {
+        crate::cookies::get_cookies_for(self.share(), &url)
     }
 }
 
@@ -209,10 +236,17 @@ impl nyquest_interface::r#async::AsyncBackend for crate::CurlBackend {
         &self,
         options: nyquest_interface::client::ClientOptions,
     ) -> Result<Self::AsyncClient, NyquestError> {
+        let base_url = options
+            .base_url
+            .as_deref()
+            .map(parse_base_url)
+            .transpose()?
+            .map(Arc::new);
         Ok(CurlMultiClient {
             inner: Arc::new(CurlMultiClientInner {
                 loop_manager: r#loop::LoopManager::new(),
                 options,
+                base_url,
                 customizer: self.async_customizer.clone(),
                 share: Share::new(),
             }),

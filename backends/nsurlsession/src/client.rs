@@ -22,10 +22,14 @@ pub struct NSUrlSessionClient {
     pub(crate) base_url: Option<Retained<NSURL>>,
     pub(crate) max_response_buffer_size: u64,
     pub(crate) allow_redirects: bool,
+    #[cfg(feature = "cookies")]
+    pub(crate) cookie_storage: Option<Retained<objc2_foundation::NSHTTPCookieStorage>>,
 }
 
 impl NSUrlSessionClient {
     pub(crate) fn create(options: ClientOptions) -> NyquestResult<Self> {
+        #[cfg(feature = "cookies")]
+        let cookie_storage;
         let session = unsafe {
             let config = objc2_foundation::NSURLSessionConfiguration::defaultSessionConfiguration();
             if options.caching_behavior == CachingBehavior::Disabled {
@@ -76,6 +80,10 @@ impl NSUrlSessionClient {
             if !options.use_cookies {
                 config.setHTTPShouldSetCookies(false);
             }
+            #[cfg(feature = "cookies")]
+            {
+                cookie_storage = config.HTTPCookieStorage();
+            }
             let timeout = options
                 .request_timeout
                 .map_or(NSTimeInterval::MAX, |t| t.as_secs_f64());
@@ -121,6 +129,8 @@ impl NSUrlSessionClient {
             base_url,
             max_response_buffer_size: options.max_response_buffer_size.unwrap_or(u64::MAX),
             allow_redirects: options.follow_redirects,
+            #[cfg(feature = "cookies")]
+            cookie_storage,
         })
     }
 

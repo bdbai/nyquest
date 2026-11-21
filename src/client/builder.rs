@@ -94,6 +94,13 @@ impl<Backend> ClientBuilder<Backend> {
     }
 
     /// Instructs the backend to not keep cookies between requests.
+    ///
+    /// # Note
+    ///
+    /// Automatic cookie management is enabled by default, regardless of whether the `cookies`
+    /// feature is enabled. The `cookies` feature only adds APIs for inspecting the stored cookies
+    /// (e.g., `Client::get_cookies_for`); it does not control whether cookies are kept between
+    /// requests.
     #[inline]
     pub fn no_cookies(mut self) -> Self {
         self.options.use_cookies = false;

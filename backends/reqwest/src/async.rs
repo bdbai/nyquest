@@ -97,6 +97,24 @@ impl AsyncClient for ReqwestAsyncClient {
     > {
         websocket::connect_async(&self.inner, uri, protocols).await
     }
+
+    #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+    async fn add_cookie(
+        &self,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
+        url: Cow<'static, str>,
+    ) -> NyquestResult<()> {
+        self.inner.add_cookie(&name, &value, &url)
+    }
+
+    #[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
+    async fn get_cookies_for(
+        &self,
+        url: Cow<'static, str>,
+    ) -> NyquestResult<Vec<nyquest_interface::Cookie>> {
+        self.inner.get_cookies_for(&url)
+    }
 }
 
 /// Execute an async task with proper runtime handling for async context

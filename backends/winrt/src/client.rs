@@ -8,6 +8,8 @@ use windows::Web::Http::Filters::{
     HttpBaseProtocolFilter, HttpCacheReadBehavior, HttpCacheWriteBehavior, HttpCookieUsageBehavior,
 };
 use windows::Web::Http::HttpClient;
+#[cfg(feature = "cookies")]
+use windows::Web::Http::HttpCookieManager;
 
 use crate::request::is_header_name_content_related;
 
@@ -19,6 +21,8 @@ pub struct WinrtClient {
     pub(crate) ignore_certificate_errors: bool,
     pub(crate) client: HttpClient,
     pub(crate) default_content_headers: Vec<(HSTRING, HSTRING)>,
+    #[cfg(feature = "cookies")]
+    pub(crate) cookie_manager: HttpCookieManager,
 }
 
 impl WinrtClient {
@@ -48,6 +52,8 @@ impl WinrtClient {
         if !options.follow_redirects {
             filter.SetAllowAutoRedirect(false)?;
         }
+        #[cfg(feature = "cookies")]
+        let cookie_manager = filter.CookieManager()?;
         let client = HttpClient::Create(&filter)?;
         if let Some(user_agent) = &options.user_agent {
             client
@@ -76,6 +82,8 @@ impl WinrtClient {
             ignore_certificate_errors: options.ignore_certificate_errors,
             client,
             default_content_headers,
+            #[cfg(feature = "cookies")]
+            cookie_manager,
         })
     }
 }

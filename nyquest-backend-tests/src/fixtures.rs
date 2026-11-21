@@ -1,4 +1,6 @@
 mod client_options;
+#[cfg(feature = "cookies")]
+mod cookies;
 mod custom;
 mod errors;
 #[cfg(feature = "multipart")]

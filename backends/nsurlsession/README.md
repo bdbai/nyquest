@@ -13,5 +13,6 @@
 - `async`
 - `async-stream`
 - `multipart`
+- `cookies`
 
 [`nyquest`]: https://docs.rs/nyquest

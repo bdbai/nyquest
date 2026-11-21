@@ -6,6 +6,8 @@
 //! Backend developers need to implement the `AsyncBackend` and `AsyncClient` traits,
 //! along with a custom `AsyncResponse` type.
 
+#[cfg(feature = "cookies")]
+use std::borrow::Cow;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -41,6 +43,24 @@ pub trait AsyncClient: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = crate::WebSocketResult<super::websocket::WebSocket>> + Send {
         async { panic!("WebSocket is not supported by this backend") }
     }
+
+    /// Adds a cookie for the given URL.
+    #[cfg(feature = "cookies")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
+    fn add_cookie(
+        &self,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
+        url: Cow<'static, str>,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Returns the cookies that apply to the given URL.
+    #[cfg(feature = "cookies")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
+    fn get_cookies_for(
+        &self,
+        url: Cow<'static, str>,
+    ) -> impl Future<Output = Result<Vec<crate::Cookie>>> + Send;
 }
 
 /// Trait for asynchronous HTTP backend implementations.

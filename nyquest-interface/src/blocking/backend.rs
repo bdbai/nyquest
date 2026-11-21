@@ -6,6 +6,8 @@
 //! Backend developers need to implement the `BlockingBackend` and `BlockingClient` traits,
 //! along with a custom `BlockingResponse` type.
 
+#[cfg(feature = "cookies")]
+use std::borrow::Cow;
 use std::fmt;
 
 use super::Request;
@@ -36,6 +38,21 @@ pub trait BlockingClient: Clone + Send + Sync + 'static {
     ) -> crate::WebSocketResult<super::websocket::WebSocket> {
         panic!("WebSocket is not supported by this backend")
     }
+
+    /// Adds a cookie for the given URL.
+    #[cfg(feature = "cookies")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
+    fn add_cookie(
+        &self,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
+        url: Cow<'static, str>,
+    ) -> crate::Result<()>;
+
+    /// Returns the cookies that apply to the given URL.
+    #[cfg(feature = "cookies")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
+    fn get_cookies_for(&self, url: Cow<'static, str>) -> crate::Result<Vec<crate::Cookie>>;
 }
 
 /// Trait for blocking HTTP backend implementations.

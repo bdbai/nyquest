@@ -157,6 +157,24 @@ impl AsyncClient for WinrtClient {
     > {
         websocket::connect_async(self, uri, protocols).await
     }
+
+    #[cfg(feature = "cookies")]
+    async fn add_cookie(
+        &self,
+        name: std::borrow::Cow<'static, str>,
+        value: std::borrow::Cow<'static, str>,
+        url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<()> {
+        self.add_cookie_impl(&name, &value, &url)
+    }
+
+    #[cfg(feature = "cookies")]
+    async fn get_cookies_for(
+        &self,
+        url: std::borrow::Cow<'static, str>,
+    ) -> NyquestResult<Vec<nyquest_interface::Cookie>> {
+        self.get_cookies_for_impl(&url)
+    }
 }
 
 impl AsyncBackend for crate::WinrtBackend {

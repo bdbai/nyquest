@@ -1,4 +1,4 @@
-#![cfg(target_arch = "wasm32")]
+#![cfg(all(target_arch = "wasm32", feature = "async"))]
 
 use nyquest_backend_reqwest::ReqwestBackend;
 use nyquest_interface::{client::ClientOptions, r#async::AnyAsyncBackend as _, Method, Request};

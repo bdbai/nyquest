@@ -23,6 +23,7 @@ async-stream = ["async", "dep:futures-io"]
 blocking-stream = ["blocking"]
 async-ws = ["async", "dep:futures-sink"]
 blocking-ws = ["blocking"]
+cookies = []
 
 [dependencies]
 thiserror.workspace = true

@@ -16,6 +16,8 @@ cfg_if::cfg_if! {
 
         mod challenge;
         mod client;
+        #[cfg(feature = "cookies")]
+        mod cookies;
         mod datatask;
         mod error;
         #[cfg(feature = "multipart")]

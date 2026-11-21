@@ -1,7 +1,9 @@
 use http_body_util::Full;
 use hyper::{body::Bytes, Response};
 use nyquest_backend_curl::{curl_sys, CurlBackend, CurlHandle, HandleCustomizer};
+#[cfg(feature = "blocking")]
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "blocking")]
 use std::sync::Arc;
 
 fn register_fixture(path: &'static str) -> impl Drop {

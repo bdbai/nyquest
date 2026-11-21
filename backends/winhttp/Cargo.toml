@@ -30,6 +30,7 @@ blocking = ["nyquest-interface/blocking"]
 blocking-stream = ["blocking", "nyquest-interface/blocking-stream"]
 blocking-ws = ["blocking", "nyquest-interface/blocking-ws"]
 multipart = ["nyquest-interface/multipart", "dep:getrandom"]
+cookies = ["nyquest-interface/cookies"]
 charset = ["dep:iconv-native"]
 charset-defaults = ["charset", "iconv-native/default"]
 

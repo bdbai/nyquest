@@ -15,8 +15,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      # NOTE: the `idn` feature (IDNA punycode cookie matching) is intentionally
+      # not enabled here: the Ubuntu CI libcurl build cannot convert
+      # `münchen.de` to punycode, so `test_idna_cookie_domain_matching` fails.
+      # It is covered locally where the system libcurl has IDN support.
       - name: Test curl
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,curl,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,curl,multipart,cookies
 
   test-blocking-windows-winrt:
     runs-on: windows-latest
@@ -24,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test winrt
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,winrt,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,winrt,multipart,cookies,idn
 
   test-blocking-windows-winhttp:
     runs-on: windows-latest
@@ -32,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test winhttp
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,winhttp,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,winhttp,multipart,cookies
 
   test-blocking-macos:
     runs-on: macos-latest
@@ -40,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test nsurlsession
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,nsurlsession,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,nsurlsession,multipart,cookies,idn
   
   test-blocking-reqwest:
     runs-on: ubuntu-latest
@@ -48,4 +52,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test reqwest
-        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,reqwest,multipart
+        run: cargo test -p nyquest-backend-tests --verbose --features blocking-ws,reqwest,multipart,cookies,idn

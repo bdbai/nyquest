@@ -139,6 +139,24 @@ impl AsyncClient for ReqwestAsyncClient {
         ))
         .await
     }
+
+    #[cfg(feature = "cookies")]
+    async fn add_cookie(
+        &self,
+        name: std::borrow::Cow<'static, str>,
+        value: std::borrow::Cow<'static, str>,
+        url: std::borrow::Cow<'static, str>,
+    ) -> nyquest_interface::Result<()> {
+        SendWrapper::new(self.inner.add_cookie(&name, &value, &url)).await
+    }
+
+    #[cfg(feature = "cookies")]
+    async fn get_cookies_for(
+        &self,
+        url: std::borrow::Cow<'static, str>,
+    ) -> nyquest_interface::Result<Vec<nyquest_interface::Cookie>> {
+        SendWrapper::new(self.inner.get_cookies_for(&url)).await
+    }
 }
 
 impl AsyncBackend for crate::ReqwestBackend {

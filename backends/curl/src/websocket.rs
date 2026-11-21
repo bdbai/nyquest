@@ -8,9 +8,10 @@ use nyquest_interface::client::ClientOptions;
 use nyquest_interface::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
 
 use crate::curl_ng::easy::{AsRawEasyMut, EasyCallback};
+use crate::curl_ng::url::CurlUrl;
 use crate::curl_ng::CurlStringList;
 use crate::request::{populate_options, EasyHandle};
-use crate::url::concat_url;
+use crate::url::join_url;
 
 pub(crate) const CURLWS_TEXT: c_int = 1 << 0;
 pub(crate) const CURLWS_BINARY: c_int = 1 << 1;
@@ -112,18 +113,17 @@ pub(crate) fn extract_negotiated_protocol(headers: &[(String, String)]) -> Optio
 
 pub(crate) fn configure_websocket_easy<C: EasyCallback>(
     mut easy: Pin<&mut EasyHandle<C>>,
+    base_url: Option<&CurlUrl>,
     options: &ClientOptions,
     uri: Cow<'static, str>,
     protocols: Vec<Cow<'static, str>>,
 ) -> WebSocketResult<()> {
-    let mut url = concat_url(options.base_url.as_deref(), &uri);
+    let mut url = join_url(base_url, &uri).map_err(|_| WebSocketError::InvalidUrl)?;
     if url_has_scheme(&url, "http://") {
         url = url.replacen("http://", "ws://", 1);
     } else if url_has_scheme(&url, "https://") {
         url = url.replacen("https://", "wss://", 1);
-    } else if url.contains('\0')
-        || (!url_has_scheme(&url, "ws://") && !url_has_scheme(&url, "wss://"))
-    {
+    } else if !url_has_scheme(&url, "ws://") && !url_has_scheme(&url, "wss://") {
         return Err(WebSocketError::InvalidUrl);
     }
 
