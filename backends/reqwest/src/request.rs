@@ -53,8 +53,14 @@ fn convert_header_value(k: &str, v: Cow<'static, str>) -> Result<HeaderValue> {
     }
 }
 
+/// Plain (non-progress) request builder.
+///
+/// Compiled whenever any non-progress request path can use it: the async path
+/// without `async-progress`, the blocking path without `blocking-progress`,
+/// or wasm (whose progress variant is unavailable).
 #[cfg(any(
-    not(any(feature = "async-progress", feature = "blocking-progress")),
+    all(feature = "async", not(feature = "async-progress")),
+    all(feature = "blocking", not(feature = "blocking-progress")),
     target_arch = "wasm32"
 ))]
 fn build_request_generic<S>(
@@ -278,8 +284,12 @@ fn build_request_generic_with_progress<S>(
 }
 
 impl ReqwestClient {
+    /// Plain (non-progress) request builder entry point.
+    ///
+    /// See [`build_request_generic`] for when this is compiled.
     #[cfg(any(
-        not(any(feature = "async-progress", feature = "blocking-progress")),
+        all(feature = "async", not(feature = "async-progress")),
+        all(feature = "blocking", not(feature = "blocking-progress")),
         target_arch = "wasm32"
     ))]
     pub fn request<S>(

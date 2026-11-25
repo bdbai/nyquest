@@ -21,7 +21,13 @@ cfg_if::cfg_if! {
         mod ibuffer;
         mod request;
         mod response;
-        #[cfg(not(any(feature = "async-progress", feature = "blocking-progress")))]
+        // Needed by the async path without `async-progress` and by the
+        // blocking path without `blocking-progress` (each side reports
+        // through its own progress sink when its progress feature is on).
+        #[cfg(any(
+            all(feature = "async", not(feature = "async-progress")),
+            all(feature = "blocking", not(feature = "blocking-progress"))
+        ))]
         mod response_size_limiter;
         mod string_pair;
         mod timer;

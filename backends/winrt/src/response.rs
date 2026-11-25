@@ -183,7 +183,10 @@ impl WinrtProgressSink {
     }
 
     /// Adds newly consumed body bytes (e.g. from a streaming read).
-    #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
+    #[cfg(any(
+        all(feature = "async-progress", feature = "async-stream"),
+        all(feature = "blocking-progress", feature = "blocking-stream")
+    ))]
     pub(crate) fn on_body_chunk(&self, len: u64) {
         if len == 0 {
             return;
