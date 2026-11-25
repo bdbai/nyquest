@@ -20,6 +20,10 @@ pub trait EasyCallback {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, ReadError>;
     fn header(&mut self, data: &[u8]) -> bool;
     fn seek(&mut self, whence: SeekFrom) -> SeekResult;
+    /// Reports transfer progress from `CURLOPT_XFERINFOFUNCTION`.
+    ///
+    /// Default is a no-op for handlers that do not track progress.
+    fn report_progress(&self, _dltotal: i64, _dlnow: i64, _ultotal: i64, _ulnow: i64) {}
 }
 
 pin_project! {
@@ -87,6 +91,21 @@ impl<E: AsRawEasyMut, C: EasyCallback> EasyWithCallback<E, C> {
             raw.as_mut()
                 .setopt_ptr(curl_sys::CURLOPT_SEEKFUNCTION, seek_callback::<E, C> as _)
                 .with_easy_context("setopt SEEKFUNCTION")?;
+            #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+            {
+                raw.as_mut()
+                    .setopt_long(curl_sys::CURLOPT_NOPROGRESS, 0)
+                    .with_easy_context("setopt NOPROGRESS")?;
+                raw.as_mut()
+                    .setopt_ptr(curl_sys::CURLOPT_PROGRESSDATA, self_ptr as _)
+                    .with_easy_context("setopt PROGRESSDATA")?;
+                raw.as_mut()
+                    .setopt_ptr(
+                        curl_sys::CURLOPT_PROGRESSFUNCTION,
+                        progress_callback::<E, C> as _,
+                    )
+                    .with_easy_context("setopt PROGRESSFUNCTION")?;
+            }
         }
         Ok(())
     }
@@ -222,4 +241,20 @@ extern "C" fn seek_callback<E: AsRawEasyMut, C: EasyCallback>(
         this.project().callback.seek(whence) as c_int
     })
     .unwrap_or(curl_sys::CURL_SEEKFUNC_FAIL)
+}
+
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+extern "C" fn progress_callback<E: AsRawEasyMut, C: EasyCallback>(
+    userdata: *mut c_void,
+    dltotal: f64,
+    dlnow: f64,
+    ultotal: f64,
+    ulnow: f64,
+) -> c_int {
+    let _ = panic::catch_unwind(|| {
+        let this = unsafe { &*(userdata as *const EasyWithCallback<E, C>) };
+        this.callback
+            .report_progress(dltotal as i64, dlnow as i64, ultotal as i64, ulnow as i64);
+    });
+    0
 }

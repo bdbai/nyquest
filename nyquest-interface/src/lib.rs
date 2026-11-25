@@ -19,6 +19,8 @@
 //! - `blocking-ws`: Enable blocking WebSocket support
 //! - `multipart`: Enable multipart form support
 //! - `cookies`: Enable cookie management support
+//! - `async-progress`: Enable async HTTP upload and download progress tracking
+//! - `blocking-progress`: Enable blocking HTTP upload and download progress tracking
 //!
 //! [`nyquest`]: https://docs.rs/nyquest
 
@@ -37,6 +39,12 @@ pub mod client;
 #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
 mod cookie;
 mod error;
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(feature = "async-progress", feature = "blocking-progress")))
+)]
+mod progress;
 #[doc(hidden)] // For nyquest facade only
 pub mod register;
 mod request;
@@ -52,6 +60,12 @@ pub use body::{Part, PartBody};
 #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
 pub use cookie::Cookie;
 pub use error::{Error, Result};
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(feature = "async-progress", feature = "blocking-progress")))
+)]
+pub use progress::{Progress, ProgressReporter};
 pub use register::register_backend;
 pub use request::{Method, Request};
 #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]

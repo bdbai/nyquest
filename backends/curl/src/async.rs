@@ -191,6 +191,51 @@ impl nyquest_interface::r#async::AsyncClient for CurlMultiClient {
         Ok(res)
     }
 
+    #[cfg(feature = "async-progress")]
+    async fn request_with_progress(
+        &self,
+        req: nyquest_interface::r#async::Request,
+        progress: Arc<dyn nyquest_interface::ProgressReporter>,
+    ) -> nyquest_interface::Result<Self::Response> {
+        let (req, read_task_collection) = {
+            let mut easy = create_easy(AsyncHandler::default(), &self.inner.share)?;
+            let raw = easy.as_mut().as_raw_easy_mut().raw();
+            easy.as_callback_mut().pause = Some(pause::EasyPause::new(raw));
+            easy.as_callback_mut().set_progress(Some(progress));
+            let url = join_url(self.inner.base_url.as_deref(), &req.relative_uri)?;
+            let req_ctx = easy.as_callback_mut().ctx.clone();
+            let read_task_collection = RefCell::new(read_task::ReadTaskCollection::new(req_ctx));
+            crate::request::populate_request(
+                &url,
+                req,
+                &self.inner.options,
+                &*self.inner.customizer,
+                easy.as_mut(),
+                |easy, stream| {
+                    read_task_collection
+                        .borrow_mut()
+                        .add_in_handler(easy, stream)
+                },
+                |stream| {
+                    read_task_collection
+                        .borrow_mut()
+                        .add_mime_part_reader(stream)
+                },
+            )?;
+            let req = self.inner.loop_manager.start_request(easy).await?;
+            (req, read_task_collection.into_inner())
+        };
+        let res_task = pin!(req.wait_for_response());
+        let read_task_collection = pin!(read_task_collection.execute(&self.inner.loop_manager));
+        let mut res = match select(res_task, read_task_collection).await {
+            Either::Left((res, _)) => res?,
+            Either::Right((Err(e), _)) => return Err(e),
+            Either::Right((Ok(_), _)) => unreachable!(),
+        };
+        res.max_response_buffer_size = self.inner.options.max_response_buffer_size;
+        Ok(res)
+    }
+
     #[cfg(feature = "async-ws")]
     async fn connect_websocket(
         &self,

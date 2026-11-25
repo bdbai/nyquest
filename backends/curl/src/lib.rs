@@ -17,6 +17,8 @@ mod cookies;
 mod curl_ng;
 mod custom;
 mod error;
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+mod progress;
 mod request;
 mod state;
 mod url;

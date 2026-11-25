@@ -217,6 +217,34 @@ impl nyquest_interface::blocking::BlockingClient for CurlEasyClient {
         })
     }
 
+    #[cfg(feature = "blocking-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn nyquest_interface::ProgressReporter>,
+    ) -> nyquest_interface::Result<Self::Response> {
+        let mut handle_guard = self.get_or_create_handle()?;
+        let url = join_url(self.base_url.as_deref(), &req.relative_uri)?;
+        {
+            let handle: &mut MultiEasy = handle_guard.handle_mut();
+            handle.set_progress(Some(progress));
+            handle.populate_request(&url, req, &self.options, &*self.customizer)?;
+            handle.poll_until_response_headers()?;
+        }
+        // Borrow of handle_guard ends here; re-borrow for final reads.
+        let handle: &mut MultiEasy = handle_guard.handle_mut();
+        let headers = handle.get_response_headers_buffer();
+        let status = handle.status()?;
+        let content_length = handle.content_length()?;
+        Ok(CurlBlockingResponse {
+            status,
+            content_length,
+            headers,
+            handle: handle_guard.into_owned(),
+            max_response_buffer_size: self.options.max_response_buffer_size,
+        })
+    }
+
     #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
         &self,

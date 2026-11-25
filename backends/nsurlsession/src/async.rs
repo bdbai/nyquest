@@ -5,6 +5,8 @@ use std::task::Poll;
 
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncBackend, AsyncClient, AsyncResponse};
+#[cfg(feature = "async-progress")]
+use nyquest_interface::ProgressReporter;
 use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
 
@@ -88,13 +90,12 @@ impl nyquest_interface::r#async::futures_io::AsyncRead for NSUrlSessionAsyncResp
     }
 }
 
-impl AsyncClient for NSUrlSessionAsyncClient {
-    type Response = NSUrlSessionAsyncResponse;
-
-    async fn request(
+impl NSUrlSessionAsyncClient {
+    async fn do_request(
         &self,
         req: nyquest_interface::r#async::Request,
-    ) -> NyquestResult<Self::Response> {
+        #[cfg(feature = "async-progress")] progress: Option<Arc<dyn ProgressReporter>>,
+    ) -> NyquestResult<NSUrlSessionAsyncResponse> {
         let waker = GenericWaker::Async(Arc::new(AsyncWaker::new()));
         let (task, mut writer) = self.inner.build_data_task(req, &waker, |s| {
             #[cfg(feature = "async-stream")]
@@ -113,6 +114,10 @@ impl AsyncClient for NSUrlSessionAsyncClient {
         })?;
         let shared = {
             let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
+            #[cfg(feature = "async-progress")]
+            if let Some(progress) = progress {
+                delegate.set_progress_reporter(progress);
+            }
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
             DataTaskDelegate::into_shared(delegate)
@@ -145,6 +150,29 @@ impl AsyncClient for NSUrlSessionAsyncClient {
             },
             max_response_buffer_size: self.inner.max_response_buffer_size,
         })
+    }
+}
+
+impl AsyncClient for NSUrlSessionAsyncClient {
+    type Response = NSUrlSessionAsyncResponse;
+
+    async fn request(
+        &self,
+        req: nyquest_interface::r#async::Request,
+    ) -> NyquestResult<Self::Response> {
+        #[cfg(feature = "async-progress")]
+        return self.do_request(req, None).await;
+        #[cfg(not(feature = "async-progress"))]
+        return self.do_request(req).await;
+    }
+
+    #[cfg(feature = "async-progress")]
+    async fn request_with_progress(
+        &self,
+        req: nyquest_interface::r#async::Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> NyquestResult<Self::Response> {
+        self.do_request(req, Some(progress)).await
     }
 
     #[cfg(feature = "async-ws")]

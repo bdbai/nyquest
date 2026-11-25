@@ -37,6 +37,8 @@ pub(super) struct AsyncStreamBody {
     open_state: Option<Arc<ChannelOpenState>>,
     chan: mpsc::Receiver<io::Result<bytes::BytesMut>>,
     remaining_size: Option<u64>,
+    #[cfg(feature = "async-progress")]
+    progress: Option<Arc<crate::progress::ProgressTracker>>,
 }
 
 impl ChannelOpenState {
@@ -82,6 +84,7 @@ impl StreamTask {
 }
 
 impl StreamTaskCollection {
+    #[cfg(not(feature = "async-progress"))]
     pub fn add_stream(&mut self, stream: BoxedStream) -> AsyncStreamBody {
         let size = match &stream {
             BoxedStream::Sized { content_length, .. } => Some(*content_length),
@@ -99,6 +102,32 @@ impl StreamTaskCollection {
             open_state: Some(open_state),
             chan: recv,
             remaining_size: size,
+        }
+    }
+
+    #[cfg(feature = "async-progress")]
+    pub fn add_stream_with_progress(
+        &mut self,
+        stream: BoxedStream,
+        progress: Option<Arc<crate::progress::ProgressTracker>>,
+    ) -> AsyncStreamBody {
+        let size = match &stream {
+            BoxedStream::Sized { content_length, .. } => Some(*content_length),
+            BoxedStream::Unsized { .. } => None,
+        };
+
+        let (chan, recv) = mpsc::channel(1);
+        let open_state = Arc::new(ChannelOpenState::default());
+        self.tasks.push(StreamTask {
+            stream,
+            open_state: open_state.clone(),
+            chan,
+        });
+        AsyncStreamBody {
+            open_state: Some(open_state),
+            chan: recv,
+            remaining_size: size,
+            progress,
         }
     }
 
@@ -125,6 +154,10 @@ impl http_body::Body for AsyncStreamBody {
         Poll::Ready(if let Some(res) = res.filter(|res| !res.is_empty()) {
             if let Some(remaining_size) = &mut this.remaining_size {
                 *remaining_size = remaining_size.saturating_sub(res.len() as u64);
+            }
+            #[cfg(feature = "async-progress")]
+            if let Some(progress) = &this.progress {
+                progress.add_uploaded(res.len() as u64);
             }
             Some(Ok(http_body::Frame::data(res.into())))
         } else {

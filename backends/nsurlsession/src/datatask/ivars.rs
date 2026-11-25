@@ -1,8 +1,12 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use arc_swap::ArcSwapAny;
 use nyquest_interface::Error as NyquestError;
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+use nyquest_interface::ProgressReporter;
 use objc2_foundation::NSURLResponse;
 
 use crate::error::IntoNyquestResult;
@@ -24,6 +28,11 @@ pub(super) struct DataTaskIvarsShared {
     pub(super) received_error: Mutex<Option<NyquestError>>,
     pub(super) max_response_buffer_size: AtomicU64,
     pub(super) response_buffer: Mutex<Vec<u8>>,
+    /// Progress reporter for `request_with_progress`. Retained for as long as
+    /// the transfer (including response body consumption) may report progress.
+    /// Never executes user code; backend threads only call `report()`.
+    #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+    pub(super) progress: Mutex<Option<Arc<dyn ProgressReporter>>>,
 }
 
 impl DataTaskIvars {

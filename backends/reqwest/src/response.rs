@@ -11,14 +11,23 @@ use http_body::Body as _;
 use nyquest_interface::Result as NyquestResult;
 
 use crate::error::ReqwestBackendError;
+#[cfg(all(
+    any(feature = "async-progress", feature = "blocking-progress"),
+    any(feature = "async", feature = "blocking")
+))]
+use crate::progress::{normalize_total, ProgressTracker};
 
-#[derive(Debug)]
 pub(crate) struct ReqwestResponse {
     parts: Parts,
     body: Pin<Box<reqwest::Body>>,
     #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
     buffer: Bytes,
     max_response_buffer_size: Option<u64>,
+    #[cfg(all(
+        any(feature = "async-progress", feature = "blocking-progress"),
+        any(feature = "async", feature = "blocking")
+    ))]
+    progress: Option<std::sync::Arc<ProgressTracker>>,
 }
 
 impl ReqwestResponse {
@@ -32,7 +41,23 @@ impl ReqwestResponse {
             #[cfg(any(feature = "async-stream", feature = "blocking-stream"))]
             buffer: Bytes::new(),
             max_response_buffer_size,
+            #[cfg(all(
+                any(feature = "async-progress", feature = "blocking-progress"),
+                any(feature = "async", feature = "blocking")
+            ))]
+            progress: None,
         }
+    }
+
+    #[cfg(all(
+        any(feature = "async-progress", feature = "blocking-progress"),
+        any(feature = "async", feature = "blocking")
+    ))]
+    pub fn set_progress(&mut self, tracker: std::sync::Arc<ProgressTracker>) {
+        // Normalize zero to None for consistency with other backends.
+        let total = self.body.size_hint().exact().and_then(normalize_total);
+        tracker.set_download_total(total);
+        self.progress = Some(tracker);
     }
 
     pub fn status(&self) -> u16 {
@@ -108,7 +133,19 @@ impl ReqwestResponse {
         Poll::Ready(match frame {
             None => Ok(None),
             Some(Err(e)) => Err(io::Error::other(e)),
-            Some(Ok(f)) => Ok(f.into_data().ok().filter(|d| !d.is_empty())),
+            Some(Ok(f)) => {
+                let data = f.into_data().ok().filter(|d| !d.is_empty());
+                #[cfg(all(
+                    any(feature = "async-progress", feature = "blocking-progress"),
+                    any(feature = "async", feature = "blocking")
+                ))]
+                if let Some(data) = &data {
+                    if let Some(progress) = &self.progress {
+                        progress.add_downloaded(data.len() as u64);
+                    }
+                }
+                Ok(data)
+            }
         })
     }
 

@@ -8,6 +8,7 @@
 //! to implement them directly.
 
 use std::any::Any;
+#[cfg(any(feature = "async-ws", feature = "cookies"))]
 use std::borrow::Cow;
 use std::fmt;
 use std::pin::Pin;
@@ -18,6 +19,8 @@ use futures_core::future::BoxFuture;
 use super::backend::AsyncResponse;
 use super::Request;
 use crate::client::ClientOptions;
+#[cfg(feature = "async-progress")]
+use crate::progress::ProgressReporter;
 #[cfg(feature = "async-ws")]
 use crate::websocket::{WebSocketError, WebSocketMessage, WebSocketResult};
 use crate::Result;
@@ -45,6 +48,13 @@ pub trait AnyAsyncClient: Any + Send + Sync + 'static {
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>>;
+    /// Sends an HTTP request with progress reporting.
+    #[cfg(feature = "async-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>>;
     /// Opens a WebSocket connection.
     #[cfg(feature = "async-ws")]
     fn connect_websocket(
@@ -167,6 +177,19 @@ where
     fn request(&self, req: Request) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>> {
         Box::pin(async {
             self.request(req)
+                .await
+                .map(|res| Box::pin(res) as Pin<Box<dyn AnyAsyncResponse>>)
+        }) as _
+    }
+
+    #[cfg(feature = "async-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> BoxFuture<'_, Result<Pin<Box<dyn AnyAsyncResponse>>>> {
+        Box::pin(async {
+            self.request_with_progress(req, progress)
                 .await
                 .map(|res| Box::pin(res) as Pin<Box<dyn AnyAsyncResponse>>)
         }) as _

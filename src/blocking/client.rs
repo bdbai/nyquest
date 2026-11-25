@@ -1,3 +1,4 @@
+#[cfg(any(feature = "blocking-ws", feature = "cookies"))]
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -63,6 +64,23 @@ impl BlockingClient {
     /// until the response is available or an error occurs.
     pub fn request(&self, req: Request) -> crate::Result<Response> {
         let res = self.client.request(req.inner)?;
+        Ok(res.into())
+    }
+
+    /// Sends a request with progress reporting.
+    ///
+    /// The `on_progress` callback is invoked with complete [`crate::Progress`]
+    /// snapshots.
+    #[cfg(feature = "blocking-progress")]
+    pub fn request_with_progress(
+        &self,
+        req: Request,
+        on_progress: impl Fn(crate::Progress) + Send + Sync + 'static,
+    ) -> crate::Result<Response> {
+        let reporter = crate::progress::CallbackProgressReporter::new(on_progress);
+        let res = self
+            .client
+            .request_with_progress(req.inner, Arc::new(reporter))?;
         Ok(res.into())
     }
 

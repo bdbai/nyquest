@@ -35,6 +35,8 @@ cookies = [
     "objc2-foundation/NSHTTPCookie",
     "objc2-foundation/NSHTTPCookieStorage",
 ]
+async-progress = ["async", "nyquest-interface/async-progress"]
+blocking-progress = ["blocking", "nyquest-interface/blocking-progress"]
 
 [dependencies]
 nyquest-interface = { version = "0.5.0", path = "../../nyquest-interface", default-features = false }

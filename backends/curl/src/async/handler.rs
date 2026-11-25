@@ -1,16 +1,22 @@
 use std::sync::Arc;
 
 use curl::easy::WriteError;
+#[cfg(feature = "async-progress")]
+use nyquest_interface::ProgressReporter;
 
 use super::pause::EasyPause;
 use super::shared::SharedRequestStates;
 use crate::curl_ng::easy::EasyCallback;
+#[cfg(feature = "async-progress")]
+use crate::progress::make_progress;
 
 #[derive(Default)]
 pub(crate) struct AsyncHandler {
     pub(super) ctx: Arc<SharedRequestStates>,
     // To be filled after Easy2 is constructed
     pub(crate) pause: Option<EasyPause>,
+    #[cfg(feature = "async-progress")]
+    pub(crate) progress: Option<Arc<dyn ProgressReporter>>,
 }
 
 struct AsyncHandlerRef<'a> {
@@ -23,6 +29,11 @@ impl AsyncHandler {
         let ctx = self.ctx.as_ref();
         let pause = self.pause.as_mut()?;
         Some(AsyncHandlerRef { ctx, pause })
+    }
+
+    #[cfg(feature = "async-progress")]
+    pub fn set_progress(&mut self, progress: Option<Arc<dyn ProgressReporter>>) {
+        self.progress = progress;
     }
 }
 
@@ -114,5 +125,12 @@ impl EasyCallback for AsyncHandler {
     #[cfg(not(feature = "async-stream"))]
     fn seek(&mut self, _whence: std::io::SeekFrom) -> curl::easy::SeekResult {
         curl::easy::SeekResult::Fail
+    }
+
+    #[cfg(feature = "async-progress")]
+    fn report_progress(&self, dltotal: i64, dlnow: i64, ultotal: i64, ulnow: i64) {
+        if let Some(progress) = &self.progress {
+            progress.report(make_progress(dltotal, dlnow, ultotal, ulnow));
+        }
     }
 }

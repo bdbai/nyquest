@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
-use http::{header::CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+#[cfg(feature = "multipart")]
+use http::HeaderMap;
+use http::{header::CONTENT_TYPE, HeaderName, HeaderValue};
 use nyquest_interface::Method;
 use reqwest::{Client, RequestBuilder};
 use url::Url;
@@ -51,6 +53,10 @@ fn convert_header_value(k: &str, v: Cow<'static, str>) -> Result<HeaderValue> {
     }
 }
 
+#[cfg(any(
+    not(any(feature = "async-progress", feature = "blocking-progress")),
+    target_arch = "wasm32"
+))]
 fn build_request_generic<S>(
     client: &Client,
     base_url: Option<&Url>,
@@ -146,7 +152,136 @@ fn build_request_generic<S>(
     Ok(request_builder)
 }
 
+/// Builds a request like [`build_request_generic`], but wraps byte bodies in a
+/// progress-tracking body so uploads of non-stream bodies are reported.
+#[cfg(all(
+    any(feature = "async-progress", feature = "blocking-progress"),
+    not(target_arch = "wasm32"),
+    any(feature = "async", feature = "blocking")
+))]
+fn build_request_generic_with_progress<S>(
+    client: &Client,
+    base_url: Option<&Url>,
+    req: nyquest_interface::Request<S>,
+    mut transform_stream: impl FnMut(S) -> (reqwest::Body, Option<u64>),
+    bytes_progress: Option<&std::sync::Arc<crate::progress::ProgressTracker>>,
+) -> nyquest_interface::Result<RequestBuilder> {
+    let url = build_url(base_url, &req.relative_uri).map_err(nyquest_interface::Error::from)?;
+    let method = convert_method(req.method)?;
+
+    let mut request_builder = client.request(method, url);
+
+    // Add request headers
+    for (key, value) in req.additional_headers {
+        let value = convert_header_value(&key, value)?;
+        request_builder = request_builder.header(convert_header_name(key)?, value);
+    }
+
+    // Add body
+    match req.body {
+        None => {}
+        Some(nyquest_interface::Body::Bytes {
+            content: Cow::Borrowed(content),
+            content_type,
+        }) => {
+            if let Some(progress) = bytes_progress {
+                let bytes = bytes::Bytes::from_static(content);
+                let body = reqwest::Body::wrap(crate::progress::TrackingBytesBody::new(
+                    bytes,
+                    Some(progress.clone()),
+                ));
+                request_builder = request_builder
+                    .header(CONTENT_TYPE, &*content_type)
+                    .body(body);
+            } else {
+                request_builder = request_builder
+                    .header(CONTENT_TYPE, &*content_type)
+                    .body(content);
+            }
+        }
+        Some(nyquest_interface::Body::Bytes {
+            content: Cow::Owned(content),
+            content_type,
+        }) => {
+            if let Some(progress) = bytes_progress {
+                let bytes = bytes::Bytes::from(content);
+                let body = reqwest::Body::wrap(crate::progress::TrackingBytesBody::new(
+                    bytes,
+                    Some(progress.clone()),
+                ));
+                request_builder = request_builder
+                    .header(CONTENT_TYPE, &*content_type)
+                    .body(body);
+            } else {
+                request_builder = request_builder
+                    .header(CONTENT_TYPE, &*content_type)
+                    .body(content);
+            }
+        }
+        Some(nyquest_interface::Body::Form { fields }) => {
+            request_builder = request_builder.form(&fields);
+        }
+        Some(nyquest_interface::Body::Stream {
+            content_type,
+            stream,
+        }) => {
+            request_builder = request_builder
+                .header("content-type", &*content_type)
+                .body(transform_stream(stream).0);
+        }
+        #[cfg(feature = "multipart")]
+        Some(nyquest_interface::Body::Multipart { parts }) => {
+            let mut form = reqwest::multipart::Form::new();
+            for part in parts {
+                use std::iter;
+
+                let headers = part
+                    .headers
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let value = convert_header_value(&k, v)?;
+                        Ok((convert_header_name(k)?, value))
+                    })
+                    .chain(iter::once(Ok((
+                        CONTENT_TYPE,
+                        convert_header_value("content-type", part.content_type)?,
+                    ))))
+                    .collect::<Result<HeaderMap>>()?;
+
+                match part.body {
+                    nyquest_interface::PartBody::Bytes { content } => {
+                        let mut part_builder = reqwest::multipart::Part::bytes(content);
+                        if let Some(filename) = part.filename {
+                            part_builder = part_builder.file_name(filename);
+                        }
+                        form = form.part(part.name, part_builder.headers(headers));
+                    }
+                    nyquest_interface::PartBody::Stream(stream) => {
+                        let (stream, size) = transform_stream(stream);
+                        let mut part_builder = if let Some(size) = size {
+                            reqwest::multipart::Part::stream_with_length(stream, size)
+                        } else {
+                            reqwest::multipart::Part::stream(stream)
+                        };
+                        if let Some(filename) = part.filename {
+                            part_builder = part_builder.file_name(filename);
+                        }
+                        form = form.part(part.name, part_builder.headers(headers));
+                    }
+                }
+            }
+            request_builder = request_builder.multipart(form);
+        }
+    }
+
+    Ok(request_builder)
+}
+
 impl ReqwestClient {
+    #[cfg(any(
+        not(any(feature = "async-progress", feature = "blocking-progress")),
+        target_arch = "wasm32"
+    ))]
     pub fn request<S>(
         &self,
         req: nyquest_interface::Request<S>,
@@ -155,6 +290,32 @@ impl ReqwestClient {
         #[allow(unused_mut)]
         let mut builder =
             build_request_generic(&self.client, self.base_url.as_ref(), req, transform_stream)?;
+        #[cfg(target_arch = "wasm32")]
+        {
+            builder = self.build_request_wasm(builder);
+        }
+        Ok(builder)
+    }
+
+    #[cfg(all(
+        any(feature = "async-progress", feature = "blocking-progress"),
+        not(target_arch = "wasm32"),
+        any(feature = "async", feature = "blocking")
+    ))]
+    pub fn request_with_bytes_progress<S>(
+        &self,
+        req: nyquest_interface::Request<S>,
+        transform_stream: impl FnMut(S) -> (reqwest::Body, Option<u64>),
+        bytes_progress: Option<&std::sync::Arc<crate::progress::ProgressTracker>>,
+    ) -> nyquest_interface::Result<reqwest::RequestBuilder> {
+        #[allow(unused_mut)]
+        let mut builder = build_request_generic_with_progress(
+            &self.client,
+            self.base_url.as_ref(),
+            req,
+            transform_stream,
+            bytes_progress,
+        )?;
         #[cfg(target_arch = "wasm32")]
         {
             builder = self.build_request_wasm(builder);

@@ -37,3 +37,8 @@ pub struct WinHttpBackend;
 pub fn register() {
     nyquest_interface::register_backend(WinHttpBackend);
 }
+
+// Unit-tested on all platforms; used by the backend on Windows.
+#[allow(dead_code)]
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+mod progress;

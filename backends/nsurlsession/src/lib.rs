@@ -40,3 +40,8 @@ pub struct NSUrlSessionBackend;
 pub fn register() {
     nyquest_interface::register_backend(NSUrlSessionBackend);
 }
+
+// Unit-tested on all platforms; used by the backend on Apple platforms.
+#[allow(dead_code)]
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+mod progress;

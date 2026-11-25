@@ -18,6 +18,10 @@ pub struct WinHttpBlockingResponse {
     status: u16,
     content_length: Option<u64>,
     max_response_buffer_size: Option<u64>,
+    /// Progress tracker retained for the duration of response body consumption.
+    /// Backend threads never execute user code; reports go only through it.
+    #[cfg(feature = "blocking-progress")]
+    pub(super) progress: Option<Arc<crate::progress::WinHttpProgressTracker>>,
 }
 
 impl WinHttpBlockingResponse {
@@ -36,6 +40,8 @@ impl WinHttpBlockingResponse {
             status,
             content_length,
             max_response_buffer_size,
+            #[cfg(feature = "blocking-progress")]
+            progress: None,
         }
     }
 }
@@ -57,6 +63,12 @@ impl std::io::Read for WinHttpBlockingResponse {
             let uninit =
                 unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut _, buf.len()) };
             let bytes_read = self.request.read_data(uninit)?;
+            #[cfg(feature = "blocking-progress")]
+            if bytes_read > 0 {
+                if let Some(progress) = self.progress.as_ref() {
+                    progress.add_downloaded(bytes_read as u64);
+                }
+            }
             Ok(bytes_read as usize)
         }
     }
@@ -121,6 +133,10 @@ impl BlockingResponse for WinHttpBlockingResponse {
                 break;
             }
             unsafe { result.set_len(offset + bytes_read as usize) };
+            #[cfg(feature = "blocking-progress")]
+            if let Some(progress) = self.progress.as_ref() {
+                progress.add_downloaded(bytes_read as u64);
+            }
 
             if bytes_read as usize >= max_to_read {
                 return Err(nyquest_interface::Error::ResponseTooLarge);

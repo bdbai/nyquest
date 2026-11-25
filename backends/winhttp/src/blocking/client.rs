@@ -8,6 +8,8 @@ use nyquest_interface::Result as NyquestResult;
 
 use super::response::WinHttpBlockingResponse;
 use crate::error::WinHttpResultExt;
+#[cfg(feature = "blocking-progress")]
+use crate::progress::WinHttpProgressTracker;
 use crate::request::{
     create_request, method_to_cwstr, prepare_additional_headers, prepare_body, PreparedBody,
 };
@@ -32,7 +34,13 @@ impl WinHttpBlockingClient {
         Ok(Self { session })
     }
 
-    fn request_single(&self, req: Request) -> NyquestResult<WinHttpBlockingResponse> {
+    fn request_single(
+        &self,
+        req: Request,
+        #[cfg(feature = "blocking-progress")] progress: Option<
+            std::sync::Arc<dyn nyquest_interface::ProgressReporter>,
+        >,
+    ) -> NyquestResult<WinHttpBlockingResponse> {
         // Create connection and request handles
         let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
         let (connection, request) = {
@@ -51,6 +59,13 @@ impl WinHttpBlockingClient {
 
         let body_len = prepared_body.body_len();
 
+        #[cfg(feature = "blocking-progress")]
+        let progress_tracker = progress.map(|reporter| {
+            // A zero or unknown length means the total is unknown.
+            let upload_total = body_len.and_then(crate::progress::normalize_total);
+            WinHttpProgressTracker::new(reporter, upload_total, None)
+        });
+
         // Add headers
         if !headers_str.is_empty() {
             request.add_headers(&headers_str).into_nyquest()?;
@@ -65,10 +80,18 @@ impl WinHttpBlockingClient {
             // will not read the body data until send() returns.
             PreparedBody::Complete { data, .. } => unsafe {
                 request.send(data.as_ptr(), data.len(), 0).into_nyquest()?;
+                #[cfg(feature = "blocking-progress")]
+                if let Some(tracker) = &progress_tracker {
+                    tracker.add_uploaded(data.len() as u64);
+                }
             },
             #[cfg(feature = "blocking-stream")]
             PreparedBody::Stream { stream_parts, .. } => {
-                self.send_streaming_request(&request, stream_parts, body_len)?;
+                let uploaded = self.send_streaming_request(&request, stream_parts, body_len)?;
+                #[cfg(feature = "blocking-progress")]
+                if let Some(tracker) = &progress_tracker {
+                    tracker.add_uploaded(uploaded);
+                }
             }
             #[cfg(not(feature = "blocking-stream"))]
             PreparedBody::Stream { .. } => {
@@ -83,14 +106,26 @@ impl WinHttpBlockingClient {
         let status = request.query_status_code().into_nyquest()?;
         let content_length = request.query_content_length();
 
-        Ok(WinHttpBlockingResponse::new(
+        #[cfg(feature = "blocking-progress")]
+        if let Some(tracker) = &progress_tracker {
+            tracker.set_download_total(content_length);
+        }
+
+        // `mut` is only needed when the progress tracker is attached below.
+        #[allow(unused_mut)]
+        let mut response = WinHttpBlockingResponse::new(
             self.session.clone(),
             connection,
             request,
             status,
             content_length,
             self.session.options.max_response_buffer_size,
-        ))
+        );
+        #[cfg(feature = "blocking-progress")]
+        {
+            response.progress = progress_tracker;
+        }
+        Ok(response)
     }
 }
 
@@ -98,7 +133,19 @@ impl BlockingClient for WinHttpBlockingClient {
     type Response = WinHttpBlockingResponse;
 
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
-        self.request_single(req)
+        #[cfg(feature = "blocking-progress")]
+        return self.request_single(req, None);
+        #[cfg(not(feature = "blocking-progress"))]
+        return self.request_single(req);
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn nyquest_interface::ProgressReporter>,
+    ) -> NyquestResult<Self::Response> {
+        self.request_single(req, Some(progress))
     }
 
     #[cfg(feature = "blocking-ws")]
@@ -150,7 +197,7 @@ impl WinHttpBlockingClient {
         request: &crate::handle::RequestHandle,
         stream_parts: Vec<DataOrStream<BoxedStream>>,
         content_length: Option<u64>,
-    ) -> NyquestResult<()> {
+    ) -> NyquestResult<u64> {
         use crate::error::WinHttpResultExt as _;
 
         let mut writer = if let Some(len) = content_length {
@@ -161,6 +208,7 @@ impl WinHttpBlockingClient {
             StreamWriter::new(stream_parts, true)
         };
 
+        let mut total_written = 0u64;
         while !writer.is_finished() {
             use std::io::Read as _;
             use std::task::Poll;
@@ -178,11 +226,12 @@ impl WinHttpBlockingClient {
                 let data = &buf[range.start..range.end];
                 let written = unsafe { request.write_data(data).into_nyquest()? };
                 range.start += written as usize;
+                total_written += written as u64;
             }
             writer.advance(buf);
         }
 
-        Ok(())
+        Ok(total_written)
     }
 }
 

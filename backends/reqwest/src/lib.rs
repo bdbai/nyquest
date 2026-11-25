@@ -43,6 +43,12 @@ mod cookie_util;
 mod cookies;
 mod customizer;
 mod error;
+#[cfg(all(
+    any(feature = "async-progress", feature = "blocking-progress"),
+    not(target_arch = "wasm32"),
+    any(feature = "async", feature = "blocking")
+))]
+mod progress;
 mod request;
 #[cfg(all(
     any(feature = "async-ws", feature = "blocking-ws"),

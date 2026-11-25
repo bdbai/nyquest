@@ -1,5 +1,8 @@
+#[cfg(any(feature = "async-ws", feature = "cookies"))]
 use std::borrow::Cow;
 use std::fmt::Debug;
+#[cfg(feature = "async-progress")]
+use std::future::Future;
 use std::sync::Arc;
 
 use nyquest_interface::{
@@ -57,6 +60,37 @@ impl AsyncClient {
     pub async fn request(&self, req: super::Request) -> crate::Result<Response> {
         let res = self.client.request(req.inner).await?;
         Ok(res.into())
+    }
+
+    /// Sends a request with progress reporting.
+    ///
+    /// Returns a request future together with a [`crate::ProgressStream`].
+    /// Upload progress is generally reported while the request future is
+    /// pending; download progress may continue after the request future
+    /// completes, while the response body is consumed. The stream remains
+    /// usable after the response is returned.
+    ///
+    /// The stream does not require a Tokio (or any other) runtime handle;
+    /// progress reported from arbitrary backend threads is delivered when the
+    /// user polls the stream, so user progress handling executes in the
+    /// user's task context.
+    #[cfg(feature = "async-progress")]
+    pub fn request_with_progress(
+        &self,
+        req: super::Request,
+    ) -> (
+        impl Future<Output = crate::Result<Response>> + Send,
+        crate::ProgressStream,
+    ) {
+        let (reporter, stream) = crate::progress::ProgressStream::new();
+        let client = self.client.clone();
+        let fut = async move {
+            let res = client
+                .request_with_progress(req.inner, Arc::new(reporter))
+                .await?;
+            Ok(res.into())
+        };
+        (fut, stream)
     }
 
     /// Connects to a WebSocket endpoint.

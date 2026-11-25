@@ -124,6 +124,8 @@
 //!   [`nyquest-backend-winhttp`](https://docs.rs/nyquest-backend-winhttp): its cookie management
 //!   APIs always return an [`std::io::ErrorKind::Unsupported`] I/O error. Automatic session
 //!   cookies still work there, controlled by [`ClientBuilder::no_cookies`].
+//! - `async-progress`: Enable async HTTP upload and download progress tracking.
+//! - `blocking-progress`: Enable blocking HTTP upload and download progress tracking.
 //!
 //! [^1]: Subject to the backend's capability.
 //!
@@ -138,6 +140,8 @@ mod body;
 #[cfg(feature = "cookies")]
 mod cookies;
 mod error;
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+mod progress;
 mod request;
 #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
 mod websocket;
@@ -165,6 +169,16 @@ pub use client::ClientBuilder;
 #[cfg_attr(docsrs, doc(cfg(feature = "cookies")))]
 pub use cookies::Cookie;
 pub use error::{Error, Result};
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(feature = "async-progress", feature = "blocking-progress")))
+)]
+#[doc(inline)]
+pub use nyquest_interface::{Progress, ProgressReporter};
+#[cfg(feature = "async-progress")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async-progress")))]
+pub use progress::ProgressStream;
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use r#async::client::AsyncClient;

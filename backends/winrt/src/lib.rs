@@ -21,6 +21,7 @@ cfg_if::cfg_if! {
         mod ibuffer;
         mod request;
         mod response;
+        #[cfg(not(any(feature = "async-progress", feature = "blocking-progress")))]
         mod response_size_limiter;
         mod string_pair;
         mod timer;
@@ -38,3 +39,8 @@ cfg_if::cfg_if! {
 /// The backend implementation using UWP/WinRT `HttpClient`.
 #[derive(Clone)]
 pub struct WinrtBackend;
+
+// Unit-tested on all platforms; used by the backend on Windows.
+#[allow(dead_code)]
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+mod progress;

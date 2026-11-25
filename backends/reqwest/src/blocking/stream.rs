@@ -19,9 +19,12 @@ enum MaybeReadingStream {
 pub(super) struct BlockingStreamBody {
     stream_maybe_reading: Mutex<MaybeReadingStream>,
     remaining_size: Option<u64>,
+    #[cfg(feature = "blocking-progress")]
+    progress: Option<std::sync::Arc<crate::progress::ProgressTracker>>,
 }
 
 impl BlockingStreamBody {
+    #[cfg(not(feature = "blocking-progress"))]
     pub fn new(stream: BoxedStream) -> Self {
         let remaining_size = match &stream {
             BoxedStream::Sized { content_length, .. } => Some(*content_length),
@@ -30,6 +33,22 @@ impl BlockingStreamBody {
         Self {
             stream_maybe_reading: Mutex::new(MaybeReadingStream::Ready(stream)),
             remaining_size,
+        }
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    pub fn new_with_progress(
+        stream: BoxedStream,
+        progress: Option<std::sync::Arc<crate::progress::ProgressTracker>>,
+    ) -> Self {
+        let remaining_size = match &stream {
+            BoxedStream::Sized { content_length, .. } => Some(*content_length),
+            BoxedStream::Unsized { .. } => None,
+        };
+        Self {
+            stream_maybe_reading: Mutex::new(MaybeReadingStream::Ready(stream)),
+            remaining_size,
+            progress,
         }
     }
 }
@@ -71,6 +90,10 @@ impl http_body::Body for BlockingStreamBody {
                         } else {
                             if let Some(remaining_size) = &mut this.remaining_size {
                                 *remaining_size = remaining_size.saturating_sub(buf.len() as u64);
+                            }
+                            #[cfg(feature = "blocking-progress")]
+                            if let Some(progress) = &this.progress {
+                                progress.add_uploaded(buf.len() as u64);
                             }
                             break Poll::Ready(Some(Ok(http_body::Frame::data(buf))));
                         }

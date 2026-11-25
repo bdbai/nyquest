@@ -1,3 +1,4 @@
+#[cfg(any(feature = "blocking-ws", feature = "cookies"))]
 use std::borrow::Cow;
 #[cfg(feature = "blocking-stream")]
 use std::io::{self, Read};
@@ -39,8 +40,31 @@ impl BlockingClient for ReqwestBlockingClient {
     }
 
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
+        #[cfg(feature = "blocking-progress")]
+        {
+            struct Noop;
+            impl nyquest_interface::ProgressReporter for Noop {
+                fn report(&self, _progress: nyquest_interface::Progress) {}
+            }
+            self.request_with_progress(req, Arc::new(Noop))
+        }
+        #[cfg(not(feature = "blocking-progress"))]
+        {
+            let handle = self.inner.managed_runtime.get_handle_for_blocking();
+            block_on_with_handle(&handle, || execute_request(self, req))
+        }
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn nyquest_interface::ProgressReporter>,
+    ) -> NyquestResult<Self::Response> {
         let handle = self.inner.managed_runtime.get_handle_for_blocking();
-        block_on_with_handle(&handle, || execute_request(self, req))
+        block_on_with_handle(&handle, || {
+            execute_request_with_progress(self, req, progress)
+        })
     }
 
     #[cfg(feature = "blocking-ws")]
@@ -73,6 +97,7 @@ impl BlockingClient for ReqwestBlockingClient {
     }
 }
 
+#[cfg(not(feature = "blocking-progress"))]
 async fn execute_request(
     this: &ReqwestBlockingClient,
     req: Request,
@@ -109,12 +134,65 @@ async fn execute_request(
     )?)
 }
 
+#[cfg(feature = "blocking-progress")]
+async fn execute_request_with_progress(
+    this: &ReqwestBlockingClient,
+    req: Request,
+    progress: Arc<dyn nyquest_interface::ProgressReporter>,
+) -> NyquestResult<ReqwestBlockingResponse> {
+    use crate::progress::{upload_total_for_blocking_body, ProgressTracker};
+    let upload_total = upload_total_for_blocking_body(&req.body);
+    let tracker = ProgressTracker::new(progress, upload_total);
+    #[cfg(feature = "blocking-stream")]
+    let tracker_for_streams = tracker.clone();
+    let tracker_for_bytes = tracker.clone();
+    let request_builder = this.inner.request_with_bytes_progress(
+        req,
+        |stream| {
+            #[cfg(feature = "blocking-stream")]
+            {
+                use nyquest_interface::blocking::BoxedStream;
+                let size = match &stream {
+                    BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                    BoxedStream::Unsized { .. } => None,
+                };
+                (
+                    reqwest::Body::wrap(stream::BlockingStreamBody::new_with_progress(
+                        stream,
+                        Some(tracker_for_streams.clone()),
+                    )),
+                    size,
+                )
+            }
+            #[cfg(not(feature = "blocking-stream"))]
+            {
+                let _ = stream;
+                unreachable!("blocking-stream feature is disabled")
+            }
+        },
+        Some(&tracker_for_bytes),
+    )?;
+
+    let response = request_builder
+        .send()
+        .await
+        .map_err(ReqwestBackendError::Reqwest)?;
+
+    Ok(ReqwestBlockingResponse::new_with_progress(
+        response,
+        this.inner.max_response_buffer_size,
+        this.inner.managed_runtime.clone(),
+        tracker,
+    )?)
+}
+
 pub struct ReqwestBlockingResponse {
     response: ReqwestResponse,
     managed_runtime: Arc<ManagedRuntime>,
 }
 
 impl ReqwestBlockingResponse {
+    #[cfg(not(feature = "blocking-progress"))]
     fn new(
         response: reqwest::Response,
         max_response_buffer_size: Option<u64>,
@@ -124,6 +202,21 @@ impl ReqwestBlockingResponse {
 
         Ok(Self {
             response,
+            managed_runtime,
+        })
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    fn new_with_progress(
+        response: reqwest::Response,
+        max_response_buffer_size: Option<u64>,
+        managed_runtime: Arc<ManagedRuntime>,
+        tracker: Arc<crate::progress::ProgressTracker>,
+    ) -> crate::error::Result<Self> {
+        let mut inner = ReqwestResponse::new(response, max_response_buffer_size);
+        inner.set_progress(tracker);
+        Ok(Self {
+            response: inner,
             managed_runtime,
         })
     }

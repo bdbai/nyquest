@@ -33,6 +33,8 @@ multipart = ["nyquest-interface/multipart", "dep:getrandom"]
 cookies = ["nyquest-interface/cookies"]
 charset = ["dep:iconv-native"]
 charset-defaults = ["charset", "iconv-native/default"]
+async-progress = ["async", "nyquest-interface/async-progress"]
+blocking-progress = ["blocking", "nyquest-interface/blocking-progress"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
