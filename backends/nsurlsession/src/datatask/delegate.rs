@@ -22,6 +22,8 @@ use objc2_foundation::{
 use crate::error::IntoNyquestResult;
 
 use super::generic_waker::GenericWaker;
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+use super::ivars::SharedProgressReporter;
 use super::ivars::{DataTaskIvars, DataTaskIvarsShared};
 
 define_class!(
@@ -148,7 +150,10 @@ impl DataTaskDelegate {
     /// response body consumption) may report progress.
     #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
     pub(crate) fn set_progress_reporter(&self, reporter: std::sync::Arc<dyn ProgressReporter>) {
-        self.ivars().shared.progress.store(Some(reporter));
+        self.ivars()
+            .shared
+            .progress
+            .store(Some(std::sync::Arc::new(SharedProgressReporter(reporter))));
     }
 
     pub(crate) fn into_shared(retained: Retained<Self>) -> DataTaskSharedContextRetained {
@@ -242,9 +247,10 @@ impl DataTaskDelegate {
     ) {
         use crate::progress::make_progress;
 
-        let Some(reporter) = self.ivars().shared.progress.load_full() else {
+        let Some(shared) = self.ivars().shared.progress.load_full() else {
             return;
         };
+        let reporter = shared.0.clone();
         // `total_bytes_sent`/`total_bytes_expected_to_send` come straight from
         // the callback; the download counters are read from the task.
         reporter.report(make_progress(
@@ -269,9 +275,10 @@ impl DataTaskDelegate {
     ) {
         use crate::progress::make_progress;
 
-        let Some(reporter) = self.ivars().shared.progress.load_full() else {
+        let Some(shared) = self.ivars().shared.progress.load_full() else {
             return;
         };
+        let reporter = shared.0.clone();
         reporter.report(make_progress(
             uploaded,
             upload_total,

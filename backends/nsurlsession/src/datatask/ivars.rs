@@ -1,4 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use arc_swap::{ArcSwapAny, ArcSwapOption};
@@ -30,8 +32,14 @@ pub(super) struct DataTaskIvarsShared {
     /// the transfer (including response body consumption) may report progress.
     /// Never executes user code; backend threads only call `report()`.
     #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
-    pub(super) progress: ArcSwapOption<dyn ProgressReporter>,
+    pub(super) progress: ArcSwapOption<SharedProgressReporter>,
 }
+
+/// Sized wrapper so `Arc<dyn ProgressReporter>` (unsized `dyn`, which
+/// `arc-swap` cannot hold directly via `RefCnt`) can be stored lock-free.
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+#[derive(Clone)]
+pub(super) struct SharedProgressReporter(pub Arc<dyn ProgressReporter>);
 
 impl DataTaskIvars {
     pub(super) fn set_error<E>(&self, error: E)
