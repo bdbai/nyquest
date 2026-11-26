@@ -31,14 +31,8 @@ pub enum ProgressStage {
     WaitingForResponse,
     SendingHeaders,
     SendingContent,
-    /// Kept for API completeness; WinRT has no such stage.
-    #[allow(dead_code)]
-    WaitingForContent,
     ReceivingHeaders,
     ReceivingContent,
-    /// Kept for API completeness; WinRT has no such stage.
-    #[allow(dead_code)]
-    Completed,
 }
 
 /// Tracks WinRT header offsets and retry epochs.
@@ -240,14 +234,12 @@ mod tests {
             WaitingForResponse,
             SendingHeaders,
             SendingContent,
-            WaitingForContent,
             ReceivingHeaders,
             ReceivingContent,
-            Completed,
         ] {
             tracker.update(stage, 10, 20, 100, 200, 0);
         }
         // Every notification, including unmapped stages, yields a report.
-        assert_eq!(collected.inner.lock().unwrap().len(), 8);
+        assert_eq!(collected.inner.lock().unwrap().len(), 6);
     }
 }

@@ -23,6 +23,8 @@ cfg_if::cfg_if! {
         #[cfg(feature = "multipart")]
         #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
         mod multipart;
+        #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+        mod progress;
         mod response;
         mod retained_ext;
         mod stream;
@@ -40,8 +42,3 @@ pub struct NSUrlSessionBackend;
 pub fn register() {
     nyquest_interface::register_backend(NSUrlSessionBackend);
 }
-
-// Unit-tested on all platforms; used by the backend on Apple platforms.
-#[allow(dead_code)]
-#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
-mod progress;

@@ -19,6 +19,8 @@ cfg_if::cfg_if! {
         mod cookies;
         mod error;
         mod ibuffer;
+        #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+        mod progress;
         mod request;
         mod response;
         // Needed by the async path without `async-progress` and by the
@@ -45,8 +47,3 @@ cfg_if::cfg_if! {
 /// The backend implementation using UWP/WinRT `HttpClient`.
 #[derive(Clone)]
 pub struct WinrtBackend;
-
-// Unit-tested on all platforms; used by the backend on Windows.
-#[allow(dead_code)]
-#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
-mod progress;
