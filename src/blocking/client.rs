@@ -77,7 +77,7 @@ impl BlockingClient {
         req: Request,
         on_progress: impl Fn(crate::Progress) + Send + Sync + 'static,
     ) -> crate::Result<Response> {
-        let reporter = crate::progress::CallbackProgressReporter::new(on_progress);
+        let reporter = crate::blocking::progress::CallbackProgressReporter::new(on_progress);
         let res = self
             .client
             .request_with_progress(req.inner, Arc::new(reporter))?;

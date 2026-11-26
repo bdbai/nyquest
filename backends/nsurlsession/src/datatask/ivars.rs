@@ -1,9 +1,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
-#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
-use std::sync::Arc;
 use std::sync::Mutex;
 
-use arc_swap::ArcSwapAny;
+use arc_swap::{ArcSwapAny, ArcSwapOption};
 use nyquest_interface::Error as NyquestError;
 #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
 use nyquest_interface::ProgressReporter;
@@ -32,7 +30,7 @@ pub(super) struct DataTaskIvarsShared {
     /// the transfer (including response body consumption) may report progress.
     /// Never executes user code; backend threads only call `report()`.
     #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
-    pub(super) progress: Mutex<Option<Arc<dyn ProgressReporter>>>,
+    pub(super) progress: ArcSwapOption<dyn ProgressReporter>,
 }
 
 impl DataTaskIvars {

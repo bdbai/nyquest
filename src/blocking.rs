@@ -9,6 +9,8 @@ use std::borrow::Cow;
 use nyquest_interface::blocking::{BoxedStream, SizedBodyStream, UnsizedBodyStream};
 
 pub(crate) mod client;
+#[cfg(feature = "blocking-progress")]
+pub(crate) mod progress;
 #[cfg(feature = "blocking-stream")]
 mod read_stream;
 mod response;

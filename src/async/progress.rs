@@ -1,8 +1,8 @@
-//! Progress reporting implementations for the `nyquest` facade.
+//! Async progress reporting for the `nyquest` facade.
 //!
 //! Backends produce progress via [`ProgressReporter`]. This module implements
-//! delivery to users: a callback-backed reporter for blocking clients and a
-//! channel-backed reporter with [`ProgressStream`] for async clients.
+//! delivery to users: a channel-backed reporter with [`ProgressStream`] for
+//! async clients.
 //!
 //! The async architecture preserves runtime independence:
 //!
@@ -30,56 +30,17 @@
 //! User progress handling executes in the context in which the user polls the
 //! stream. No runtime handle is required.
 
-#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
-use nyquest_interface::{Progress, ProgressReporter};
-
-/// Callback-backed reporter for blocking progress reporting.
-///
-/// The callback is invoked synchronously from [`ProgressReporter::report`],
-/// which for blocking transfers runs on the calling thread.
-#[cfg(feature = "blocking-progress")]
-pub(crate) struct CallbackProgressReporter<F> {
-    callback: F,
-}
-
-#[cfg(feature = "blocking-progress")]
-impl<F> CallbackProgressReporter<F>
-where
-    F: Fn(Progress) + Send + Sync,
-{
-    pub(crate) fn new(callback: F) -> Self {
-        Self { callback }
-    }
-}
-
-#[cfg(feature = "blocking-progress")]
-impl<F> ProgressReporter for CallbackProgressReporter<F>
-where
-    F: Fn(Progress) + Send + Sync,
-{
-    fn report(&self, progress: Progress) {
-        (self.callback)(progress);
-    }
-}
-
-#[cfg(feature = "async-progress")]
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "async-progress")]
 use std::task::{Context, Poll, Waker};
 
-#[cfg(feature = "async-progress")]
+use nyquest_interface::{Progress, ProgressReporter};
+
 #[derive(Debug, Default)]
-struct ProgressSharedInner {
+struct ChannelProgressReporterInner {
     latest: Progress,
     version: u64,
     closed: bool,
     waker: Option<Waker>,
-}
-
-#[cfg(feature = "async-progress")]
-#[derive(Debug)]
-struct ProgressShared {
-    inner: Mutex<ProgressSharedInner>,
 }
 
 /// Channel-backed reporter for async progress reporting.
@@ -90,24 +51,15 @@ struct ProgressShared {
 /// snapshot is retained, rather than accumulating an unbounded queue.
 ///
 /// Does not execute user code and does not depend on any async runtime.
-#[cfg(feature = "async-progress")]
 #[derive(Debug)]
 pub(crate) struct ChannelProgressReporter {
-    shared: Arc<ProgressShared>,
+    inner: Mutex<ChannelProgressReporterInner>,
 }
 
-#[cfg(feature = "async-progress")]
-impl ChannelProgressReporter {
-    fn with_shared(shared: Arc<ProgressShared>) -> Self {
-        Self { shared }
-    }
-}
-
-#[cfg(feature = "async-progress")]
 impl ProgressReporter for ChannelProgressReporter {
     fn report(&self, progress: Progress) {
         let waker = {
-            let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.latest = progress;
             inner.version = inner.version.wrapping_add(1);
             inner.waker.take()
@@ -118,11 +70,10 @@ impl ProgressReporter for ChannelProgressReporter {
     }
 }
 
-#[cfg(feature = "async-progress")]
 impl Drop for ChannelProgressReporter {
     fn drop(&mut self) {
         let waker = {
-            let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.closed = true;
             inner.waker.take()
         };
@@ -139,29 +90,28 @@ impl Drop for ChannelProgressReporter {
 /// progress while the response body is consumed. It terminates (`None`) when
 /// all reporters have been dropped (e.g. response dropped or body fully
 /// consumed and backend released its reporter).
-#[cfg(feature = "async-progress")]
 #[derive(Debug)]
 pub struct ProgressStream {
-    shared: Arc<ProgressShared>,
+    shared: Arc<ChannelProgressReporter>,
     seen_version: u64,
 }
 
-#[cfg(feature = "async-progress")]
 impl ProgressStream {
-    pub(crate) fn new() -> (ChannelProgressReporter, Self) {
-        let shared = Arc::new(ProgressShared {
-            inner: Mutex::new(ProgressSharedInner::default()),
+    pub(crate) fn new() -> Self {
+        let shared = Arc::new(ChannelProgressReporter {
+            inner: Mutex::new(ChannelProgressReporterInner::default()),
         });
-        let reporter = ChannelProgressReporter::with_shared(shared.clone());
-        let stream = Self {
+        Self {
             shared,
             seen_version: 0,
-        };
-        (reporter, stream)
+        }
+    }
+
+    pub(crate) fn progress_reporter(&self) -> &Arc<ChannelProgressReporter> {
+        &self.shared
     }
 }
 
-#[cfg(feature = "async-progress")]
 impl futures_core::Stream for ProgressStream {
     type Item = Progress;
 
@@ -172,7 +122,11 @@ impl futures_core::Stream for ProgressStream {
             this.seen_version = inner.version;
             let latest = inner.latest;
             Poll::Ready(Some(latest))
-        } else if inner.closed {
+        } else if inner.closed || Arc::strong_count(&this.shared) == 1 {
+            // `strong_count == 1` means only the stream itself retains the
+            // reporter: all backend clones have been dropped. This covers the
+            // case where `Drop` for the reporter has not run yet because the
+            // stream still holds a strong reference.
             Poll::Ready(None)
         } else {
             inner.waker = Some(cx.waker().clone());
@@ -181,32 +135,11 @@ impl futures_core::Stream for ProgressStream {
     }
 }
 
-#[cfg(all(test, feature = "blocking-progress"))]
-mod blocking_tests {
-    use super::*;
-
-    #[test]
-    fn blocking_reporter_calls_callback() {
-        let seen = std::sync::Mutex::new(Vec::new());
-        let reporter = CallbackProgressReporter::new(|p: Progress| {
-            seen.lock().unwrap().push(p);
-        });
-        let snapshot = Progress {
-            uploaded: 1024,
-            upload_total: Some(4096),
-            downloaded: 2048,
-            download_total: Some(8192),
-        };
-        reporter.report(snapshot);
-        assert_eq!(seen.lock().unwrap().as_slice(), &[snapshot]);
-    }
-}
-
-#[cfg(all(test, feature = "async-progress"))]
-mod async_tests {
+#[cfg(test)]
+mod tests {
     use super::*;
     use futures_core::Stream;
-    use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+    use std::task::{RawWaker, RawWakerVTable, Waker};
 
     fn noop_waker() -> Waker {
         fn clone(_: *const ()) -> RawWaker {
@@ -225,7 +158,8 @@ mod async_tests {
 
     #[test]
     fn async_stream_yields_reports() {
-        let (reporter, mut stream) = ProgressStream::new();
+        let mut stream = ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         let p1 = Progress {
             uploaded: 10,
             upload_total: Some(100),
@@ -252,7 +186,8 @@ mod async_tests {
 
     #[test]
     fn coalescing_retains_latest() {
-        let (reporter, mut stream) = ProgressStream::new();
+        let mut stream = ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         for i in 1..=1000u64 {
             reporter.report(Progress {
                 uploaded: i,
@@ -275,7 +210,8 @@ mod async_tests {
 
     #[test]
     fn stream_closes_when_reporter_dropped() {
-        let (reporter, mut stream) = ProgressStream::new();
+        let mut stream = ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         reporter.report(Progress {
             uploaded: 1,
             upload_total: None,
@@ -295,7 +231,8 @@ mod async_tests {
 
     #[test]
     fn stream_dropped_before_completion() {
-        let (reporter, stream) = ProgressStream::new();
+        let stream = ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         drop(stream);
         // Reporting after the consumer is gone must not panic or block.
         for _ in 0..100 {
@@ -310,7 +247,8 @@ mod async_tests {
 
     #[test]
     fn large_numbers_of_notifications() {
-        let (reporter, mut stream) = ProgressStream::new();
+        let mut stream = ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         for i in 0..100_000u64 {
             reporter.report(Progress {
                 uploaded: i,
@@ -332,7 +270,8 @@ mod async_tests {
     fn reports_from_non_tokio_thread() {
         // No Tokio runtime is present in this test; reporting happens on a
         // plain OS thread while consumption happens here.
-        let (reporter, mut stream) = ProgressStream::new();
+        let mut stream = ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         let handle = std::thread::spawn(move || {
             for i in 1..=10u64 {
                 reporter.report(Progress {
@@ -358,7 +297,8 @@ mod async_tests {
     fn no_tokio_handle_required() {
         // Ensures the channel works without any async runtime handle.
         // This test runs on a plain thread without Tokio.
-        let (reporter, mut stream) = ProgressStream::new();
+        let mut stream = ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         reporter.report(Progress {
             uploaded: 5,
             upload_total: Some(5),
@@ -375,7 +315,8 @@ mod async_tests {
     fn stream_usable_after_request_completion() {
         // Simulates: upload reported during request execution, download
         // continues after the request future completes.
-        let (reporter, mut stream) = ProgressStream::new();
+        let mut stream = ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         reporter.report(Progress {
             uploaded: 100,
             upload_total: Some(100),

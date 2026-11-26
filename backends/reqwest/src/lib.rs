@@ -31,30 +31,26 @@ cfg_if::cfg_if! {
         #[cfg(feature = "blocking")]
         #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
         mod blocking;
+        #[cfg(feature = "cookies")]
+        mod cookies;
         mod response;
         mod runtime;
+        #[cfg(all(
+            any(feature = "async-progress", feature = "blocking-progress"),
+            any(feature = "async", feature = "blocking")
+        ))]
+        mod progress;
+        #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
+        mod websocket;
     }
 }
 mod backend;
 mod client;
 #[cfg(feature = "cookies")]
 mod cookie_util;
-#[cfg(all(feature = "cookies", not(target_arch = "wasm32")))]
-mod cookies;
 mod customizer;
 mod error;
-#[cfg(all(
-    any(feature = "async-progress", feature = "blocking-progress"),
-    not(target_arch = "wasm32"),
-    any(feature = "async", feature = "blocking")
-))]
-mod progress;
 mod request;
-#[cfg(all(
-    any(feature = "async-ws", feature = "blocking-ws"),
-    not(target_arch = "wasm32")
-))]
-mod websocket;
 
 pub use crate::backend::ReqwestBackend;
 #[doc(no_inline)]

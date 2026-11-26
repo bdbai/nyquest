@@ -114,14 +114,8 @@ impl http_body::Body for TrackingBytesBody {
 }
 
 /// Computes the expected upload total for a request body, if known.
-#[cfg(all(
-    feature = "async",
-    feature = "async-stream",
-    feature = "async-progress"
-))]
-pub fn upload_total_for_async_body(
-    body: &Option<nyquest_interface::Body<nyquest_interface::r#async::BoxedStream>>,
-) -> Option<u64> {
+#[cfg(all(feature = "async", feature = "async-progress"))]
+pub fn upload_total_for_async_body(body: &Option<nyquest_interface::r#async::Body>) -> Option<u64> {
     match body {
         None => None,
         Some(nyquest_interface::Body::Bytes { content, .. }) => {
@@ -135,48 +129,33 @@ pub fn upload_total_for_async_body(
         Some(nyquest_interface::Body::Form { .. }) => None,
         #[cfg(feature = "multipart")]
         Some(nyquest_interface::Body::Multipart { .. }) => None,
-        Some(nyquest_interface::Body::Stream { stream, .. }) => match stream {
-            nyquest_interface::r#async::BoxedStream::Sized { content_length, .. } => {
-                if *content_length == 0 {
-                    None
-                } else {
-                    Some(*content_length)
+        Some(nyquest_interface::Body::Stream { stream, .. }) => {
+            #[cfg(feature = "async-stream")]
+            {
+                match stream {
+                    nyquest_interface::r#async::BoxedStream::Sized { content_length, .. } => {
+                        if *content_length == 0 {
+                            None
+                        } else {
+                            Some(*content_length)
+                        }
+                    }
+                    nyquest_interface::r#async::BoxedStream::Unsized { .. } => None,
                 }
             }
-            nyquest_interface::r#async::BoxedStream::Unsized { .. } => None,
-        },
-    }
-}
-
-/// Computes the expected upload total for an async request body when stream
-/// bodies are not enabled.
-#[cfg(all(
-    feature = "async",
-    not(feature = "async-stream"),
-    feature = "async-progress"
-))]
-pub fn upload_total_for_async_body<S>(body: &Option<nyquest_interface::Body<S>>) -> Option<u64> {
-    match body {
-        Some(nyquest_interface::Body::Bytes { content, .. }) => {
-            let len = content.len() as u64;
-            if len == 0 {
+            #[cfg(not(feature = "async-stream"))]
+            {
+                let _ = stream;
                 None
-            } else {
-                Some(len)
             }
         }
-        _ => None,
     }
 }
 
 /// Computes the expected upload total for a blocking request body, if known.
-#[cfg(all(
-    feature = "blocking",
-    feature = "blocking-stream",
-    feature = "blocking-progress"
-))]
+#[cfg(all(feature = "blocking", feature = "blocking-progress"))]
 pub fn upload_total_for_blocking_body(
-    body: &Option<nyquest_interface::Body<nyquest_interface::blocking::BoxedStream>>,
+    body: &Option<nyquest_interface::blocking::Body>,
 ) -> Option<u64> {
     match body {
         None => None,
@@ -191,37 +170,26 @@ pub fn upload_total_for_blocking_body(
         Some(nyquest_interface::Body::Form { .. }) => None,
         #[cfg(feature = "multipart")]
         Some(nyquest_interface::Body::Multipart { .. }) => None,
-        Some(nyquest_interface::Body::Stream { stream, .. }) => match stream {
-            nyquest_interface::blocking::BoxedStream::Sized { content_length, .. } => {
-                if *content_length == 0 {
-                    None
-                } else {
-                    Some(*content_length)
+        Some(nyquest_interface::Body::Stream { stream, .. }) => {
+            #[cfg(feature = "blocking-stream")]
+            {
+                match stream {
+                    nyquest_interface::blocking::BoxedStream::Sized { content_length, .. } => {
+                        if *content_length == 0 {
+                            None
+                        } else {
+                            Some(*content_length)
+                        }
+                    }
+                    nyquest_interface::blocking::BoxedStream::Unsized { .. } => None,
                 }
             }
-            nyquest_interface::blocking::BoxedStream::Unsized { .. } => None,
-        },
-    }
-}
-
-/// Computes the expected upload total for a blocking request body without
-/// stream support.
-#[cfg(all(
-    feature = "blocking",
-    not(feature = "blocking-stream"),
-    feature = "blocking-progress"
-))]
-pub fn upload_total_for_blocking_body<S>(body: &Option<nyquest_interface::Body<S>>) -> Option<u64> {
-    match body {
-        Some(nyquest_interface::Body::Bytes { content, .. }) => {
-            let len = content.len() as u64;
-            if len == 0 {
+            #[cfg(not(feature = "blocking-stream"))]
+            {
+                let _ = stream;
                 None
-            } else {
-                Some(len)
             }
         }
-        _ => None,
     }
 }
 

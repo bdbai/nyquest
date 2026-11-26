@@ -82,11 +82,12 @@ impl AsyncClient {
         impl Future<Output = crate::Result<Response>> + Send,
         crate::ProgressStream,
     ) {
-        let (reporter, stream) = crate::progress::ProgressStream::new();
+        let stream = crate::r#async::progress::ProgressStream::new();
+        let reporter = stream.progress_reporter().clone();
         let client = self.client.clone();
         let fut = async move {
             let res = client
-                .request_with_progress(req.inner, Arc::new(reporter))
+                .request_with_progress(req.inner, reporter as _)
                 .await?;
             Ok(res.into())
         };

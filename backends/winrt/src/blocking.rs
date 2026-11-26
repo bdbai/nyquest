@@ -45,7 +45,7 @@ impl WinrtClient {
     ) -> NyquestResult<WinrtBlockingResponse> {
         #[cfg(feature = "blocking-progress")]
         let progress_sink = progress.map(|reporter| {
-            use crate::response::WinrtProgressSink;
+            use crate::progress::WinrtProgressSink;
 
             let upload_total = match &req.body {
                 Some(nyquest_interface::Body::Bytes { content, .. }) => {
@@ -78,7 +78,7 @@ impl WinrtClient {
             .into_nyquest_result()?;
         #[cfg(feature = "blocking-progress")]
         if let Some(sink) = &progress_sink {
-            crate::response::hook_send_progress(&send_op, sink)?;
+            crate::progress::hook_send_progress(&send_op, sink)?;
         }
         let res = send_op.timeout_by(&mut timer)?;
         // `mut` is only needed when the progress sink is attached below.
@@ -180,7 +180,7 @@ impl BlockingResponse for WinrtBlockingResponse {
             .ReadAsStringAsync()
             .into_nyquest_result()?;
         #[cfg(feature = "blocking-progress")]
-        let progress_guard = crate::response::hook_read_task_progress(
+        let progress_guard = crate::progress::hook_read_task_progress(
             &task,
             self.inner.progress_sink.as_ref(),
             self.inner.max_response_buffer_size,
@@ -206,7 +206,7 @@ impl BlockingResponse for WinrtBlockingResponse {
             .ReadAsBufferAsync()
             .into_nyquest_result()?;
         #[cfg(feature = "blocking-progress")]
-        let progress_guard = crate::response::hook_read_task_progress(
+        let progress_guard = crate::progress::hook_read_task_progress(
             &task,
             self.inner.progress_sink.as_ref(),
             self.inner.max_response_buffer_size,

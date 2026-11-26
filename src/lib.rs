@@ -140,8 +140,6 @@ mod body;
 #[cfg(feature = "cookies")]
 mod cookies;
 mod error;
-#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
-mod progress;
 mod request;
 #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]
 mod websocket;
@@ -176,12 +174,12 @@ pub use error::{Error, Result};
 )]
 #[doc(inline)]
 pub use nyquest_interface::{Progress, ProgressReporter};
-#[cfg(feature = "async-progress")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async-progress")))]
-pub use progress::ProgressStream;
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use r#async::client::AsyncClient;
+#[cfg(feature = "async-progress")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async-progress")))]
+pub use r#async::progress::ProgressStream;
 pub use request::{Method, Request};
 pub use status::StatusCode;
 #[cfg(any(feature = "async-ws", feature = "blocking-ws"))]

@@ -18,22 +18,6 @@ pub fn normalize_total(total: u64) -> Option<u64> {
     }
 }
 
-/// Builds a complete [`Progress`] snapshot.
-#[cfg(test)]
-fn make_progress(
-    uploaded: u64,
-    upload_total: Option<u64>,
-    downloaded: u64,
-    download_total: Option<u64>,
-) -> Progress {
-    Progress {
-        uploaded,
-        upload_total,
-        downloaded,
-        download_total,
-    }
-}
-
 /// Tracks upload and download byte counts for WinHTTP transfers.
 pub struct WinHttpProgressTracker {
     reporter: Arc<dyn ProgressReporter>,
@@ -103,6 +87,21 @@ impl WinHttpProgressTracker {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    /// Builds a complete [`Progress`] snapshot.
+    fn make_progress(
+        uploaded: u64,
+        upload_total: Option<u64>,
+        downloaded: u64,
+        download_total: Option<u64>,
+    ) -> Progress {
+        Progress {
+            uploaded,
+            upload_total,
+            downloaded,
+            download_total,
+        }
+    }
 
     struct Collect {
         inner: Mutex<Vec<Progress>>,

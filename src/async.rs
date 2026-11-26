@@ -8,6 +8,8 @@ use nyquest_interface::r#async::{BoxedStream, SizedBodyStream, UnsizedBodyStream
 #[cfg(feature = "async-stream")]
 mod async_read_stream;
 pub(crate) mod client;
+#[cfg(feature = "async-progress")]
+pub(crate) mod progress;
 mod response;
 #[cfg(feature = "async-ws")]
 mod websocket;

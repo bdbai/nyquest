@@ -148,7 +148,7 @@ impl DataTaskDelegate {
     /// response body consumption) may report progress.
     #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
     pub(crate) fn set_progress_reporter(&self, reporter: std::sync::Arc<dyn ProgressReporter>) {
-        *self.ivars().shared.progress.lock().unwrap() = Some(reporter);
+        self.ivars().shared.progress.store(Some(reporter));
     }
 
     pub(crate) fn into_shared(retained: Retained<Self>) -> DataTaskSharedContextRetained {
@@ -242,8 +242,7 @@ impl DataTaskDelegate {
     ) {
         use crate::progress::make_progress;
 
-        let reporter = self.ivars().shared.progress.lock().unwrap().clone();
-        let Some(reporter) = reporter else {
+        let Some(reporter) = self.ivars().shared.progress.load_full() else {
             return;
         };
         // `total_bytes_sent`/`total_bytes_expected_to_send` come straight from
@@ -270,8 +269,7 @@ impl DataTaskDelegate {
     ) {
         use crate::progress::make_progress;
 
-        let reporter = self.ivars().shared.progress.lock().unwrap().clone();
-        let Some(reporter) = reporter else {
+        let Some(reporter) = self.ivars().shared.progress.load_full() else {
             return;
         };
         reporter.report(make_progress(
