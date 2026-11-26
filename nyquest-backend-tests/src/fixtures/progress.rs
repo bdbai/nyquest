@@ -339,7 +339,9 @@ mod tests {
             assert!(saw_unknown, "expected unknown download total");
             // After body completion and response drop, the stream terminates.
             // (Reporter is retained through body consumption and dropped with
-            // the response.)
+            // the response. `bytes()` takes `response` by value, so dropping
+            // the completed body future drops the response and its reporter.)
+            drop(body_fut);
             let mut terminated = false;
             for _ in 0..100 {
                 tokio::select! {
