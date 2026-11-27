@@ -302,8 +302,9 @@ mod tests {
             tokio::pin!(request);
             let response = request.await.unwrap();
             // Download with unknown total; body consumption continues reporting.
-            let body_fut = response.bytes();
-            tokio::pin!(body_fut);
+            // Box the body future so dropping it releases `response` (which
+            // `bytes()` takes by value) and its progress reporter.
+            let mut body_fut = Box::pin(response.bytes());
             let mut saw_unknown = false;
             let mut saw_bytes = false;
             let bytes = loop {
