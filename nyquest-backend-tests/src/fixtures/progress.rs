@@ -344,7 +344,7 @@ mod tests {
             // the completed body future drops the response and its reporter.)
             drop(body_fut);
             let mut terminated = false;
-            for _ in 0..100 {
+            for _ in 0..200 {
                 tokio::select! {
                     opt = progress.next() => {
                         if opt.is_none() {
@@ -353,7 +353,8 @@ mod tests {
                         }
                     }
                     _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {
-                        break;
+                        // Keep polling; backend cleanup is asynchronous
+                        // (e.g. curl drops the reporter on its loop thread).
                     }
                 }
             }
