@@ -1,7 +1,11 @@
 use std::io;
+#[cfg(feature = "blocking-progress")]
+use std::sync::Arc;
 
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::ClientOptions;
+#[cfg(feature = "blocking-progress")]
+use nyquest_interface::ProgressReporter;
 use nyquest_interface::Result as NyquestResult;
 use timer_ext::BlockingTimeoutExt;
 use windows::Storage::Streams::{DataReader, InputStreamOptions};
@@ -18,6 +22,7 @@ use crate::error::IntoNyquestResult;
 use crate::ibuffer::IBufferExt;
 use crate::request::create_body;
 use crate::response::WinrtResponse;
+#[cfg(not(feature = "blocking-progress"))]
 use crate::response_size_limiter::ResponseSizeLimiter;
 use crate::timer::Timer;
 
@@ -33,7 +38,28 @@ impl crate::WinrtBackend {
 }
 
 impl WinrtClient {
-    fn send_request(&self, req: Request) -> NyquestResult<WinrtBlockingResponse> {
+    fn send_request(
+        &self,
+        req: Request,
+        #[cfg(feature = "blocking-progress")] progress: Option<Arc<dyn ProgressReporter>>,
+    ) -> NyquestResult<WinrtBlockingResponse> {
+        #[cfg(feature = "blocking-progress")]
+        let progress_sink = progress.map(|reporter| {
+            use crate::progress::WinrtProgressSink;
+
+            let upload_total = match &req.body {
+                Some(nyquest_interface::Body::Bytes { content, .. }) => {
+                    let len = content.len() as u64;
+                    if len == 0 {
+                        None
+                    } else {
+                        Some(len)
+                    }
+                }
+                _ => None,
+            };
+            WinrtProgressSink::new(reporter, upload_total)
+        });
         let req_msg = self.create_request(&req)?;
         if let Some(body) = req.body {
             #[cfg(feature = "blocking-stream")]
@@ -46,13 +72,27 @@ impl WinrtClient {
             req_msg.SetContent(&body).into_nyquest_result()?;
         }
         let mut timer = Timer::new(self.request_timeout);
-        let res = self
+        let send_op = self
             .client
             .SendRequestWithOptionAsync(&req_msg, HttpCompletionOption::ResponseHeadersRead)
-            .into_nyquest_result()?
-            .timeout_by(&mut timer)?;
-        let inner =
+            .into_nyquest_result()?;
+        #[cfg(feature = "blocking-progress")]
+        if let Some(sink) = &progress_sink {
+            crate::progress::hook_send_progress(&send_op, sink)?;
+        }
+        let res = send_op.timeout_by(&mut timer)?;
+        // `mut` is only needed when the progress sink is attached below.
+        #[allow(unused_mut)]
+        let mut inner =
             WinrtResponse::new(res, self.max_response_buffer_size, timer).into_nyquest_result()?;
+        #[cfg(feature = "blocking-progress")]
+        if let Some(sink) = &progress_sink {
+            sink.set_body_total(inner.content_length);
+        }
+        #[cfg(feature = "blocking-progress")]
+        {
+            inner.progress_sink = progress_sink;
+        }
         Ok(WinrtBlockingResponse {
             inner,
             reader: None,
@@ -63,7 +103,19 @@ impl WinrtClient {
 impl BlockingClient for WinrtClient {
     type Response = WinrtBlockingResponse;
     fn request(&self, req: Request) -> NyquestResult<Self::Response> {
-        self.send_request(req)
+        #[cfg(feature = "blocking-progress")]
+        return self.send_request(req, None);
+        #[cfg(not(feature = "blocking-progress"))]
+        return self.send_request(req);
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> NyquestResult<Self::Response> {
+        self.send_request(req, Some(progress))
     }
 
     #[cfg(feature = "blocking-ws")]
@@ -127,11 +179,21 @@ impl BlockingResponse for WinrtBlockingResponse {
             .into_nyquest_result()?
             .ReadAsStringAsync()
             .into_nyquest_result()?;
+        #[cfg(feature = "blocking-progress")]
+        let progress_guard = crate::progress::hook_read_task_progress(
+            &task,
+            self.inner.progress_sink.as_ref(),
+            self.inner.max_response_buffer_size,
+        )?;
+        #[cfg(not(feature = "blocking-progress"))]
         let size_limiter =
             ResponseSizeLimiter::hook_progress(self.inner.max_response_buffer_size, &task)?;
         let res = task
             .timeout_by(&mut self.inner.request_timer)
             .map(|r| r.to_string_lossy());
+        #[cfg(feature = "blocking-progress")]
+        let content = progress_guard.assert_size(res)?;
+        #[cfg(not(feature = "blocking-progress"))]
         let content = size_limiter.assert_size(res)?;
         Ok(content)
     }
@@ -143,11 +205,21 @@ impl BlockingResponse for WinrtBlockingResponse {
             .into_nyquest_result()?
             .ReadAsBufferAsync()
             .into_nyquest_result()?;
+        #[cfg(feature = "blocking-progress")]
+        let progress_guard = crate::progress::hook_read_task_progress(
+            &task,
+            self.inner.progress_sink.as_ref(),
+            self.inner.max_response_buffer_size,
+        )?;
+        #[cfg(not(feature = "blocking-progress"))]
         let size_limiter =
             ResponseSizeLimiter::hook_progress(self.inner.max_response_buffer_size, &task)?;
         let res = task
             .timeout_by(&mut self.inner.request_timer)
             .and_then(|b| b.to_vec());
+        #[cfg(feature = "blocking-progress")]
+        let arr = progress_guard.assert_size(res)?;
+        #[cfg(not(feature = "blocking-progress"))]
         let arr = size_limiter.assert_size(res)?;
         Ok(arr)
     }
@@ -169,6 +241,12 @@ impl io::Read for WinrtBlockingResponse {
         let size = buf.len().min(size as usize);
         let buf = &mut buf[..size];
         reader.ReadBytes(buf)?;
+        #[cfg(feature = "blocking-progress")]
+        if size > 0 {
+            if let Some(sink) = self.inner.progress_sink.as_ref() {
+                sink.on_body_chunk(size as u64);
+            }
+        }
         Ok(size)
     }
 }

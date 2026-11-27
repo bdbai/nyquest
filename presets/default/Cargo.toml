@@ -64,6 +64,20 @@ cookies = [
     "nyquest-backend-winrt/cookies",
     "nyquest-backend-nsurlsession/cookies",
 ]
+async-progress = [
+    "async",
+    "nyquest/async-progress",
+    "nyquest-backend-curl/async-progress",
+    "nyquest-backend-winrt/async-progress",
+    "nyquest-backend-nsurlsession/async-progress",
+]
+blocking-progress = [
+    "blocking",
+    "nyquest/blocking-progress",
+    "nyquest-backend-curl/blocking-progress",
+    "nyquest-backend-winrt/blocking-progress",
+    "nyquest-backend-nsurlsession/blocking-progress",
+]
 auto-register = ["dep:ctor"]
 
 [dependencies]

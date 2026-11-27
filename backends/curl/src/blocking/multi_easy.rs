@@ -242,6 +242,14 @@ impl MultiEasy {
     pub fn get_response_headers_buffer(&mut self) -> Vec<(String, String)> {
         self.easy_mut().as_callback_mut().state.get_headers()
     }
+
+    #[cfg(feature = "blocking-progress")]
+    pub fn set_progress(
+        &mut self,
+        progress: Option<std::sync::Arc<dyn nyquest_interface::ProgressReporter>>,
+    ) {
+        self.easy_mut().as_callback_mut().set_progress(progress);
+    }
 }
 
 fn reset_easy_state(easy: Pin<&mut Easy>) -> Result<(), NyquestError> {

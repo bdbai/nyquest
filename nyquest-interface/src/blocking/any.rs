@@ -8,6 +8,7 @@
 //! to implement them directly.
 
 use std::any::Any;
+#[cfg(any(feature = "blocking-ws", feature = "cookies"))]
 use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
@@ -15,6 +16,8 @@ use std::sync::Arc;
 use super::backend::BlockingResponse;
 use super::Request;
 use crate::client::ClientOptions;
+#[cfg(feature = "blocking-progress")]
+use crate::progress::ProgressReporter;
 #[cfg(feature = "blocking-ws")]
 use crate::websocket::{WebSocketMessage, WebSocketResult};
 use crate::Result;
@@ -35,6 +38,13 @@ pub trait AnyBlockingClient: Any + Send + Sync + 'static {
     fn describe(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> crate::Result<Box<dyn AnyBlockingResponse>>;
+    /// Sends an HTTP request with progress reporting.
+    #[cfg(feature = "blocking-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> crate::Result<Box<dyn AnyBlockingResponse>>;
     /// Opens a WebSocket connection.
     #[cfg(feature = "blocking-ws")]
     fn connect_websocket(
@@ -140,6 +150,15 @@ where
     }
     fn request(&self, req: Request) -> crate::Result<Box<dyn AnyBlockingResponse>> {
         Ok(Box::new(self.request(req)?))
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> crate::Result<Box<dyn AnyBlockingResponse>> {
+        Ok(Box::new(self.request_with_progress(req, progress)?))
     }
 
     #[cfg(feature = "blocking-ws")]

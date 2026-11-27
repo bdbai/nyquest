@@ -77,11 +77,11 @@ The following items are planned in MVP:
 - [x] Test framework for backends
 - [x] Presets
 - [x] Documentation
+- [x] Progress tracking
 
 Future work may include:
 
 - [ ] Backend: WASM fetch
-- [ ] Progress tracking
 - [ ] Direct file upload/download support
 - [ ] URL manipulation utilities
 - [ ] Middleware infrastructure

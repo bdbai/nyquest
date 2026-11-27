@@ -24,6 +24,8 @@ blocking-stream = ["blocking"]
 async-ws = ["async", "dep:futures-sink"]
 blocking-ws = ["blocking"]
 cookies = []
+async-progress = []
+blocking-progress = []
 
 [dependencies]
 thiserror.workspace = true

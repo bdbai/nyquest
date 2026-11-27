@@ -50,7 +50,7 @@ rust-version.workspace = true
 exclude.workspace = true
 
 [package.metadata.docs.rs]
-features = ["async-stream", "blocking-stream", "multipart", "json", "async-ws", "blocking-ws", "cookies"]
+features = ["async-stream", "blocking-stream", "multipart", "json", "async-ws", "blocking-ws", "cookies", "async-progress", "blocking-progress"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
@@ -63,10 +63,13 @@ blocking-ws = ["blocking", "nyquest-interface/blocking-ws"]
 cookies = ["nyquest-interface/cookies"]
 multipart = ["nyquest-interface/multipart"]
 json = ["dep:serde", "dep:serde_json"]
+async-progress = ["async", "dep:futures-core", "nyquest-interface/async-progress"]
+blocking-progress = ["blocking", "nyquest-interface/blocking-progress"]
 
 [dependencies]
 nyquest-interface = { version = "0.5.0", path = "nyquest-interface", default-features = false }
 thiserror.workspace = true
+futures-core = { workspace = true, optional = true }
 
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

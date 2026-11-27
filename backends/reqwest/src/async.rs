@@ -1,3 +1,4 @@
+#[cfg(any(feature = "async-ws", feature = "cookies"))]
 use std::borrow::Cow;
 use std::future::{poll_fn, Future};
 use std::pin::{pin, Pin};
@@ -39,25 +40,101 @@ impl AsyncClient for ReqwestAsyncClient {
     }
 
     async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
+        #[cfg(feature = "async-progress")]
+        {
+            struct Noop;
+            impl nyquest_interface::ProgressReporter for Noop {
+                fn report(&self, _progress: nyquest_interface::Progress) {}
+            }
+            self.request_with_progress(req, Arc::new(Noop)).await
+        }
+        #[cfg(not(feature = "async-progress"))]
+        {
+            #[cfg(feature = "async-stream")]
+            let mut stream_task_collection = stream::StreamTaskCollection::default();
+            let request_builder = self.inner.request(req, |stream| {
+                #[cfg(feature = "async-stream")]
+                {
+                    use nyquest_interface::r#async::BoxedStream;
+                    let size = match &stream {
+                        BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                        BoxedStream::Unsized { .. } => None,
+                    };
+                    let stream = stream_task_collection.add_stream(stream);
+                    (reqwest::Body::wrap(stream), size)
+                }
+                #[cfg(not(feature = "async-stream"))]
+                {
+                    let _ = stream;
+                    unreachable!("async-stream feature is disabled")
+                }
+            })?;
+
+            // Execute the request using shared runtime handling
+            let req_task = pin!(execute_with_runtime_async(
+                &self.inner.managed_runtime,
+                || async {
+                    request_builder
+                        .send()
+                        .await
+                        .map_err(ReqwestBackendError::Reqwest)
+                }
+            ));
+            #[cfg(not(feature = "async-stream"))]
+            let stream_task = std::future::pending::<()>();
+            #[cfg(feature = "async-stream")]
+            let stream_task = pin!(stream_task_collection.execute());
+            let response = if let Either::Left((res, _)) = select(req_task, stream_task).await {
+                res
+            } else {
+                unreachable!()
+            };
+            ReqwestAsyncResponse::new(
+                response?,
+                self.inner.max_response_buffer_size,
+                self.inner.managed_runtime.clone(),
+            )
+            .await
+            .map_err(Into::into)
+        }
+    }
+
+    #[cfg(feature = "async-progress")]
+    async fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn nyquest_interface::ProgressReporter>,
+    ) -> NyquestResult<Self::Response> {
+        use crate::progress::{upload_total_for_async_body, ProgressTracker};
+        let upload_total = upload_total_for_async_body(&req.body);
+        let tracker = ProgressTracker::new(progress, upload_total);
         #[cfg(feature = "async-stream")]
         let mut stream_task_collection = stream::StreamTaskCollection::default();
-        let request_builder = self.inner.request(req, |stream| {
-            #[cfg(feature = "async-stream")]
-            {
-                use nyquest_interface::r#async::BoxedStream;
-                let size = match &stream {
-                    BoxedStream::Sized { content_length, .. } => Some(*content_length),
-                    BoxedStream::Unsized { .. } => None,
-                };
-                let stream = stream_task_collection.add_stream(stream);
-                (reqwest::Body::wrap(stream), size)
-            }
-            #[cfg(not(feature = "async-stream"))]
-            {
-                let _ = stream;
-                unreachable!("async-stream feature is disabled")
-            }
-        })?;
+        #[cfg(feature = "async-stream")]
+        let tracker_for_streams = tracker.clone();
+        let tracker_for_bytes = tracker.clone();
+        let request_builder = self.inner.request_with_bytes_progress(
+            req,
+            |stream| {
+                #[cfg(feature = "async-stream")]
+                {
+                    use nyquest_interface::r#async::BoxedStream;
+                    let size = match &stream {
+                        BoxedStream::Sized { content_length, .. } => Some(*content_length),
+                        BoxedStream::Unsized { .. } => None,
+                    };
+                    let stream = stream_task_collection
+                        .add_stream_with_progress(stream, Some(tracker_for_streams.clone()));
+                    (reqwest::Body::wrap(stream), size)
+                }
+                #[cfg(not(feature = "async-stream"))]
+                {
+                    let _ = stream;
+                    unreachable!("async-stream feature is disabled")
+                }
+            },
+            Some(&tracker_for_bytes),
+        )?;
 
         // Execute the request using shared runtime handling
         let req_task = pin!(execute_with_runtime_async(
@@ -78,10 +155,11 @@ impl AsyncClient for ReqwestAsyncClient {
         } else {
             unreachable!()
         };
-        ReqwestAsyncResponse::new(
+        ReqwestAsyncResponse::new_with_progress(
             response?,
             self.inner.max_response_buffer_size,
             self.inner.managed_runtime.clone(),
+            tracker,
         )
         .await
         .map_err(Into::into)
@@ -139,6 +217,7 @@ pub struct ReqwestAsyncResponse {
 }
 
 impl ReqwestAsyncResponse {
+    #[cfg(not(feature = "async-progress"))]
     async fn new(
         response: reqwest::Response,
         max_response_buffer_size: Option<u64>,
@@ -146,6 +225,21 @@ impl ReqwestAsyncResponse {
     ) -> Result<Self> {
         Ok(Self {
             response: ReqwestResponse::new(response, max_response_buffer_size),
+            runtime,
+        })
+    }
+
+    #[cfg(feature = "async-progress")]
+    async fn new_with_progress(
+        response: reqwest::Response,
+        max_response_buffer_size: Option<u64>,
+        runtime: Arc<ManagedRuntime>,
+        tracker: Arc<crate::progress::ProgressTracker>,
+    ) -> Result<Self> {
+        let mut inner = ReqwestResponse::new(response, max_response_buffer_size);
+        inner.set_progress(tracker);
+        Ok(Self {
+            response: inner,
             runtime,
         })
     }

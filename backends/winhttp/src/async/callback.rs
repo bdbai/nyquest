@@ -80,7 +80,15 @@ unsafe fn handle_callback(
 
 /// Handles WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE.
 fn handle_send_complete(ctx: &RequestContext) {
+    // Read the inline body length before it is released below. A
+    // non-streaming body is handed to WinHTTP inline with the send request,
+    // so its transfer completes here (streaming bodies leave an empty buffer
+    // and report per chunk when their writes complete).
+    #[cfg(feature = "async-progress")]
+    let (_, body_len) = ctx.get_body_ptr();
     ctx.set_send_complete();
+    #[cfg(feature = "async-progress")]
+    ctx.report_uploaded(body_len as u64);
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE.
@@ -119,6 +127,8 @@ unsafe fn handle_read_complete(
 ) {
     let bytes_read = status_info_len as usize;
     ctx.set_read_complete(status_info as _, bytes_read);
+    #[cfg(feature = "async-progress")]
+    ctx.report_downloaded(bytes_read as u64);
 }
 
 /// Handles WINHTTP_CALLBACK_STATUS_WRITE_COMPLETE.

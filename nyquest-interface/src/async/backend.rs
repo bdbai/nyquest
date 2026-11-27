@@ -11,9 +11,13 @@ use std::borrow::Cow;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
+#[cfg(feature = "async-progress")]
+use std::sync::Arc;
 
 use super::Request as AsyncRequest;
 use crate::client::ClientOptions;
+#[cfg(feature = "async-progress")]
+use crate::progress::ProgressReporter;
 use crate::Result;
 
 /// Trait for asynchronous HTTP clients.
@@ -31,8 +35,28 @@ pub trait AsyncClient: Clone + Send + Sync + 'static {
 
     /// Sends an HTTP request and returns a future that resolves to the response.
     fn request(&self, req: AsyncRequest) -> impl Future<Output = Result<Self::Response>> + Send;
-    // TODO: fn request_with_progress
     // TODO: fn request_file
+
+    /// Sends an HTTP request with progress reporting.
+    ///
+    /// The `progress` reporter must remain available throughout response body
+    /// consumption, not just request execution, so that download progress
+    /// continues while the body is read.
+    ///
+    /// The default implementation delegates to [`AsyncClient::request`],
+    /// ignoring the reporter, for backends that do not implement progress
+    /// tracking.
+    #[cfg(feature = "async-progress")]
+    fn request_with_progress(
+        &self,
+        req: AsyncRequest,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> impl Future<Output = Result<Self::Response>> + Send {
+        async move {
+            let _ = progress;
+            self.request(req).await
+        }
+    }
 
     /// Opens a WebSocket connection.
     #[cfg(feature = "async-ws")]

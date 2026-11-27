@@ -11,6 +11,10 @@ pub struct WinrtResponse {
     pub(crate) max_response_buffer_size: Option<u64>,
     pub(crate) request_timer: Timer,
     pub(crate) response: HttpResponseMessage,
+    /// Retains the progress sink (and thereby the reporter) for as long as
+    /// body progress can be reported, i.e. through response body consumption.
+    #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+    pub(crate) progress_sink: Option<std::sync::Arc<crate::progress::WinrtProgressSink>>,
 }
 
 impl WinrtResponse {
@@ -33,6 +37,8 @@ impl WinrtResponse {
             max_response_buffer_size: response_size_limit,
             request_timer,
             response: res,
+            #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+            progress_sink: None,
         })
     }
 

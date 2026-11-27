@@ -52,6 +52,12 @@ pub(crate) struct RequestContextInner {
 pub(crate) struct RequestContext {
     /// Inner state protected by mutex
     pub(crate) inner: Mutex<RequestContextInner>,
+    /// Progress tracker for `request_with_progress`. Retained here so the
+    /// reporter stays alive for the whole transfer, including response body
+    /// consumption. The WinHTTP callback thread only calls `report()` on it;
+    /// user code is never executed by backend threads.
+    #[cfg(feature = "async-progress")]
+    progress: Mutex<Option<Arc<crate::progress::WinHttpProgressTracker>>>,
 }
 
 impl RequestContext {
@@ -65,7 +71,42 @@ impl RequestContext {
                 buffer: Default::default(),
                 buffer_range: 0..0,
             }),
+            #[cfg(feature = "async-progress")]
+            progress: Mutex::new(None),
         })
+    }
+
+    /// Attaches a progress tracker for `request_with_progress`.
+    #[cfg(feature = "async-progress")]
+    pub(crate) fn set_progress_tracker(
+        &self,
+        tracker: Arc<crate::progress::WinHttpProgressTracker>,
+    ) {
+        *self.progress.lock().unwrap() = Some(tracker);
+    }
+
+    /// Records uploaded bytes, if progress tracking is enabled.
+    #[cfg(feature = "async-progress")]
+    pub(crate) fn report_uploaded(&self, len: u64) {
+        if let Some(tracker) = self.progress.lock().unwrap().as_ref() {
+            tracker.add_uploaded(len);
+        }
+    }
+
+    /// Records downloaded bytes, if progress tracking is enabled.
+    #[cfg(feature = "async-progress")]
+    pub(crate) fn report_downloaded(&self, len: u64) {
+        if let Some(tracker) = self.progress.lock().unwrap().as_ref() {
+            tracker.add_downloaded(len);
+        }
+    }
+
+    /// Updates the expected download total, if progress tracking is enabled.
+    #[cfg(feature = "async-progress")]
+    pub(crate) fn set_progress_download_total(&self, total: Option<u64>) {
+        if let Some(tracker) = self.progress.lock().unwrap().as_ref() {
+            tracker.set_download_total(total);
+        }
     }
 
     /// Sets the state without waking or clearing the waker.

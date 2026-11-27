@@ -19,6 +19,8 @@ cfg_if::cfg_if! {
         #[cfg(feature = "multipart")]
         #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
         mod multipart;
+        #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+        mod progress;
         mod request;
         mod session;
         mod stream;

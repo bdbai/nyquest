@@ -80,6 +80,24 @@ cookies = [
     "nyquest-backend-nsurlsession?/cookies",
     "nyquest-backend-reqwest?/cookies",
 ]
+async-progress = [
+    "async",
+    "nyquest/async-progress",
+    "nyquest-backend-winrt?/async-progress",
+    "nyquest-backend-winhttp?/async-progress",
+    "nyquest-backend-curl?/async-progress",
+    "nyquest-backend-nsurlsession?/async-progress",
+    "nyquest-backend-reqwest?/async-progress",
+]
+blocking-progress = [
+    "blocking",
+    "nyquest/blocking-progress",
+    "nyquest-backend-winrt?/blocking-progress",
+    "nyquest-backend-winhttp?/blocking-progress",
+    "nyquest-backend-curl?/blocking-progress",
+    "nyquest-backend-nsurlsession?/blocking-progress",
+    "nyquest-backend-reqwest?/blocking-progress",
+]
 # IDNA cookie domain matching test (`test_idna_cookie_domain_matching`).
 # Enabled separately from `cookies` because the libcurl backend relies on the
 # platform libcurl's IDN support, which varies by build (the Ubuntu CI build

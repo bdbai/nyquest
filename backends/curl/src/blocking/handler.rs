@@ -1,20 +1,34 @@
+#[cfg(feature = "blocking-progress")]
+use std::sync::Arc;
+
 use curl::easy::{ReadError, SeekResult, WriteError};
 
+#[cfg(feature = "blocking-progress")]
+use crate::progress::make_progress;
 use crate::{curl_ng::easy::EasyCallback, state::RequestState};
 #[cfg(feature = "blocking-stream")]
 use nyquest_interface::blocking::BoxedStream;
+#[cfg(feature = "blocking-progress")]
+use nyquest_interface::ProgressReporter;
 
 #[derive(Default)]
 pub struct BlockingHandler {
     pub(super) state: RequestState,
     #[cfg(feature = "blocking-stream")]
     body_stream: Option<BoxedStream>,
+    #[cfg(feature = "blocking-progress")]
+    progress: Option<Arc<dyn ProgressReporter>>,
 }
 
 impl BlockingHandler {
     #[cfg(feature = "blocking-stream")]
     pub fn set_body_stream(&mut self, body_stream: BoxedStream) {
         self.body_stream = Some(body_stream);
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    pub fn set_progress(&mut self, progress: Option<Arc<dyn ProgressReporter>>) {
+        self.progress = progress;
     }
 }
 
@@ -66,5 +80,12 @@ impl EasyCallback for BlockingHandler {
     #[cfg(not(feature = "blocking-stream"))]
     fn seek(&mut self, _whence: std::io::SeekFrom) -> SeekResult {
         SeekResult::Fail
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    fn report_progress(&self, dltotal: i64, dlnow: i64, ultotal: i64, ulnow: i64) {
+        if let Some(progress) = &self.progress {
+            progress.report(make_progress(dltotal, dlnow, ultotal, ulnow));
+        }
     }
 }

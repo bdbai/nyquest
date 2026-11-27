@@ -8,6 +8,8 @@ use std::sync::Arc;
 use futures_channel::oneshot;
 use nyquest_interface::client::ClientOptions;
 use nyquest_interface::r#async::{AsyncBackend, AsyncClient, Request};
+#[cfg(feature = "async-progress")]
+use nyquest_interface::ProgressReporter;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 
 use super::callback::setup_session_callback;
@@ -55,6 +57,7 @@ impl WinHttpAsyncClient {
             std::borrow::Cow<'static, str>,
         )>,
         body: Option<nyquest_interface::r#async::Body>,
+        #[cfg(feature = "async-progress")] progress: Option<Arc<dyn ProgressReporter>>,
     ) -> NyquestResult<WinHttpAsyncResponse> {
         // Prepare headers and body before spawning to threadpool
         let mut prepared_body;
@@ -77,6 +80,15 @@ impl WinHttpAsyncClient {
             let is_stream = matches!(prepared_body, PreparedBody::Stream { .. });
             // Store body data in context - it must remain valid until SENDREQUEST_COMPLETE
             ctx.set_body(prepared_body.take_body().unwrap_or_default());
+            #[cfg(feature = "async-progress")]
+            if let Some(progress) = progress {
+                let upload_total = body_len.and_then(crate::progress::normalize_total);
+                ctx.set_progress_tracker(crate::progress::WinHttpProgressTracker::new(
+                    progress,
+                    upload_total,
+                    None,
+                ));
+            }
 
             let ctx = Arc::downgrade(&ctx);
             let session = self.session.clone();
@@ -146,6 +158,8 @@ impl WinHttpAsyncClient {
         // Build the response
         let status = request.query_status_code()?;
         let content_length = request.query_content_length();
+        #[cfg(feature = "async-progress")]
+        ctx.set_progress_download_total(content_length);
 
         Ok(WinHttpAsyncResponse::new(
             ctx,
@@ -164,8 +178,31 @@ impl AsyncClient for WinHttpAsyncClient {
 
     async fn request(&self, req: Request) -> NyquestResult<Self::Response> {
         let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
-        self.do_single_request(url, req.method, req.additional_headers, req.body)
-            .await
+        #[cfg(feature = "async-progress")]
+        return self
+            .do_single_request(url, req.method, req.additional_headers, req.body, None)
+            .await;
+        #[cfg(not(feature = "async-progress"))]
+        return self
+            .do_single_request(url, req.method, req.additional_headers, req.body)
+            .await;
+    }
+
+    #[cfg(feature = "async-progress")]
+    async fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> NyquestResult<Self::Response> {
+        let url = concat_url(self.session.base_cwurl.as_deref(), &req.relative_uri)?;
+        self.do_single_request(
+            url,
+            req.method,
+            req.additional_headers,
+            req.body,
+            Some(progress),
+        )
+        .await
     }
 
     #[cfg(feature = "async-ws")]
@@ -281,6 +318,8 @@ async fn write_all_data_async(
 
         // Wait for WRITE_COMPLETE callback
         let res = wait_for_state(ctx, RequestState::WriteComplete).await?;
+        #[cfg(feature = "async-progress")]
+        ctx.report_uploaded(res.bytes_transferred as u64);
         range.start += res.bytes_transferred;
     }
     Ok(ctx.take_write_buffer().into_owned())

@@ -2,9 +2,13 @@
 
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+use std::sync::Arc;
 
 use arc_swap::ArcSwapAny;
 use block2::DynBlock;
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+use nyquest_interface::ProgressReporter;
 use nyquest_interface::{Error as NyquestError, Result as NyquestResult};
 use objc2::rc::Retained;
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
@@ -18,6 +22,8 @@ use objc2_foundation::{
 use crate::error::IntoNyquestResult;
 
 use super::generic_waker::GenericWaker;
+#[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+use super::ivars::SharedProgressReporter;
 use super::ivars::{DataTaskIvars, DataTaskIvarsShared};
 
 define_class!(
@@ -63,6 +69,25 @@ define_class!(
             error: Option<&NSError>,
         ) {
             self.callback_URLSession_task_didCompleteWithError(session, task, error);
+        }
+
+        #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+        #[unsafe(method(URLSession:task:didSendBodyData:totalBytesSent:totalBytesExpectedToSend:))]
+        fn URLSession_task_didSendBodyData_totalBytesSent_totalBytesExpectedToSend(
+            &self,
+            session: &NSURLSession,
+            task: &NSURLSessionTask,
+            bytes_sent: i64,
+            total_bytes_sent: i64,
+            total_bytes_expected_to_send: i64,
+        ) {
+            self.callback_URLSession_task_didSendBodyData(
+                session,
+                task,
+                bytes_sent,
+                total_bytes_sent,
+                total_bytes_expected_to_send,
+            );
         }
     }
 
@@ -110,11 +135,25 @@ impl DataTaskDelegate {
                 received_error: Default::default(),
                 response_buffer: Default::default(),
                 max_response_buffer_size: u64::MAX.into(),
+                #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+                progress: Default::default(),
             },
             redirects_allowed: if allow_redirects { 30 } else { 0 }.into(),
         });
         // SAFETY: The signature of `NSObject`'s `init` method is correct.
         unsafe { msg_send![super(this), init] }
+    }
+
+    /// Attaches a progress reporter that receives transfer progress snapshots.
+    ///
+    /// The reporter is retained for as long as the transfer (including
+    /// response body consumption) may report progress.
+    #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+    pub(crate) fn set_progress_reporter(&self, reporter: std::sync::Arc<dyn ProgressReporter>) {
+        self.ivars()
+            .shared
+            .progress
+            .store(Some(std::sync::Arc::new(SharedProgressReporter(reporter))));
     }
 
     pub(crate) fn into_shared(retained: Retained<Self>) -> DataTaskSharedContextRetained {
@@ -187,7 +226,65 @@ impl DataTaskDelegate {
         }
         buffer.extend_from_slice(data);
         drop(buffer);
+        #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+        self.report_upload_download(
+            data_task.countOfBytesSent(),
+            data_task.countOfBytesExpectedToSend(),
+            data_task.countOfBytesReceived(),
+            data_task.countOfBytesExpectedToReceive(),
+        );
         ivars.shared.waker.wake();
+    }
+
+    #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+    fn callback_URLSession_task_didSendBodyData(
+        &self,
+        _session: &NSURLSession,
+        task: &NSURLSessionTask,
+        _bytes_sent: i64,
+        total_bytes_sent: i64,
+        total_bytes_expected_to_send: i64,
+    ) {
+        use crate::progress::make_progress;
+
+        let Some(shared) = self.ivars().shared.progress.load_full() else {
+            return;
+        };
+        let reporter = shared.0.clone();
+        // `total_bytes_sent`/`total_bytes_expected_to_send` come straight from
+        // the callback; the download counters are read from the task.
+        reporter.report(make_progress(
+            total_bytes_sent,
+            total_bytes_expected_to_send,
+            task.countOfBytesReceived(),
+            task.countOfBytesExpectedToReceive(),
+        ));
+    }
+
+    /// Reports a complete progress snapshot for the given transfer counters,
+    /// if a reporter is set.
+    ///
+    /// Only calls [`ProgressReporter::report`]; never executes user code.
+    #[cfg(any(feature = "async-progress", feature = "blocking-progress"))]
+    fn report_upload_download(
+        &self,
+        uploaded: i64,
+        upload_total: i64,
+        downloaded: i64,
+        download_total: i64,
+    ) {
+        use crate::progress::make_progress;
+
+        let Some(shared) = self.ivars().shared.progress.load_full() else {
+            return;
+        };
+        let reporter = shared.0.clone();
+        reporter.report(make_progress(
+            uploaded,
+            upload_total,
+            downloaded,
+            download_total,
+        ));
     }
 }
 

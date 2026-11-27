@@ -9,9 +9,13 @@
 #[cfg(feature = "cookies")]
 use std::borrow::Cow;
 use std::fmt;
+#[cfg(feature = "blocking-progress")]
+use std::sync::Arc;
 
 use super::Request;
 use crate::client::ClientOptions;
+#[cfg(feature = "blocking-progress")]
+use crate::progress::ProgressReporter;
 use crate::Result;
 
 /// Trait for blocking HTTP clients.
@@ -29,6 +33,20 @@ pub trait BlockingClient: Clone + Send + Sync + 'static {
 
     /// Sends an HTTP request and returns the response.
     fn request(&self, req: Request) -> crate::Result<Self::Response>;
+    /// Sends an HTTP request with progress reporting.
+    ///
+    /// The default implementation delegates to [`BlockingClient::request`],
+    /// ignoring the reporter, for backends that do not implement progress
+    /// tracking.
+    #[cfg(feature = "blocking-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> crate::Result<Self::Response> {
+        let _ = progress;
+        self.request(req)
+    }
     /// Opens a WebSocket connection.
     #[cfg(feature = "blocking-ws")]
     fn connect_websocket(

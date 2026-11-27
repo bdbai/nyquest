@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use nyquest_interface::blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request};
 use nyquest_interface::client::ClientOptions;
+#[cfg(feature = "blocking-progress")]
+use nyquest_interface::ProgressReporter;
 use nyquest_interface::Result as NyquestResult;
 use objc2::runtime::ProtocolObject;
 
@@ -78,10 +80,12 @@ impl BlockingResponse for NSUrlSessionBlockingResponse {
     }
 }
 
-impl BlockingClient for NSUrlSessionBlockingClient {
-    type Response = NSUrlSessionBlockingResponse;
-
-    fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
+impl NSUrlSessionBlockingClient {
+    fn do_request(
+        &self,
+        req: Request,
+        #[cfg(feature = "blocking-progress")] progress: Option<Arc<dyn ProgressReporter>>,
+    ) -> nyquest_interface::Result<NSUrlSessionBlockingResponse> {
         let waker = GenericWaker::Blocking(Arc::new(BlockingWaker::new_from_current_thread()));
         let (task, mut writer) = self.inner.build_data_task(req, &waker, |s| {
             #[cfg(feature = "blocking-stream")]
@@ -100,6 +104,10 @@ impl BlockingClient for NSUrlSessionBlockingClient {
         })?;
         let shared = {
             let delegate = DataTaskDelegate::new(waker, self.inner.allow_redirects);
+            #[cfg(feature = "blocking-progress")]
+            if let Some(progress) = progress {
+                delegate.set_progress_reporter(progress);
+            }
             task.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             task.resume();
             DataTaskDelegate::into_shared(delegate)
@@ -135,6 +143,26 @@ impl BlockingClient for NSUrlSessionBlockingClient {
             }
             std::thread::park();
         }
+    }
+}
+
+impl BlockingClient for NSUrlSessionBlockingClient {
+    type Response = NSUrlSessionBlockingResponse;
+
+    fn request(&self, req: Request) -> nyquest_interface::Result<Self::Response> {
+        #[cfg(feature = "blocking-progress")]
+        return self.do_request(req, None);
+        #[cfg(not(feature = "blocking-progress"))]
+        return self.do_request(req);
+    }
+
+    #[cfg(feature = "blocking-progress")]
+    fn request_with_progress(
+        &self,
+        req: Request,
+        progress: Arc<dyn ProgressReporter>,
+    ) -> nyquest_interface::Result<Self::Response> {
+        self.do_request(req, Some(progress))
     }
 
     #[cfg(feature = "blocking-ws")]
